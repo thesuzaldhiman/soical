@@ -202,7 +202,7 @@ function ImageGeneratorContent() {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-xs"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#EEF1F6] bg-white hover:bg-[#F8F9FD] text-slate-700 text-xs font-bold transition-all shadow-2xs"
           >
             <Download className="w-4 h-4" />
             <span>{downloading ? 'Exporting...' : 'Download PNG'}</span>
@@ -210,7 +210,7 @@ function ImageGeneratorContent() {
           <button
             type="button"
             onClick={handleSendToComposer}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20"
+            className="inline-flex items-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] text-white text-xs font-bold transition-all shadow-[0_4px_14px_rgba(255,0,122,0.3)] hover:scale-[1.02] active:scale-[0.98]"
           >
             <Send className="w-4 h-4" />
             <span>Send to Post Composer</span>

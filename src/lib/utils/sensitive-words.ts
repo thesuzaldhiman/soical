@@ -78,3 +78,10 @@ export function sanitizeSensitiveWords(text: string, customWords?: string[]): {
 
   return { sanitized: result, replacedWords: replaced };
 }
+
+/**
+ * Convenience helper returning sanitized string directly
+ */
+export function sanitizeText(text: string, customWords?: string[]): string {
+  return sanitizeSensitiveWords(text, customWords).sanitized;
+}

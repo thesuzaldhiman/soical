@@ -20,7 +20,11 @@ import {
   RotateCw,
   Eye,
   Check,
+  ShieldAlert,
+  MessageSquare,
+  Sliders,
 } from 'lucide-react';
+import { findSensitiveWords, sanitizeText } from '@/lib/utils/sensitive-words';
 
 export default function ComposerPage() {
   return (
@@ -42,6 +46,9 @@ function ComposerContent() {
   // Post Content
   const [postType, setPostType] = useState<PostType>('image');
   const [message, setMessage] = useState('');
+  const [firstComment, setFirstComment] = useState('👉 पूरी खबर व ताज़ा अपडेट पढ़ें: https://khabarmonkey.com');
+  const [intervalMin, setIntervalMin] = useState(30);
+  const [intervalMax, setIntervalMax] = useState(90);
   const [mediaUrl, setMediaUrl] = useState(
     'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1080&auto=format&fit=crop&q=80'
   );
@@ -120,6 +127,9 @@ function ComposerContent() {
         postType,
         message,
         mediaUrl: mediaUrl || undefined,
+        commentText: firstComment || undefined,
+        intervalMinSeconds: intervalMin,
+        intervalMaxSeconds: intervalMax,
         pageIds: selectedPageIds,
         status: immediate ? 'published' : 'scheduled',
         scheduledAt: immediate ? undefined : scheduledDateTime,
@@ -251,8 +261,83 @@ function ComposerContent() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="What do you want to share with your audience today? Write your post message or headline here..."
-              className="w-full p-4 rounded-xl border border-[#E8E8E4] text-xs leading-relaxed text-slate-900 placeholder:text-slate-400 bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-slate-900"
+              className="w-full p-4 rounded-xl border border-[#EEF1F6] text-xs leading-relaxed text-slate-900 placeholder:text-slate-400 bg-[#F8F9FD] focus:outline-none focus:border-[#FF007A]"
             />
+
+            {/* Anti-Ban Sensitive Word Scanner Notice */}
+            {findSensitiveWords(message).length > 0 && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start justify-between gap-3 animate-fade-in">
+                <div className="flex items-start gap-2">
+                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Facebook Sensitive Terms Detected: </span>
+                    <span className="font-semibold text-amber-700">
+                      [{findSensitiveWords(message).join(', ')}]
+                    </span>
+                    <p className="text-[11px] text-amber-800/80 mt-0.5">
+                      These words may trigger Meta automated scraper flags. Click to auto-break them safely.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMessage(sanitizeText(message))}
+                  className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-colors shrink-0 shadow-2xs"
+                >
+                  Auto-Obfuscate
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* First Comment & Anti-Ban Delay Staggering */}
+          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-[#F0F2F6]">
+              <MessageSquare className="w-4 h-4 text-[#FF007A]" />
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                3. First Comment Auto-Trigger (Link/CTA)
+              </label>
+            </div>
+
+            <textarea
+              rows={2}
+              value={firstComment}
+              onChange={(e) => setFirstComment(e.target.value)}
+              placeholder="Paste article link or comment CTA here to keep the main post clean..."
+              className="w-full p-3 rounded-xl border border-[#EEF1F6] text-xs text-slate-900 bg-[#F8F9FD] focus:outline-none focus:border-[#FF007A]"
+            />
+
+            {/* Anti-Ban Page Delay Range */}
+            <div className="pt-2 border-t border-[#F0F2F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-slate-400" />
+                <div>
+                  <span className="text-xs font-bold text-slate-800 block">Anti-Ban Dispatch Delay</span>
+                  <span className="text-[11px] text-slate-400">Random gap between cross-posting each page</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 font-mono text-xs text-slate-700">
+                <input
+                  type="number"
+                  min={10}
+                  max={300}
+                  value={intervalMin}
+                  onChange={(e) => setIntervalMin(Number(e.target.value))}
+                  className="w-16 px-2 py-1 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-center"
+                />
+                <span className="text-slate-400">to</span>
+                <input
+                  type="number"
+                  min={10}
+                  max={300}
+                  value={intervalMax}
+                  onChange={(e) => setIntervalMax(Number(e.target.value))}
+                  className="w-16 px-2 py-1 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-center"
+                />
+                <span className="text-slate-500 font-sans font-bold">sec</span>
+              </div>
+            </div>
           </div>
 
           {/* Step 3: Media Upload Area */}

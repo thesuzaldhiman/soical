@@ -48,9 +48,9 @@ function PagesContent() {
   return (
     <div className="space-y-8 font-sans animate-fade-in">
       {/* 1. Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#EBEBE8]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#EEF1F6]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
             Pages & Channels
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
@@ -60,7 +60,7 @@ function PagesContent() {
 
         <Link
           href="/accounts"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto shrink-0"
+          className="inline-flex items-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] text-white text-xs font-bold transition-all shadow-[0_4px_14px_rgba(255,0,122,0.3)] hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto shrink-0"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>Connect New Platform</span>
@@ -68,7 +68,7 @@ function PagesContent() {
       </div>
 
       {/* 2. Search & Platform Filter Bar */}
-      <div className="bg-white rounded-2xl border border-[#E8E8E4] p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-[#EEF1F6] p-4 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Platform Filter Buttons */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           {(['all', 'facebook', 'instagram', 'youtube', 'threads', 'telegram'] as const).map((plat) => {
@@ -82,8 +82,8 @@ function PagesContent() {
                 onClick={() => setPlatformFilter(plat)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all shrink-0 flex items-center gap-1.5 ${
                   platformFilter === plat
-                    ? 'bg-slate-950 text-white shadow-2xs'
-                    : 'text-slate-600 hover:bg-[#FAF9F6]'
+                    ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-[#F8F9FD]'
                 }`}
               >
                 <span>{plat}</span>

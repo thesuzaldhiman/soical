@@ -43,11 +43,11 @@ function BulkDeleteContent() {
   };
 
   return (
-    <div className="space-y-8 font-sans max-w-4xl animate-fade-in">
+    <div className="space-y-7 font-sans max-w-4xl animate-fade-in pb-12">
       {/* 1. Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#EBEBE8]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#EEF1F6]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
             Bulk Delete Posts
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
@@ -64,8 +64,8 @@ function BulkDeleteContent() {
       )}
 
       {/* 2. Filter & Selection Box */}
-      <div className="bg-white rounded-2xl border border-[#E8E8E4] p-6 shadow-2xs space-y-5">
-        <div className="flex items-center gap-2 pb-2 border-b border-[#F0F0ED]">
+      <div className="bg-white rounded-2xl border border-[#EEF1F6] p-6 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-5">
+        <div className="flex items-center gap-2 pb-2 border-b border-[#F0F2F6]">
           <Filter className="w-4 h-4 text-slate-800" />
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800">
             Select Deletion Criteria

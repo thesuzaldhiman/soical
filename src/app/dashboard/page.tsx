@@ -27,6 +27,9 @@ import {
   ArrowUpRight,
   Send,
   MessageSquare,
+  X,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -40,9 +43,12 @@ export default function DashboardPage() {
 function DashboardContent() {
   const { user, workspace, posts, pages, accounts, retryPost, deletePost } = useApp();
 
+  // Selected Post for detail modal
+  const [selectedPostForModal, setSelectedPostForModal] = useState<Post | null>(null);
+
   // Calendar View State
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
-  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(2); // Default Wednesday (index 2)
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(0); // Default Mon Nov 10
 
   // Recent Posts Grid Filters
   const [gridFilter, setGridFilter] = useState<'all' | 'published' | 'scheduled' | 'failed'>('all');
@@ -53,7 +59,7 @@ function DashboardContent() {
   const totalPages = pages.length;
   const publishedCount = posts.filter((p) => p.status === 'published').length;
   const scheduledCount = posts.filter((p) => p.status === 'scheduled').length;
-  const failedCount = posts.filter((p) => p.status === 'failed').length;
+  const failedCount = posts.filter((p) => p.status === 'failed' || p.status === 'partial').length;
   const successRate = posts.length > 0 ? Math.round((publishedCount / posts.length) * 100) : 100;
 
   // Platform icon mappings
@@ -73,21 +79,62 @@ function DashboardContent() {
     youtube: '#FF0000',
   };
 
-  // Calendar Days Definition (7 days of current week)
-  const calendarDays = [
-    { day: 'Mon', date: '10', full: 'Nov 10' },
-    { day: 'Tue', date: '11', full: 'Nov 11' },
-    { day: 'Wed', date: '12', full: 'Nov 12' },
-    { day: 'Thu', date: '13', full: 'Nov 13' },
-    { day: 'Fri', date: '14', full: 'Nov 14' },
-    { day: 'Sat', date: '15', full: 'Nov 15' },
-    { day: 'Sun', date: '16', full: 'Nov 16' },
-  ];
+  // Calendar Days Definition (7 days of current week, Nov 10 - Nov 16)
+  const calendarDays = useMemo(
+    () => [
+      { day: 'Mon', date: '10', full: 'Nov 10, 2026' },
+      { day: 'Tue', date: '11', full: 'Nov 11, 2026' },
+      { day: 'Wed', date: '12', full: 'Nov 12, 2026' },
+      { day: 'Thu', date: '13', full: 'Nov 13, 2026' },
+      { day: 'Fri', date: '14', full: 'Nov 14, 2026' },
+      { day: 'Sat', date: '15', full: 'Nov 15, 2026' },
+      { day: 'Sun', date: '16', full: 'Nov 16, 2026' },
+    ],
+    []
+  );
+
+  // Map real posts to calendar days
+  const daysWithPosts = useMemo(() => {
+    return calendarDays.map((d) => {
+      const dayPosts = posts.filter((p) => {
+        const dateStr = p.scheduledAt || p.publishedAt || p.createdAt;
+        if (!dateStr) return false;
+        const dObj = new Date(dateStr);
+        return dObj.getDate().toString() === d.date;
+      });
+      return {
+        ...d,
+        count: dayPosts.length,
+        posts: dayPosts,
+      };
+    });
+  }, [posts, calendarDays]);
+
+  const activeDay = daysWithPosts[selectedDayIndex] || daysWithPosts[0];
+
+  // Month days for month view (November 2026)
+  const monthDays = useMemo(() => {
+    return Array.from({ length: 30 }, (_, i) => {
+      const dateNum = (i + 1).toString();
+      const dayPosts = posts.filter((p) => {
+        const dateStr = p.scheduledAt || p.publishedAt || p.createdAt;
+        if (!dateStr) return false;
+        const dObj = new Date(dateStr);
+        return dObj.getDate().toString() === dateNum;
+      });
+      return {
+        dateNum,
+        hasPosts: dayPosts.length > 0,
+        count: dayPosts.length,
+      };
+    });
+  }, [posts]);
 
   // Filtered posts for Recent Posts Grid
   const filteredGridPosts = useMemo(() => {
     return posts.filter((p) => {
       if (gridFilter === 'all') return true;
+      if (gridFilter === 'failed') return p.status === 'failed' || p.status === 'partial';
       return p.status === gridFilter;
     });
   }, [posts, gridFilter]);
@@ -348,173 +395,202 @@ function DashboardContent() {
             </div>
           </div>
 
-          {/* Days of Week Header with Clickable Selection */}
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {calendarDays.map((d, index) => {
-              const isSelected = selectedDayIndex === index;
-              return (
-                <button
-                  key={d.day}
-                  type="button"
-                  onClick={() => setSelectedDayIndex(index)}
-                  className={`flex flex-col items-center p-1.5 rounded-xl transition-all ${
-                    isSelected
-                      ? 'bg-[#F8F9FD] border border-[#EEF1F6]'
-                      : 'hover:bg-[#F6F8FD]'
-                  }`}
+          {/* Calendar View Switcher Content */}
+          {calendarView === 'week' ? (
+            <div className="space-y-4">
+              {/* Days of Week Header with Clickable Selection */}
+              <div className="grid grid-cols-7 gap-1 text-center">
+                {daysWithPosts.map((d, index) => {
+                  const isSelected = selectedDayIndex === index;
+                  return (
+                    <button
+                      key={d.day}
+                      type="button"
+                      onClick={() => setSelectedDayIndex(index)}
+                      className={`flex flex-col items-center p-2 rounded-xl transition-all relative ${
+                        isSelected
+                          ? 'bg-[#F8F9FD] border border-[#EEF1F6] shadow-xs'
+                          : 'hover:bg-[#F6F8FD]'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
+                      <span
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black mt-1 transition-all ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-[0_2px_8px_rgba(255,0,122,0.35)]'
+                            : 'text-slate-700'
+                        }`}
+                      >
+                        {d.date}
+                      </span>
+                      {d.count > 0 && (
+                        <span
+                          className={`mt-1 w-1.5 h-1.5 rounded-full ${
+                            isSelected ? 'bg-[#FF007A]' : 'bg-[#FF007A]/60'
+                          }`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Dynamic Day Timeline Header */}
+              <div className="flex items-center justify-between pt-1 px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-slate-900">
+                    Schedule for {activeDay.full}
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-pink-50 text-[#FF007A] border border-pink-100">
+                    {activeDay.count} {activeDay.count === 1 ? 'Post' : 'Posts'}
+                  </span>
+                </div>
+                <Link
+                  href="/composer"
+                  className="text-[11px] font-bold text-[#FF007A] hover:underline flex items-center gap-1"
                 >
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
-                  <span
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black mt-1 transition-all ${
-                      isSelected
-                        ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-[0_2px_8px_rgba(255,0,122,0.35)]'
-                        : 'text-slate-700'
-                    }`}
-                  >
-                    {d.date}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Calendar Grid with Real Scheduled Slots */}
-          <div className="space-y-4 pt-1">
-            {/* Time Slot Rows with visual scheduled cards */}
-            <div className="space-y-3">
-              {/* Morning Slot (9:00 AM) */}
-              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
-                    09:00 AM
-                  </span>
-                  <div className="w-2 h-2 rounded-full bg-[#FF007A]" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm">📸</span>
-                      <span className="font-bold text-xs text-slate-900 truncate">
-                        Instagram & Facebook Morning Story Dispatch
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                      Target: Devbhoomi Today • 32,600 followers
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                    Queued
-                  </span>
-                  <Link
-                    href="/composer"
-                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
-                  >
-                    Edit
-                  </Link>
-                </div>
+                  <Plus className="w-3 h-3" />
+                  <span>Schedule for this Day</span>
+                </Link>
               </div>
 
-              {/* Noon Slot (12:30 PM) */}
-              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
-                    12:30 PM
-                  </span>
-                  <div className="w-2 h-2 rounded-full bg-[#1877F2]" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm">📘</span>
-                      <span className="font-bold text-xs text-slate-900 truncate">
-                        Himachal Snowfall Alert News & Travel Advisory
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                      Target: Himachali Samachar Official (Facebook Page) + Auto Comment
+              {/* Day Time Slots or Empty State */}
+              <div className="space-y-2.5 min-h-[220px]">
+                {activeDay.posts.length > 0 ? (
+                  activeDay.posts.map((post) => {
+                    const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                    const timeStr = post.scheduledAt
+                      ? new Date(post.scheduledAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : post.publishedAt
+                      ? new Date(post.publishedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '09:00 AM';
+
+                    const statusColor =
+                      post.status === 'published'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : post.status === 'scheduled'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : 'bg-rose-50 text-rose-700 border-rose-200';
+
+                    return (
+                      <div
+                        key={post.id}
+                        className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
+                            {timeStr}
+                          </span>
+                          <div
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{
+                              backgroundColor:
+                                platformColors[firstPage?.platform || 'facebook'] || '#FF007A',
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">
+                                {platformIcons[firstPage?.platform || 'facebook']}
+                              </span>
+                              <span className="font-bold text-xs text-slate-900 truncate">
+                                {post.message}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                              Destination: {firstPage?.name || 'All Connected Pages'} •{' '}
+                              <span className="uppercase font-semibold">{post.postType}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          <span
+                            className={`text-[10px] font-bold capitalize px-2 py-0.5 rounded-md border ${statusColor}`}
+                          >
+                            {post.status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPostForModal(post)}
+                            className="text-[11px] font-bold text-slate-600 hover:text-[#FF007A] transition-colors px-2 py-1 rounded-lg hover:bg-white"
+                          >
+                            Details
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-10 px-4 rounded-xl bg-[#F8F9FD] border border-dashed border-[#EEF1F6] text-center flex flex-col items-center justify-center space-y-2">
+                    <Calendar className="w-8 h-8 text-slate-300 stroke-[1.5]" />
+                    <p className="text-xs font-bold text-slate-700">
+                      No posts scheduled for {activeDay.full}
                     </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                    Published
-                  </span>
-                  <Link
-                    href="/library"
-                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
-                  >
-                    View
-                  </Link>
-                </div>
-              </div>
-
-              {/* Evening Slot (06:00 PM) */}
-              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
-                    06:00 PM
-                  </span>
-                  <div className="w-2 h-2 rounded-full bg-[#FF0000]" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm">▶️</span>
-                      <span className="font-bold text-xs text-slate-900 truncate">
-                        Rohtang Pass Snowfall Video Shorts Dispatch
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                      Target: YouTube Shorts Channel (92,000 subscribers)
+                    <p className="text-[11px] text-slate-400 max-w-xs">
+                      Queue up breaking news updates, videos, or scheduled articles for this date.
                     </p>
+                    <Link
+                      href="/composer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-2 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white text-[11px] font-bold shadow-xs hover:scale-105 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Create Post for this Day</span>
+                    </Link>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                    Scheduled
-                  </span>
-                  <Link
-                    href="/composer"
-                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
-                  >
-                    Reschedule
-                  </Link>
-                </div>
-              </div>
-
-              {/* Night Slot (09:00 PM) */}
-              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
-                    09:00 PM
-                  </span>
-                  <div className="w-2 h-2 rounded-full bg-[#0088CC]" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm">✈️</span>
-                      <span className="font-bold text-xs text-slate-900 truncate">
-                        Evening Breaking News Bulletin Broadcast
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                      Target: Himachal News Telegram Channel (18,400 members)
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                    Queued
-                  </span>
-                  <Link
-                    href="/composer"
-                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
-                  >
-                    Edit
-                  </Link>
-                </div>
+                )}
               </div>
             </div>
-          </div>
+          ) : (
+            /* Month Calendar Grid */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-xs font-black text-slate-900">November 2026</span>
+                <span className="text-[10px] font-bold text-slate-400">
+                  {posts.length} total posts this month
+                </span>
+              </div>
+              <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold text-slate-400 pb-1">
+                <span>MON</span>
+                <span>TUE</span>
+                <span>WED</span>
+                <span>THU</span>
+                <span>FRI</span>
+                <span>SAT</span>
+                <span>SUN</span>
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {monthDays.map((d) => (
+                  <div
+                    key={d.dateNum}
+                    className={`h-12 p-1 rounded-xl border flex flex-col justify-between transition-all ${
+                      d.hasPosts
+                        ? 'bg-pink-50/40 border-pink-200'
+                        : 'bg-[#F8F9FD] border-[#EEF1F6]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-700">{d.dateNum}</span>
+                      {d.hasPosts && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#FF007A]" />
+                      )}
+                    </div>
+                    {d.hasPosts && (
+                      <span className="text-[9px] font-black text-[#FF007A] truncate">
+                        {d.count} {d.count === 1 ? 'post' : 'posts'}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Legend */}
           <div className="pt-2 border-t border-[#F0F2F6] flex items-center justify-between text-[10px] font-bold text-slate-500 flex-wrap gap-2">
@@ -768,7 +844,8 @@ function DashboardContent() {
               return (
                 <div
                   key={post.id}
-                  className="bg-white rounded-2xl border border-[#EEF1F6] overflow-hidden shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between"
+                  onClick={() => setSelectedPostForModal(post)}
+                  className="bg-white rounded-2xl border border-[#EEF1F6] overflow-hidden shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:border-[#FF007A]/40 hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
                 >
                   {/* Thumbnail / Media Header */}
                   <div className="relative h-44 w-full bg-slate-900 overflow-hidden">
@@ -777,7 +854,7 @@ function DashboardContent() {
                       <img
                         src={post.mediaUrl}
                         alt="thumbnail"
-                        className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-tr from-slate-900 to-slate-800 flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-1">
@@ -809,7 +886,10 @@ function DashboardContent() {
                     </div>
 
                     {/* Action Menu Floating Top Right */}
-                    <div className="absolute top-3 right-3 relative">
+                    <div
+                      className="absolute top-3 right-3 z-10"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         type="button"
                         onClick={() =>
@@ -823,7 +903,7 @@ function DashboardContent() {
 
                       {/* Dropdown Menu */}
                       {isMenuOpen && (
-                        <div className="absolute right-0 top-8 w-36 bg-white rounded-xl border border-[#EEF1F6] shadow-lg p-1.5 z-20 space-y-1 animate-fade-in text-xs">
+                        <div className="absolute right-0 top-8 w-36 bg-white rounded-xl border border-[#EEF1F6] shadow-xl p-1.5 z-30 space-y-1 animate-fade-in text-xs">
                           {post.status === 'failed' && (
                             <button
                               type="button"
@@ -926,6 +1006,208 @@ function DashboardContent() {
           </div>
         )}
       </div>
+
+      {/* 5. Detailed Post Inspection Modal */}
+      {selectedPostForModal && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
+          onClick={() => setSelectedPostForModal(null)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-[#EEF1F6] shadow-2xl max-w-2xl w-full p-6 space-y-5 overflow-hidden my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#F0F2F6]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#FF007A] to-[#FF4E98] flex items-center justify-center text-white shadow-xs">
+                  <Share2 className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    Post Dispatch Details
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    ID: {selectedPostForModal.id} • Type:{' '}
+                    <span className="capitalize font-bold text-slate-700">
+                      {selectedPostForModal.postType}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                    selectedPostForModal.status === 'published'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : selectedPostForModal.status === 'scheduled'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}
+                >
+                  {selectedPostForModal.status}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPostForModal(null)}
+                  className="w-8 h-8 rounded-xl bg-[#F8F9FD] hover:bg-[#EEF1F6] text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Media & Caption Preview */}
+            <div className="space-y-3">
+              {selectedPostForModal.mediaUrl && (
+                <div className="rounded-xl overflow-hidden max-h-56 w-full bg-slate-900 relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={selectedPostForModal.mediaUrl}
+                    alt="post preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div className="p-3.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase">
+                  <span>Caption Message</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigator.clipboard.writeText(selectedPostForModal.message)
+                    }
+                    className="hover:text-slate-700 flex items-center gap-1 transition-colors"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </button>
+                </div>
+                <p className="text-xs text-slate-900 leading-relaxed font-medium whitespace-pre-wrap">
+                  {selectedPostForModal.message}
+                </p>
+              </div>
+
+              {selectedPostForModal.commentText && (
+                <div className="p-3 rounded-xl bg-pink-50/50 border border-pink-100 space-y-1">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#FF007A]">
+                    <MessageSquare className="w-3 h-3" />
+                    <span>First Comment Auto-Trigger (Link Cloaked)</span>
+                  </div>
+                  <p className="text-xs text-slate-800 font-medium">
+                    {selectedPostForModal.commentText}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Destination Channels Dispatch Results */}
+            <div className="space-y-2">
+              <span className="text-xs font-black text-slate-900">
+                Destination Pages & Results
+              </span>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                {selectedPostForModal.pageIds.map((pgId) => {
+                  const pg = pages.find((p) => p.id === pgId);
+                  const res = selectedPostForModal.results?.find((r) => r.pageId === pgId);
+
+                  return (
+                    <div
+                      key={pgId}
+                      className="p-2.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex items-center justify-between text-xs font-medium"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0">
+                          {platformIcons[pg?.platform || 'facebook']}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-800 truncate">
+                            {pg?.name || pgId}
+                          </div>
+                          {res?.error && (
+                            <div className="text-[10px] text-rose-600 font-semibold truncate mt-0.5">
+                              {res.error}
+                            </div>
+                          )}
+                          {res?.externalPostId && (
+                            <div className="text-[10px] text-slate-400 font-mono truncate">
+                              ID: {res.externalPostId}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-2">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            res?.status === 'success' || selectedPostForModal.status === 'published'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : res?.status === 'failed' || selectedPostForModal.status === 'failed'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}
+                        >
+                          {res?.status || selectedPostForModal.status}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="pt-3 border-t border-[#F0F2F6] flex items-center justify-between flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  deletePost(selectedPostForModal.id);
+                  setSelectedPostForModal(null);
+                }}
+                className="px-3 py-2 rounded-xl hover:bg-rose-50 text-rose-600 text-xs font-bold transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Post</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                {selectedPostForModal.status === 'failed' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      retryPost(selectedPostForModal.id);
+                      setSelectedPostForModal(null);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>Retry Dispatch</span>
+                  </button>
+                )}
+
+                <Link
+                  href={`/composer?clone=${selectedPostForModal.id}`}
+                  className="px-3.5 py-2 rounded-xl bg-[#F6F8FD] hover:bg-[#EEF1F6] text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <Repeat className="w-3.5 h-3.5" />
+                  <span>Reschedule / Edit</span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPostForModal(null)}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white text-xs font-bold transition-all shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
