@@ -7,23 +7,27 @@ import {
   Plus,
   Settings,
   Bell,
-  Sparkles,
 } from 'lucide-react';
 import { useApp } from '@/lib/context/app-context';
 
 export function AppHeader() {
   const pathname = usePathname();
-  const { user, pages } = useApp();
+  const { pages } = useApp();
 
   const getPageTitle = () => {
-    if (pathname.includes('/composer')) return 'Composer';
-    if (pathname.includes('/image-generator')) return 'Image Generator (SIG)';
+    if (pathname.includes('/composer')) return 'Create Post';
+    if (pathname.includes('/bulk-scheduler')) return 'Bulk Scheduler';
     if (pathname.includes('/library')) return 'Post Library';
-    if (pathname.includes('/accounts')) return 'Channels';
+    if (pathname.includes('/bulk-delete')) return 'Bulk Delete Posts';
+    if (pathname.includes('/accounts')) return 'Accounts';
+    if (pathname.includes('/pages')) return 'Pages';
     if (pathname.includes('/categories')) return 'Categories';
-    if (pathname.includes('/automations')) return 'Automations';
+    if (pathname.includes('/automations')) return 'Blogger → FB';
+    if (pathname.includes('/image-generator')) return 'Image Generator';
     if (pathname.includes('/analytics')) return 'Analytics';
+    if (pathname.includes('/logs')) return 'Logs';
     if (pathname.includes('/settings')) return 'Settings';
+    if (pathname.includes('/debug')) return 'Debug';
     return 'Overview';
   };
 
@@ -38,9 +42,9 @@ export function AppHeader() {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-3">
-        {/* Avatars Stack (+4) */}
+        {/* Avatars Stack */}
         <div className="hidden sm:flex items-center -space-x-2 mr-1">
-          {pages.slice(0, 3).map((p, i) => (
+          {pages.slice(0, 3).map((p) => (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
               key={p.id}
