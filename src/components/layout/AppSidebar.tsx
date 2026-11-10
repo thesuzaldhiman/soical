@@ -13,114 +13,188 @@ import {
   Cpu,
   BarChart3,
   Settings,
+  HelpCircle,
+  Search,
+  ChevronsUpDown,
+  Bell,
   Sparkles,
   Zap,
+  Globe,
+  Radio,
+  ChevronDown,
 } from 'lucide-react';
 import { useApp } from '@/lib/context/app-context';
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/composer', label: 'Create Post', icon: PenSquare, badge: 'New' },
-  { href: '/image-generator', label: 'Image Generator (SIG)', icon: Palette, highlight: true },
-  { href: '/library', label: 'Post Library & Queue', icon: Layers },
-  { href: '/accounts', label: 'Accounts & Pages', icon: Users2 },
-  { href: '/categories', label: 'Categories & Tags', icon: Tags },
-  { href: '/automations', label: 'Automations (WP/Blogger)', icon: Cpu },
-  { href: '/analytics', label: 'Analytics & Reports', icon: BarChart3 },
-  { href: '/settings', label: 'Settings & API Keys', icon: Settings },
-];
-
 export function AppSidebar() {
   const pathname = usePathname();
-  const { workspace } = useApp();
+  const { user, workspace } = useApp();
 
-  const usagePercent = Math.min(
-    100,
-    Math.round((workspace.monthlyPostsUsed / workspace.monthlyPostsLimit) * 100)
-  );
+  const mainNav = [
+    { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+    { href: '/composer', label: 'Composer', icon: PenSquare },
+    { href: '/image-generator', label: 'Image Generator', icon: Palette, badge: 'SIG' },
+    { href: '/library', label: 'Post Library', icon: Layers },
+    { href: '/accounts', label: 'Channels', icon: Users2 },
+    { href: '/categories', label: 'Categories', icon: Tags },
+  ];
+
+  const toolsNav = [
+    { href: '/automations', label: 'Automations', icon: Cpu, countBadge: 5 },
+    { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+    { href: '/settings', label: 'Settings', icon: Settings },
+  ];
 
   return (
-    <aside className="w-64 border-r border-slate-200 bg-white flex flex-col h-screen sticky top-0 select-none z-30">
-      {/* Brand Header */}
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-            <Zap className="w-5 h-5 fill-white text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-bold text-slate-900 tracking-tight text-base">Social Poster</span>
-              <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200">
-                PRO
-              </span>
+    <aside className="w-[260px] bg-[#FFFFFF] border-r border-[#EBEBE8] flex flex-col h-screen sticky top-0 select-none z-30 shrink-0 font-sans">
+      {/* 1. Workspace Switcher Header */}
+      <div className="p-4 border-b border-[#F0F0ED]">
+        <div className="flex items-center justify-between p-2 rounded-xl hover:bg-[#F7F7F5] transition-colors cursor-pointer group">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* Logo box */}
+            <div className="w-9 h-9 rounded-xl bg-slate-950 flex items-center justify-center text-white shadow-sm shrink-0">
+              <Zap className="w-5 h-5 fill-amber-400 text-amber-400" />
             </div>
-            <p className="text-[11px] text-slate-500 font-medium">Multi-Platform Suite</p>
-          </div>
-        </Link>
-      </div>
-
-      {/* Nav List */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          Core Workflows
-        </div>
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href;
-          const Icon = item.icon;
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                isActive
-                  ? 'bg-blue-50 text-blue-700 font-semibold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Icon
-                  className={`w-4 h-4 transition-colors ${
-                    isActive ? 'text-blue-600' : 'text-slate-400'
-                  }`}
-                />
-                <span>{item.label}</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-900 text-sm tracking-tight truncate">
+                  Social Poster
+                </span>
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-slate-900 text-white leading-none">
+                  Pro
+                </span>
               </div>
-              {item.highlight && !isActive && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded border border-violet-100">
-                  <Sparkles className="w-2.5 h-2.5" />
-                  Hindi
-                </span>
-              )}
-              {item.badge && (
-                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          );
-        })}
+              <p className="text-[11px] text-slate-400 font-medium truncate">
+                {user.email}
+              </p>
+            </div>
+          </div>
+          <ChevronsUpDown className="w-4 h-4 text-slate-400 group-hover:text-slate-600 shrink-0 ml-1" />
+        </div>
       </div>
 
-      {/* Workspace Usage Widget */}
-      <div className="p-3 border-t border-slate-100 m-2 rounded-xl bg-slate-50 border">
-        <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
-          <span>{workspace.name}</span>
-          <span className="capitalize text-[10px] font-bold px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded">
-            {workspace.plan} Plan
-          </span>
+      {/* 2. Quick Search Bar */}
+      <div className="px-4 pt-3 pb-2">
+        <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-[#F6F6F3] border border-[#EEEEEC] text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-slate-500 font-normal">Search</span>
+          </div>
+          <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-[#E0E0DC] text-slate-400 shadow-2xs">
+            /
+          </kbd>
         </div>
-        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-          <div
-            className="bg-blue-600 h-full rounded-full transition-all duration-300"
-            style={{ width: `${usagePercent}%` }}
-          />
+      </div>
+
+      {/* 3. Navigation Links */}
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-6">
+        {/* Section: Dashboard */}
+        <div className="space-y-1">
+          <div className="px-3 py-1 flex items-center justify-between text-[11px] font-semibold text-slate-400">
+            <span>Dashboard</span>
+            <ChevronDown className="w-3 h-3" />
+          </div>
+
+          {mainNav.map((item) => {
+            const isActive = pathname === item.href;
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                  isActive
+                    ? 'bg-[#F4F4F0] text-slate-900 font-bold shadow-2xs border border-[#ECECE8]'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon
+                    className={`w-4 h-4 ${
+                      isActive ? 'text-slate-900 stroke-[2.2]' : 'text-slate-400 stroke-[1.8]'
+                    }`}
+                  />
+                  <span>{item.label}</span>
+                </div>
+                {item.badge && (
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
-        <div className="flex justify-between items-center text-[11px] text-slate-500 mt-1.5 font-medium">
-          <span>Monthly Posts</span>
-          <span>
-            {workspace.monthlyPostsUsed} / {workspace.monthlyPostsLimit}
-          </span>
+
+        {/* Section: Tools */}
+        <div className="space-y-1">
+          <div className="px-3 py-1 flex items-center justify-between text-[11px] font-semibold text-slate-400">
+            <span>Tools</span>
+            <ChevronDown className="w-3 h-3" />
+          </div>
+
+          {toolsNav.map((item) => {
+            const isActive = pathname === item.href;
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                  isActive
+                    ? 'bg-[#F4F4F0] text-slate-900 font-bold shadow-2xs border border-[#ECECE8]'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon
+                    className={`w-4 h-4 ${
+                      isActive ? 'text-slate-900 stroke-[2.2]' : 'text-slate-400 stroke-[1.8]'
+                    }`}
+                  />
+                  <span>{item.label}</span>
+                </div>
+                {item.countBadge && (
+                  <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {item.countBadge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. Bottom Footer & Profile */}
+      <div className="p-3 border-t border-[#F0F0ED] space-y-2">
+        <Link
+          href="/settings"
+          className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6] transition-colors"
+        >
+          <HelpCircle className="w-4 h-4 text-slate-400" />
+          <span>Help Center</span>
+        </Link>
+
+        {/* User Card */}
+        <div className="flex items-center justify-between p-2 rounded-xl bg-[#F6F6F3] border border-[#EEEEEC] hover:border-slate-300 transition-all cursor-pointer">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={user.avatar}
+              alt={user.name}
+              className="w-8 h-8 rounded-lg object-cover border border-[#E0E0DC] shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="font-bold text-slate-900 text-xs truncate">
+                {user.name}
+              </div>
+              <div className="text-[10px] text-slate-400 truncate">
+                {user.email}
+              </div>
+            </div>
+          </div>
+          <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
         </div>
       </div>
     </aside>

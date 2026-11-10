@@ -8,11 +8,11 @@ import { AppHeader } from './AppHeader';
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AppProvider>
-      <div className="min-h-screen flex bg-slate-50 text-slate-900 font-sans antialiased">
+      <div className="min-h-screen flex bg-[#F8F8F6] text-[#141413] font-sans antialiased">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
           <AppHeader />
-          <main className="flex-1 p-6 lg:p-8 max-w-7xl w-full mx-auto">{children}</main>
+          <main className="flex-1 p-6 sm:p-8 max-w-[1400px] w-full mx-auto">{children}</main>
         </div>
       </div>
     </AppProvider>

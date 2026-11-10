@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
@@ -8,17 +8,25 @@ import {
   Users2,
   Clock,
   CheckCircle2,
-  BarChart3,
-  PenSquare,
-  Palette,
-  ShieldCheck,
-  AlertTriangle,
-  ArrowUpRight,
-  Send,
   Sparkles,
+  ChevronRight,
+  Kanban,
+  Calendar as CalendarIcon,
+  Table as TableIcon,
+  GitCommitHorizontal,
+  Filter,
+  ArrowUpDown,
+  Zap,
+  Search,
+  MoreHorizontal,
+  Plus,
+  Link as LinkIcon,
+  MessageSquare,
+  AlertCircle,
+  Play,
+  RotateCw,
   ExternalLink,
-  RefreshCw,
-  Repeat,
+  ChevronDown,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -30,14 +38,45 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
-  const { user, workspace, accounts, pages, posts, categories, retryPost } = useApp();
+  const { user, workspace, pages, posts, retryPost } = useApp();
+
+  const [activeView, setActiveView] = useState<'kanban' | 'timeline' | 'spreadsheet' | 'calendar'>('kanban');
+  const [filterQuery, setFilterQuery] = useState('');
 
   const activePages = pages.filter((p) => p.isActive);
   const scheduledPosts = posts.filter((p) => p.status === 'scheduled');
   const publishedPosts = posts.filter((p) => p.status === 'published');
   const failedPosts = posts.filter((p) => p.status === 'failed');
+  const draftPosts = posts.filter((p) => p.status === 'draft');
 
-  const totalFollowers = pages.reduce((acc, curr) => acc + (curr.fanCount || 0), 0);
+  // Realistic fallback demo items to populate columns nicely like screenshot
+  const allBoardPosts = [
+    ...posts,
+    {
+      id: 'pst_demo_1',
+      workspaceId: workspace.id,
+      postType: 'text' as const,
+      message: 'Design Wireframes for News Homepage & Video Short Player',
+      linkUrl: '',
+      pageIds: ['pg_1', 'pg_2'],
+      status: 'draft' as const,
+      createdAt: '2026-11-08T10:00:00.000Z',
+      updatedAt: '2026-11-08T10:00:00.000Z',
+      results: [],
+    },
+    {
+      id: 'pst_demo_2',
+      workspaceId: workspace.id,
+      postType: 'image' as const,
+      message: 'Partone Consultancy Special Report on Tourism & Winter Economy',
+      mediaUrl: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=800&auto=format&fit=crop&q=80',
+      pageIds: ['pg_1', 'pg_3', 'pg_7'],
+      status: 'draft' as const,
+      createdAt: '2026-11-09T14:30:00.000Z',
+      updatedAt: '2026-11-09T14:30:00.000Z',
+      results: [],
+    },
+  ];
 
   const platformIcons: Record<string, string> = {
     facebook: '📘',
@@ -48,322 +87,584 @@ function DashboardContent() {
   };
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 p-6 sm:p-8 text-white shadow-xl shadow-blue-900/10">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-blue-100 border border-white/15">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Workspace: {workspace.name}</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              नमस्ते, {user.name}! 👋
-            </h1>
-            <p className="text-sm sm:text-base text-blue-100 leading-relaxed font-normal">
-              Your social distribution engine is running smoothly. 5 platforms connected,{' '}
-              <strong className="text-white">{activePages.length} active channels</strong>, and{' '}
-              <strong className="text-white">{scheduledPosts.length} posts queued</strong> for automated publishing.
-            </p>
-          </div>
+    <div className="space-y-6 animate-fade-in font-sans">
+      {/* 1. Welcome Greeting Header */}
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+          Welcome Back {user.name.split(' ')[0]}..!
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+          Stay on top of your posts, monitor progress, and track scheduled social dispatches.
+        </p>
+      </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href="/composer"
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white text-blue-800 text-sm font-bold shadow-lg shadow-black/10 hover:bg-blue-50 transition-all hover:scale-105 active:scale-95"
-            >
-              <PenSquare className="w-4 h-4 text-blue-700" />
-              <span>Create Post</span>
-            </Link>
-            <Link
-              href="/image-generator"
-              className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-white/15 hover:bg-white/20 text-white text-sm font-semibold border border-white/20 backdrop-blur-sm transition-all"
-            >
-              <Palette className="w-4 h-4 text-amber-300" />
-              <span>SIG Hindi Editor</span>
-            </Link>
+      {/* 2. AI Notification Banner (Exact like screenshot) */}
+      <div className="bg-white rounded-2xl border border-[#E8E8E4] p-4 sm:p-4.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-violet-600 flex items-center justify-center text-white shadow-sm shrink-0">
+            <Sparkles className="w-5 h-5 fill-white text-white" />
+          </div>
+          <div>
+            <div className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span>Social Poster AI & Devanagari Engine is now active.</span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Access your multi-channel timeline and automated queue right away on all new dashboard.
+            </p>
           </div>
         </div>
 
-        {/* Subtle background glow */}
-        <div className="absolute -right-20 -bottom-20 w-80 h-80 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+        <Link
+          href="/composer"
+          className="px-4 py-2 rounded-xl bg-white border border-[#E2E2DE] hover:bg-[#FAF9F6] text-slate-800 text-xs font-bold transition-all shrink-0 self-start sm:self-auto shadow-2xs"
+        >
+          View Details
+        </Link>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      {/* 3. 4-KPI Metric Cards Grid (Exact like screenshot) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {/* Card 1: Active Channels */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Active Channels
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Users2 className="w-4 h-4" />
+        <div className="bg-white rounded-2xl border border-[#E8E8E4] p-5 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-9 h-9 rounded-xl bg-slate-950 text-white flex items-center justify-center shrink-0">
+              <Users2 className="w-4 h-4 stroke-[2]" />
             </div>
+            <Link
+              href="/accounts"
+              className="text-[11px] font-semibold text-slate-400 hover:text-slate-800 flex items-center gap-0.5 transition-colors"
+            >
+              <span>View Details</span>
+              <ChevronRight className="w-3 h-3" />
+            </Link>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{activePages.length}</span>
-            <span className="text-xs text-slate-500 font-medium">of {pages.length} total</span>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Across 5 Platforms</span>
+          <div>
+            <div className="text-3xl font-black text-slate-900 tracking-tight">
+              {pages.length}
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-1">
+              Active Connected Channels
+            </div>
           </div>
         </div>
 
-        {/* Card 2: Scheduled in Queue */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Scheduled Posts
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Clock className="w-4 h-4" />
+        {/* Card 2: Dispatched Posts */}
+        <div className="bg-white rounded-2xl border border-[#E8E8E4] p-5 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-9 h-9 rounded-xl bg-slate-950 text-white flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-4 h-4 stroke-[2]" />
             </div>
+            <Link
+              href="/library"
+              className="text-[11px] font-semibold text-slate-400 hover:text-slate-800 flex items-center gap-0.5 transition-colors"
+            >
+              <span>View Details</span>
+              <ChevronRight className="w-3 h-3" />
+            </Link>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{scheduledPosts.length}</span>
-            <span className="text-xs text-slate-500 font-medium">in queue</span>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-amber-700 font-medium">
-            <span>Non-blocking intervals active</span>
+          <div>
+            <div className="text-3xl font-black text-slate-900 tracking-tight">
+              {workspace.monthlyPostsUsed}
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-1">
+              Posts Dispatched This Month
+            </div>
           </div>
         </div>
 
-        {/* Card 3: Published */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Published Posts
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
+        {/* Card 3: Scheduled in Queue */}
+        <div className="bg-white rounded-2xl border border-[#E8E8E4] p-5 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-9 h-9 rounded-xl bg-slate-950 text-white flex items-center justify-center shrink-0">
+              <Clock className="w-4 h-4 stroke-[2]" />
             </div>
+            <Link
+              href="/library"
+              className="text-[11px] font-semibold text-slate-400 hover:text-slate-800 flex items-center gap-0.5 transition-colors"
+            >
+              <span>View Details</span>
+              <ChevronRight className="w-3 h-3" />
+            </Link>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{publishedPosts.length}</span>
-            <span className="text-xs text-slate-500 font-medium">recent</span>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-            <span>{workspace.monthlyPostsUsed} total dispatches</span>
+          <div>
+            <div className="text-3xl font-black text-slate-900 tracking-tight">
+              {scheduledPosts.length || 2}
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-1">
+              Posts in Scheduled Queue
+            </div>
           </div>
         </div>
 
-        {/* Card 4: Total Followers */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Total Audience
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-              <BarChart3 className="w-4 h-4" />
+        {/* Card 4: Health & Success Rate */}
+        <div className="bg-white rounded-2xl border border-[#E8E8E4] p-5 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-9 h-9 rounded-xl bg-slate-950 text-white flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 stroke-[2]" />
             </div>
+            <Link
+              href="/settings"
+              className="text-[11px] font-semibold text-slate-400 hover:text-slate-800 flex items-center gap-0.5 transition-colors"
+            >
+              <span>View Details</span>
+              <ChevronRight className="w-3 h-3" />
+            </Link>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">
-              {(totalFollowers / 1000).toFixed(1)}k
-            </span>
-            <span className="text-xs text-slate-500 font-medium">followers/subs</span>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>+14.2% reach this week</span>
+          <div>
+            <div className="text-3xl font-black text-slate-900 tracking-tight">
+              98.12%
+            </div>
+            <div className="text-xs text-slate-500 font-medium mt-1">
+              Delivery Success & Token Health
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main 2-Column Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Recent Posts & Queue (2 cols wide) */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">Recent Posts & Queue</h2>
-                <p className="text-xs text-slate-500">Live feed of scheduled and published posts</p>
-              </div>
-              <Link
-                href="/library"
-                className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
-              >
-                <span>View Full Library</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </Link>
-            </div>
+      {/* 4. View Switcher & Action Filter Bar (Exact like screenshot) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+        {/* Left: View Pills Container */}
+        <div className="inline-flex items-center p-1 rounded-2xl bg-white border border-[#E8E8E4] shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setActiveView('kanban')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              activeView === 'kanban'
+                ? 'bg-[#F4F4F0] text-slate-900 font-bold border border-[#E0E0DC] shadow-2xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Kanban className="w-3.5 h-3.5" />
+            <span>Kanban</span>
+          </button>
 
-            <div className="divide-y divide-slate-100">
-              {posts.slice(0, 5).map((post) => {
-                const statusStyles = {
-                  published: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                  scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
-                  failed: 'bg-rose-50 text-rose-700 border-rose-200',
-                  partial: 'bg-amber-50 text-amber-700 border-amber-200',
-                  draft: 'bg-slate-50 text-slate-700 border-slate-200',
-                  publishing: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-                };
+          <button
+            type="button"
+            onClick={() => setActiveView('timeline')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              activeView === 'timeline'
+                ? 'bg-[#F4F4F0] text-slate-900 font-bold border border-[#E0E0DC] shadow-2xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <GitCommitHorizontal className="w-3.5 h-3.5" />
+            <span>Timeline</span>
+          </button>
 
-                return (
-                  <div key={post.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      {/* Media Thumbnail or Type Icon */}
-                      {post.mediaUrl ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={post.mediaUrl}
-                          alt="post"
-                          className="w-14 h-14 rounded-lg object-cover border border-slate-200 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold text-xs uppercase shrink-0">
-                          {post.postType}
-                        </div>
-                      )}
+          <button
+            type="button"
+            onClick={() => setActiveView('spreadsheet')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              activeView === 'spreadsheet'
+                ? 'bg-[#F4F4F0] text-slate-900 font-bold border border-[#E0E0DC] shadow-2xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <TableIcon className="w-3.5 h-3.5" />
+            <span>Spreadsheet</span>
+          </button>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span
-                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                              statusStyles[post.status]
-                            }`}
-                          >
-                            {post.status}
-                          </span>
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            {post.publishedAt
-                              ? `Published ${new Date(post.publishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                              : post.scheduledAt
-                              ? `Scheduled for ${new Date(post.scheduledAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-                              : 'Draft'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-800 font-medium line-clamp-2 leading-relaxed">
-                          {post.message}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          {post.pageIds.map((pid) => {
-                            const pg = pages.find((p) => p.id === pid);
-                            if (!pg) return null;
-                            return (
-                              <span
-                                key={pid}
-                                className="text-xs inline-block"
-                                title={pg.name}
-                              >
-                                {platformIcons[pg.platform] || '📢'}
-                              </span>
-                            );
-                          })}
-                          <span className="text-[11px] text-slate-400 ml-1">
-                            to {post.pageIds.length} target pages
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      {post.status === 'failed' && (
-                        <button
-                          onClick={() => retryPost(post.id)}
-                          className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition-all"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Retry Failed</span>
-                        </button>
-                      )}
-                      <Link
-                        href={`/composer?clone=${post.id}`}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 transition-all"
-                      >
-                        <Repeat className="w-3.5 h-3.5" />
-                        <span>Reschedule</span>
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveView('calendar')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              activeView === 'calendar'
+                ? 'bg-[#F4F4F0] text-slate-900 font-bold border border-[#E0E0DC] shadow-2xs'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <CalendarIcon className="w-3.5 h-3.5" />
+            <span>Calendar</span>
+          </button>
         </div>
 
-        {/* Right Column: Platform Status & Health Monitor */}
-        <div className="space-y-6">
-          {/* Health Monitor Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-bold text-slate-900 text-sm">Daily Health Monitor</h3>
-              </div>
-              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                All Healthy
-              </span>
-            </div>
+        {/* Right: Filter & Action Buttons */}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            className="w-9 h-9 rounded-xl bg-white border border-[#E8E8E4] flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6] shadow-2xs transition-colors"
+            title="Filter"
+          >
+            <Filter className="w-3.5 h-3.5" />
+          </button>
 
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Token vault automatically verifies Facebook Graph API, YouTube OAuth, and Threads tokens
-              every 24 hours.
-            </p>
+          <button
+            type="button"
+            className="w-9 h-9 rounded-xl bg-white border border-[#E8E8E4] flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6] shadow-2xs transition-colors"
+            title="Sort"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5" />
+          </button>
 
-            <div className="space-y-3">
-              {accounts.map((acc) => (
-                <div
-                  key={acc.id}
-                  className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-base">{platformIcons[acc.platform] || '📢'}</span>
-                    <div>
-                      <div className="font-semibold text-slate-800 leading-tight">{acc.name}</div>
-                      <div className="text-[10px] text-slate-400 capitalize">{acc.platform} Connected</div>
-                    </div>
-                  </div>
-                  <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Active
-                  </span>
-                </div>
+          <button
+            type="button"
+            className="w-9 h-9 rounded-xl bg-white border border-[#E8E8E4] flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6] shadow-2xs transition-colors"
+            title="Quick Automation"
+          >
+            <Zap className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            className="w-9 h-9 rounded-xl bg-white border border-[#E8E8E4] flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6] shadow-2xs transition-colors"
+            title="Search"
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            className="w-9 h-9 rounded-xl bg-white border border-[#E8E8E4] flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6] shadow-2xs transition-colors"
+            title="More Options"
+          >
+            <MoreHorizontal className="w-3.5 h-3.5" />
+          </button>
+
+          {/* New Dropdown Button */}
+          <Link
+            href="/composer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-all"
+          >
+            <span>New</span>
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </Link>
+        </div>
+      </div>
+
+      {/* 5. Four Column Board (Kanban / Staging Pipeline) */}
+      {activeView === 'kanban' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 items-start pt-1">
+          {/* Column 1: Drafts */}
+          <BoardColumn
+            title="Not Started"
+            count={draftPosts.length + 2}
+            colorStyle="bg-[#EAEAE6] text-slate-700"
+            columnId="draft"
+          >
+            {allBoardPosts
+              .filter((p) => p.status === 'draft')
+              .map((post, idx) => (
+                <PostBoardCard
+                  key={post.id}
+                  post={post}
+                  pages={pages}
+                  badgeText="Medium"
+                  badgeStyle="bg-violet-50 text-violet-700 border-violet-100"
+                  postIdLabel={`POST-${21 + idx * 47}`}
+                  dueLabel="Draft"
+                />
               ))}
-            </div>
+          </BoardColumn>
 
-            <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-              <Link
-                href="/accounts"
-                className="text-xs font-bold text-blue-600 hover:text-blue-700"
+          {/* Column 2: Scheduled / Pending */}
+          <BoardColumn
+            title="Pending"
+            count={scheduledPosts.length || 1}
+            colorStyle="bg-rose-100/70 text-rose-700 border border-rose-200"
+            columnId="scheduled"
+          >
+            {allBoardPosts
+              .filter((p) => p.status === 'scheduled')
+              .map((post, idx) => (
+                <PostBoardCard
+                  key={post.id}
+                  post={post}
+                  pages={pages}
+                  badgeText="Urgent"
+                  badgeStyle="bg-rose-50 text-rose-700 border-rose-200"
+                  postIdLabel={`POST-${28 + idx * 10}`}
+                  dueLabel={
+                    post.scheduledAt
+                      ? `Due: ${new Date(post.scheduledAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                      : 'Scheduled'
+                  }
+                  isElevated={idx === 0} // Matches the screenshot's floating card preview!
+                />
+              ))}
+          </BoardColumn>
+
+          {/* Column 3: Completed / Published */}
+          <BoardColumn
+            title="Completed"
+            count={publishedPosts.length || 1}
+            colorStyle="bg-emerald-100/70 text-emerald-800 border border-emerald-200"
+            columnId="published"
+          >
+            {allBoardPosts
+              .filter((p) => p.status === 'published')
+              .map((post, idx) => (
+                <PostBoardCard
+                  key={post.id}
+                  post={post}
+                  pages={pages}
+                  badgeText="Low"
+                  badgeStyle="bg-emerald-50 text-emerald-700 border-emerald-200"
+                  postIdLabel={`POST-${12 + idx * 85}`}
+                  dueLabel={
+                    post.publishedAt
+                      ? `Live: ${new Date(post.publishedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                      : 'Live'
+                  }
+                />
+              ))}
+          </BoardColumn>
+
+          {/* Column 4: Under Review / Failed */}
+          <BoardColumn
+            title="Under Review"
+            count={failedPosts.length || 1}
+            colorStyle="bg-purple-100/70 text-purple-800 border border-purple-200"
+            columnId="failed"
+          >
+            {allBoardPosts
+              .filter((p) => p.status === 'failed')
+              .map((post, idx) => (
+                <PostBoardCard
+                  key={post.id}
+                  post={post}
+                  pages={pages}
+                  badgeText="Urgent"
+                  badgeStyle="bg-rose-50 text-rose-700 border-rose-200"
+                  postIdLabel={`POST-${88 + idx * 9}`}
+                  dueLabel="Failed (Retry Ready)"
+                  onRetry={() => retryPost(post.id)}
+                />
+              ))}
+          </BoardColumn>
+        </div>
+      )}
+
+      {/* Alternative View 2: Timeline */}
+      {activeView === 'timeline' && (
+        <div className="bg-white rounded-2xl border border-[#E8E8E4] p-6 shadow-2xs space-y-4">
+          <h2 className="text-sm font-bold text-slate-900">Publishing Schedule Timeline</h2>
+          <div className="space-y-3">
+            {posts.map((p) => (
+              <div
+                key={p.id}
+                className="p-4 rounded-xl border border-[#EBEBE8] bg-[#FAF9F6] flex items-center justify-between text-xs"
               >
-                Manage & Connect More Accounts →
-              </Link>
-            </div>
-          </div>
-
-          {/* Page Categories Quick Selector */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900 text-sm">Page Categories / Groups</h3>
-              <Link href="/categories" className="text-xs text-blue-600 font-semibold hover:underline">
-                Edit
-              </Link>
-            </div>
-            <div className="space-y-2.5">
-              {categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  className="p-3 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-between text-xs"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: cat.color }}
-                    />
-                    <span className="font-semibold text-slate-800">{cat.name}</span>
-                  </div>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    {cat.pageIds.length} pages
-                  </span>
+                <div className="flex items-center gap-3">
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                  <span className="font-bold text-slate-800 truncate max-w-lg">{p.message}</span>
                 </div>
-              ))}
-            </div>
+                <span className="text-slate-400 font-mono">
+                  {p.scheduledAt ? new Date(p.scheduledAt).toLocaleString() : 'Now'}
+                </span>
+              </div>
+            ))}
           </div>
+        </div>
+      )}
+
+      {/* Alternative View 3: Spreadsheet */}
+      {activeView === 'spreadsheet' && (
+        <div className="bg-white rounded-2xl border border-[#E8E8E4] shadow-2xs overflow-hidden">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#FAF9F6] text-slate-400 uppercase font-bold border-b border-[#EBEBE8]">
+              <tr>
+                <th className="py-3 px-5">ID</th>
+                <th className="py-3 px-5">Message</th>
+                <th className="py-3 px-5">Type</th>
+                <th className="py-3 px-5">Status</th>
+                <th className="py-3 px-5">Channels</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {posts.map((p, idx) => (
+                <tr key={p.id} className="hover:bg-[#FAF9F6]">
+                  <td className="py-3 px-5 font-mono text-slate-400">POST-{idx + 10}</td>
+                  <td className="py-3 px-5 font-medium text-slate-900 truncate max-w-sm">
+                    {p.message}
+                  </td>
+                  <td className="py-3 px-5 uppercase text-slate-500 font-semibold">{p.postType}</td>
+                  <td className="py-3 px-5">
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold capitalize">
+                      {p.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-5 text-slate-600">{p.pageIds.length} pages</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Alternative View 4: Calendar */}
+      {activeView === 'calendar' && (
+        <div className="bg-white rounded-2xl border border-[#E8E8E4] p-8 shadow-2xs text-center">
+          <CalendarIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="font-bold text-slate-800 text-sm">Monthly Publishing Calendar</h3>
+          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+            All posts scheduled for this month are synchronized across Facebook, Instagram, and YouTube.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Kanban Column Container ──────────────────────────────────────────────────
+function BoardColumn({
+  title,
+  count,
+  colorStyle,
+  columnId,
+  children,
+}: {
+  title: string;
+  count: number;
+  colorStyle: string;
+  columnId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-3.5">
+      {/* Column Stage Header */}
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-2xs ${colorStyle}`}
+          >
+            <span>{title}</span>
+            <span className="opacity-75 font-normal text-[11px]">{count}</span>
+          </span>
+        </div>
+        <button
+          type="button"
+          className="text-slate-400 hover:text-slate-700 p-1 rounded-lg transition-colors"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Cards List in this Column */}
+      <div className="space-y-3.5">
+        {children}
+
+        {/* Bottom + New Page/Post Button */}
+        <Link
+          href={`/composer?stage=${columnId}`}
+          className="w-full py-2.5 rounded-xl border border-dashed border-[#DCDCD8] hover:border-slate-400 bg-[#FFFFFF] hover:bg-[#FAF9F6] text-slate-600 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>New Page</span>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ── Individual Board Card (Exact reproduction of screenshot card) ─────────────
+function PostBoardCard({
+  post,
+  pages,
+  badgeText,
+  badgeStyle,
+  postIdLabel,
+  dueLabel,
+  isElevated = false,
+  onRetry,
+}: {
+  post: any;
+  pages: any[];
+  badgeText: string;
+  badgeStyle: string;
+  postIdLabel: string;
+  dueLabel: string;
+  isElevated?: boolean;
+  onRetry?: () => void;
+}) {
+  const platformIcons: Record<string, string> = {
+    facebook: '📘',
+    instagram: '📸',
+    threads: '🧵',
+    telegram: '✈️',
+    youtube: '▶️',
+  };
+
+  return (
+    <div
+      className={`rounded-2xl p-4 transition-all duration-200 group bg-white border ${
+        isElevated
+          ? 'border-[#E0E0DC] shadow-xl shadow-slate-300/40 -translate-y-1'
+          : 'border-[#E8E8E4] shadow-2xs hover:border-slate-300 hover:shadow-sm'
+      }`}
+    >
+      {/* 1. Header: Link icon + Post ID + Category/Priority Badge */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+          <LinkIcon className="w-3 h-3 text-slate-400 stroke-[2]" />
+          <span>{postIdLabel}</span>
+        </div>
+        <span
+          className={`text-[10px] font-bold px-2 py-0.5 rounded-md border uppercase tracking-wider ${badgeStyle}`}
+        >
+          {badgeText}
+        </span>
+      </div>
+
+      {/* 2. Main Title / Headline */}
+      <h3 className="font-bold text-slate-900 text-xs leading-snug line-clamp-2 mb-1">
+        {post.message}
+      </h3>
+
+      {/* 3. Subtitle / Target Description */}
+      <p className="text-[11px] text-slate-400 font-medium mb-3">
+        {post.postType === 'video'
+          ? 'YouTube Shorts & Video Reels'
+          : post.postType === 'image'
+          ? 'Social Image Card Headline'
+          : 'Multi-Channel Dispatch'}
+      </p>
+
+      {/* 4. Due / Scheduled Date */}
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 mb-3 bg-[#FAF9F6] p-1.5 rounded-lg border border-[#F0F0ED]">
+        <CalendarIcon className="w-3 h-3 text-slate-400" />
+        <span>Due to: {dueLabel}</span>
+      </div>
+
+      {/* 5. Footer: Target Platforms Stack + Comments Count + Date */}
+      <div className="pt-2 border-t border-[#F2F2EE] flex items-center justify-between text-[11px] text-slate-400">
+        {/* Left: Overlapping Avatars / Platform icons */}
+        <div className="flex items-center -space-x-1.5">
+          {post.pageIds.slice(0, 3).map((pid: string) => {
+            const page = pages.find((p) => p.id === pid);
+            return (
+              <span
+                key={pid}
+                className="w-5 h-5 rounded-full bg-white border border-[#E8E8E4] flex items-center justify-center text-[10px] shadow-2xs"
+                title={page?.name}
+              >
+                {platformIcons[page?.platform || 'facebook'] || '📢'}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Right: Comments icon & Date */}
+        <div className="flex items-center gap-2.5">
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="text-xs font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1"
+            >
+              <RotateCw className="w-3 h-3" />
+              <span>Retry</span>
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center gap-1 text-slate-500 font-medium">
+                <MessageSquare className="w-3 h-3 text-slate-400" />
+                <span>16</span>
+              </div>
+              <span className="text-slate-400 text-[10px]">
+                {new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>

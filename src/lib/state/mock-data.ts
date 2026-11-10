@@ -38,8 +38,8 @@ export const INITIAL_ACCOUNTS: SocialAccount[] = [
     name: 'Suzal Dhiman (Facebook)',
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
     status: 'active',
-    tokenExpiresAt: new Date(Date.now() + 52 * 24 * 60 * 60 * 1000).toISOString(),
-    lastCheckedAt: new Date().toISOString(),
+    tokenExpiresAt: '2026-12-30T10:00:00.000Z',
+    lastCheckedAt: '2026-11-10T12:00:00.000Z',
   },
   {
     id: 'acc_ig_1',
@@ -48,7 +48,7 @@ export const INITIAL_ACCOUNTS: SocialAccount[] = [
     name: '@himachali_samachar (Instagram)',
     avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=80',
     status: 'active',
-    lastCheckedAt: new Date().toISOString(),
+    lastCheckedAt: '2026-11-10T12:00:00.000Z',
   },
   {
     id: 'acc_yt_1',
@@ -57,7 +57,7 @@ export const INITIAL_ACCOUNTS: SocialAccount[] = [
     name: 'Himachali Samachar (YouTube)',
     avatarUrl: 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=100&auto=format&fit=crop&q=80',
     status: 'active',
-    lastCheckedAt: new Date().toISOString(),
+    lastCheckedAt: '2026-11-10T12:00:00.000Z',
   },
   {
     id: 'acc_tg_1',
@@ -66,7 +66,7 @@ export const INITIAL_ACCOUNTS: SocialAccount[] = [
     name: 'Himachal Alert Bot (@HNS_Alerts)',
     avatarUrl: 'https://images.unsplash.com/photo-1614680376593-902f749f7ffc?w=100&auto=format&fit=crop&q=80',
     status: 'active',
-    lastCheckedAt: new Date().toISOString(),
+    lastCheckedAt: '2026-11-10T12:00:00.000Z',
   },
   {
     id: 'acc_th_1',
@@ -75,7 +75,7 @@ export const INITIAL_ACCOUNTS: SocialAccount[] = [
     name: '@himachali_samachar (Threads)',
     avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=80',
     status: 'active',
-    lastCheckedAt: new Date().toISOString(),
+    lastCheckedAt: '2026-11-10T12:00:00.000Z',
   },
 ];
 
@@ -194,7 +194,7 @@ export const INITIAL_POSTS: Post[] = [
     commentText: '👉 विस्तृत रिपोर्ट व मौसम विभाग की एडवाइजरी: https://khabarmonkey.com/himachal-snowfall-alert-next-48-hours',
     pageIds: ['pg_1', 'pg_2', 'pg_3', 'pg_6'],
     status: 'published',
-    publishedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    publishedAt: '2026-11-10T15:30:00.000Z',
     results: [
       {
         pageId: 'pg_1',
@@ -203,7 +203,7 @@ export const INITIAL_POSTS: Post[] = [
         status: 'success',
         externalPostId: 'fb_post_9281726351',
         commentId: 'fb_comm_0192837',
-        timestamp: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+        timestamp: '2026-11-10T15:30:00.000Z',
       },
       {
         pageId: 'pg_2',
@@ -212,7 +212,7 @@ export const INITIAL_POSTS: Post[] = [
         status: 'success',
         externalPostId: 'fb_post_9281726352',
         commentId: 'fb_comm_0192838',
-        timestamp: new Date(Date.now() - 3 * 3600 * 1000 + 45000).toISOString(),
+        timestamp: '2026-11-10T15:31:00.000Z',
       },
       {
         pageId: 'pg_3',
@@ -220,7 +220,7 @@ export const INITIAL_POSTS: Post[] = [
         pageName: 'Devbhoomi Today',
         status: 'success',
         externalPostId: 'fb_post_9281726353',
-        timestamp: new Date(Date.now() - 3 * 3600 * 1000 + 90000).toISOString(),
+        timestamp: '2026-11-10T15:32:00.000Z',
       },
       {
         pageId: 'pg_6',
@@ -228,11 +228,11 @@ export const INITIAL_POSTS: Post[] = [
         pageName: 'Telegram: Himachal News Channel',
         status: 'success',
         externalPostId: 'tg_msg_4492',
-        timestamp: new Date(Date.now() - 3 * 3600 * 1000 + 120000).toISOString(),
+        timestamp: '2026-11-10T15:33:00.000Z',
       },
     ],
-    createdAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    createdAt: '2026-11-10T14:00:00.000Z',
+    updatedAt: '2026-11-10T15:33:00.000Z',
   },
   {
     id: 'pst_102',
@@ -243,12 +243,12 @@ export const INITIAL_POSTS: Post[] = [
     thumbnailUrl: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=720&auto=format&fit=crop&q=80',
     pageIds: ['pg_4', 'pg_5'],
     status: 'scheduled',
-    scheduledAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+    scheduledAt: '2026-11-10T21:00:00.000Z',
     intervalMinSeconds: 30,
     intervalMaxSeconds: 90,
     results: [],
-    createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
+    createdAt: '2026-11-10T17:00:00.000Z',
+    updatedAt: '2026-11-10T17:00:00.000Z',
   },
   {
     id: 'pst_103',
@@ -266,7 +266,7 @@ export const INITIAL_POSTS: Post[] = [
         pageName: 'Himachali Samachar (Official)',
         status: 'failed',
         error: 'OAuthException: (#368) Post temporarily blocked by automated security check.',
-        timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+        timestamp: '2026-11-10T13:00:00.000Z',
       },
       {
         pageId: 'pg_7',
@@ -274,11 +274,11 @@ export const INITIAL_POSTS: Post[] = [
         pageName: 'Threads: @himachali_samachar',
         status: 'success',
         externalPostId: 'th_msg_29104',
-        timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+        timestamp: '2026-11-10T13:00:00.000Z',
       },
     ],
-    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+    createdAt: '2026-11-10T12:00:00.000Z',
+    updatedAt: '2026-11-10T13:00:00.000Z',
   },
 ];
 
@@ -357,7 +357,7 @@ export const INITIAL_AUTOMATIONS: AutomationFeed[] = [
     targetCategoryId: 'cat_1',
     isActive: true,
     intervalMinutes: 15,
-    lastCheckedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    lastCheckedAt: '2026-11-10T17:45:00.000Z',
     itemsProcessed: 142,
     autoGenerateImage: true,
     sigTemplateId: 'tmpl_1',
@@ -370,7 +370,7 @@ export const INITIAL_AUTOMATIONS: AutomationFeed[] = [
     targetCategoryId: 'cat_1',
     isActive: true,
     intervalMinutes: 0, // Realtime Webhook
-    lastCheckedAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+    lastCheckedAt: '2026-11-10T17:30:00.000Z',
     itemsProcessed: 685,
     autoGenerateImage: true,
     sigTemplateId: 'tmpl_1',
