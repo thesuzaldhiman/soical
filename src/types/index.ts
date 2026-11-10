@@ -44,6 +44,7 @@ export interface SocialPage {
   fanCount: number;
   category?: string;
   isActive: boolean;
+  permissions?: string[];
   linkedInstagramId?: string;
   linkedInstagramName?: string;
 }

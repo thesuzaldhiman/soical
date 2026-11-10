@@ -44,6 +44,9 @@ interface AppContextType {
   addAccount: (platform: Platform, name: string) => void;
   removeAccount: (id: string) => void;
   togglePageActive: (id: string) => void;
+  disconnectPage: (id: string) => void;
+  updateUser: (userData: Partial<User>) => void;
+  updateWorkspace: (workspaceData: Partial<Workspace>) => void;
   createCategory: (name: string, color: string, pageIds: string[], tags: string[]) => void;
   updateCategory: (category: PageCategory) => void;
   deleteCategory: (id: string) => void;
@@ -62,7 +65,7 @@ const AppContext = createContext<AppContextType | null>(null);
 const STORAGE_KEY = 'sap_saas_app_state_v1';
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [user] = useState<User>(INITIAL_USER);
+  const [user, setUser] = useState<User>(INITIAL_USER);
   const [workspace, setWorkspace] = useState<Workspace>(INITIAL_WORKSPACE);
   const [accounts, setAccounts] = useState<SocialAccount[]>(INITIAL_ACCOUNTS);
   const [pages, setPages] = useState<SocialPage[]>(INITIAL_PAGES);
@@ -153,6 +156,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPages((prev) =>
       prev.map((p) => (p.id === id ? { ...p, isActive: !p.isActive } : p))
     );
+  };
+
+  const disconnectPage = (id: string) => {
+    setPages((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const updateUser = (userData: Partial<User>) => {
+    setUser((prev) => ({ ...prev, ...userData }));
+  };
+
+  const updateWorkspace = (workspaceData: Partial<Workspace>) => {
+    setWorkspace((prev) => ({ ...prev, ...workspaceData }));
   };
 
   const createCategory = (name: string, color: string, pageIds: string[], tags: string[]) => {
@@ -295,6 +310,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addAccount,
         removeAccount,
         togglePageActive,
+        disconnectPage,
+        updateUser,
+        updateWorkspace,
         createCategory,
         updateCategory,
         deleteCategory,

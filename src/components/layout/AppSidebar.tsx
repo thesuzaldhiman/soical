@@ -6,22 +6,11 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   PenSquare,
-  Palette,
-  Layers,
   Users2,
-  Tags,
-  Cpu,
-  BarChart3,
   Settings,
-  HelpCircle,
   Search,
   ChevronsUpDown,
-  Bell,
-  Sparkles,
   Zap,
-  Globe,
-  Radio,
-  ChevronDown,
 } from 'lucide-react';
 import { useApp } from '@/lib/context/app-context';
 
@@ -29,18 +18,10 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { user, workspace } = useApp();
 
-  const mainNav = [
-    { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-    { href: '/composer', label: 'Composer', icon: PenSquare },
-    { href: '/image-generator', label: 'Image Generator', icon: Palette, badge: 'SIG' },
-    { href: '/library', label: 'Post Library', icon: Layers },
-    { href: '/accounts', label: 'Channels', icon: Users2 },
-    { href: '/categories', label: 'Categories', icon: Tags },
-  ];
-
-  const toolsNav = [
-    { href: '/automations', label: 'Automations', icon: Cpu, countBadge: 5 },
-    { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  const navigation = [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/composer', label: 'Create Post', icon: PenSquare },
+    { href: '/accounts', label: 'Connected Accounts', icon: Users2 },
     { href: '/settings', label: 'Settings', icon: Settings },
   ];
 
@@ -57,7 +38,7 @@ export function AppSidebar() {
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-slate-900 text-sm tracking-tight truncate">
-                  Social Poster
+                  {workspace.name}
                 </span>
                 <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-slate-900 text-white leading-none">
                   Pro
@@ -85,99 +66,45 @@ export function AppSidebar() {
         </div>
       </div>
 
-      {/* 3. Navigation Links */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-6">
-        {/* Section: Dashboard */}
-        <div className="space-y-1">
-          <div className="px-3 py-1 flex items-center justify-between text-[11px] font-semibold text-slate-400">
-            <span>Dashboard</span>
-            <ChevronDown className="w-3 h-3" />
-          </div>
-
-          {mainNav.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-[#F4F4F0] text-slate-900 font-bold shadow-2xs border border-[#ECECE8]'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon
-                    className={`w-4 h-4 ${
-                      isActive ? 'text-slate-900 stroke-[2.2]' : 'text-slate-400 stroke-[1.8]'
-                    }`}
-                  />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge && (
-                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
-                    {item.badge}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
+      {/* 3. Minimal Core Navigation Links */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+        <div className="px-3 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+          Menu
         </div>
 
-        {/* Section: Tools */}
-        <div className="space-y-1">
-          <div className="px-3 py-1 flex items-center justify-between text-[11px] font-semibold text-slate-400">
-            <span>Tools</span>
-            <ChevronDown className="w-3 h-3" />
-          </div>
+        {navigation.map((item) => {
+          const isActive = pathname === item.href;
+          const Icon = item.icon;
 
-          {toolsNav.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-[#F4F4F0] text-slate-900 font-bold shadow-2xs border border-[#ECECE8]'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon
-                    className={`w-4 h-4 ${
-                      isActive ? 'text-slate-900 stroke-[2.2]' : 'text-slate-400 stroke-[1.8]'
-                    }`}
-                  />
-                  <span>{item.label}</span>
-                </div>
-                {item.countBadge && (
-                  <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                    {item.countBadge}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                isActive
+                  ? 'bg-[#F4F4F0] text-slate-900 font-bold shadow-2xs border border-[#ECECE8]'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6]'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Icon
+                  className={`w-4 h-4 ${
+                    isActive ? 'text-slate-900 stroke-[2.2]' : 'text-slate-400 stroke-[1.8]'
+                  }`}
+                />
+                <span>{item.label}</span>
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
-      {/* 4. Bottom Footer & Profile */}
-      <div className="p-3 border-t border-[#F0F0ED] space-y-2">
+      {/* 4. Bottom User Profile Card */}
+      <div className="p-3 border-t border-[#F0F0ED]">
         <Link
           href="/settings"
-          className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6] transition-colors"
+          className="flex items-center justify-between p-2 rounded-xl bg-[#F6F6F3] border border-[#EEEEEC] hover:border-slate-300 transition-all cursor-pointer block"
         >
-          <HelpCircle className="w-4 h-4 text-slate-400" />
-          <span>Help Center</span>
-        </Link>
-
-        {/* User Card */}
-        <div className="flex items-center justify-between p-2 rounded-xl bg-[#F6F6F3] border border-[#EEEEEC] hover:border-slate-300 transition-all cursor-pointer">
           <div className="flex items-center gap-2.5 min-w-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -195,7 +122,7 @@ export function AppSidebar() {
             </div>
           </div>
           <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
-        </div>
+        </Link>
       </div>
     </aside>
   );
