@@ -1,26 +1,32 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
+import { Platform, Post } from '@/types';
 import {
-  TrendingUp,
-  Users,
-  Play,
-  Heart,
   Calendar,
+  CheckCircle2,
+  Clock,
+  Layers,
+  Share2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ArrowUpRight,
-  Copy,
-  Bookmark,
-  Sparkles,
-  Share2,
+  MoreHorizontal,
+  RotateCw,
+  Trash2,
+  Repeat,
+  Play,
+  Plus,
   ExternalLink,
-  Check,
-  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
+  Filter,
+  ArrowUpRight,
+  Send,
+  MessageSquare,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -32,64 +38,122 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
-  const { user, posts, pages, accounts } = useApp();
+  const { user, workspace, posts, pages, accounts, retryPost, deletePost } = useApp();
 
+  // Calendar View State
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
-  const [copiedCaptionId, setCopiedCaptionId] = useState<string | null>(null);
-  const [savedCaptionIds, setSavedCaptionIds] = useState<string[]>([]);
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(2); // Default Wednesday (index 2)
 
-  const handleCopyCaption = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedCaptionId(id);
-    setTimeout(() => setCopiedCaptionId(null), 2000);
+  // Recent Posts Grid Filters
+  const [gridFilter, setGridFilter] = useState<'all' | 'published' | 'scheduled' | 'failed'>('all');
+  const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(null);
+
+  // Dynamic Live Statistics
+  const totalAccounts = accounts.length;
+  const totalPages = pages.length;
+  const publishedCount = posts.filter((p) => p.status === 'published').length;
+  const scheduledCount = posts.filter((p) => p.status === 'scheduled').length;
+  const failedCount = posts.filter((p) => p.status === 'failed').length;
+  const successRate = posts.length > 0 ? Math.round((publishedCount / posts.length) * 100) : 100;
+
+  // Platform icon mappings
+  const platformIcons: Record<string, string> = {
+    facebook: '📘',
+    instagram: '📸',
+    threads: '🧵',
+    telegram: '✈️',
+    youtube: '▶️',
   };
 
-  const handleToggleSave = (id: string) => {
-    setSavedCaptionIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
+  const platformColors: Record<string, string> = {
+    facebook: '#1877F2',
+    instagram: '#FF007A',
+    threads: '#00C2FF',
+    telegram: '#0088CC',
+    youtube: '#FF0000',
   };
+
+  // Calendar Days Definition (7 days of current week)
+  const calendarDays = [
+    { day: 'Mon', date: '10', full: 'Nov 10' },
+    { day: 'Tue', date: '11', full: 'Nov 11' },
+    { day: 'Wed', date: '12', full: 'Nov 12' },
+    { day: 'Thu', date: '13', full: 'Nov 13' },
+    { day: 'Fri', date: '14', full: 'Nov 14' },
+    { day: 'Sat', date: '15', full: 'Nov 15' },
+    { day: 'Sun', date: '16', full: 'Nov 16' },
+  ];
+
+  // Filtered posts for Recent Posts Grid
+  const filteredGridPosts = useMemo(() => {
+    return posts.filter((p) => {
+      if (gridFilter === 'all') return true;
+      return p.status === gridFilter;
+    });
+  }, [posts, gridFilter]);
+
+  // Scheduled posts for calendar
+  const scheduledPosts = useMemo(() => {
+    return posts.filter((p) => p.status === 'scheduled' || p.status === 'publishing');
+  }, [posts]);
 
   return (
-    <div className="space-y-6 font-sans animate-fade-in pb-4">
-      {/* 1. Header: Welcome & Date Range */}
+    <div className="space-y-7 font-sans animate-fade-in pb-8">
+      {/* 1. Header: Welcome & Quick Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
-            Hey Ava! 👋
+            Welcome Back, {user.name.split(' ')[0]}! 👋
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Here&apos;s what&apos;s happening with your social channels today.
+            Workspace: <strong className="text-slate-800">{workspace.name}</strong> • Multi-channel auto-dispatch active across {totalPages} pages.
           </p>
         </div>
 
-        {/* Date Range Selector Pill */}
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-[#EEF1F6] shadow-2xs self-start sm:self-auto text-xs font-bold text-slate-700 hover:border-slate-300 transition-colors cursor-pointer">
-          <Calendar className="w-4 h-4 text-slate-400" />
-          <span>May 12 – May 18, 2026</span>
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-1" />
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          {/* Date Range Picker Pill */}
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-[#EEF1F6] shadow-2xs text-xs font-bold text-slate-700 hover:border-slate-300 transition-colors cursor-pointer">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <span>Nov 10 – Nov 16, 2026</span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-0.5" />
+          </div>
+
+          {/* + Create Post Button */}
+          <Link
+            href="/composer"
+            className="inline-flex items-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] text-white text-xs font-bold transition-all shadow-[0_4px_14px_rgba(255,0,122,0.3)] hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Create Post</span>
+          </Link>
         </div>
       </div>
 
       {/* 2. Top 4 Overview Metric Cards with Sparklines */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        {/* Card 1: Total Engagement */}
+        {/* Card 1: Total Published Posts */}
         <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:shadow-md transition-all flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#FF007A] to-[#FF4E98] flex items-center justify-center text-white shadow-[0_4px_10px_rgba(255,0,122,0.25)]">
-              <TrendingUp className="w-5 h-5 stroke-[2.2]" />
+              <CheckCircle2 className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <span className="text-[11px] font-bold text-slate-400">Total Engagement</span>
+            <Link
+              href="/library?status=published"
+              className="text-[11px] font-bold text-slate-400 hover:text-[#FF007A] flex items-center gap-0.5 transition-colors"
+            >
+              <span>View All</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
 
           <div className="mt-4 flex items-end justify-between">
             <div>
               <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                24.8K
+                {publishedCount}
               </div>
               <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-500 mt-1">
-                <span>↗ 18.6%</span>
-                <span className="text-slate-400 font-normal">vs May 5 - May 11</span>
+                <span>↗ 14.2%</span>
+                <span className="text-slate-400 font-normal">published posts</span>
               </div>
             </div>
 
@@ -108,23 +172,29 @@ function DashboardContent() {
           </div>
         </div>
 
-        {/* Card 2: Followers */}
+        {/* Card 2: Scheduled in Queue */}
         <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:shadow-md transition-all flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#7928CA] to-[#9333EA] flex items-center justify-center text-white shadow-[0_4px_10px_rgba(121,40,202,0.25)]">
-              <Users className="w-5 h-5 stroke-[2.2]" />
+              <Clock className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <span className="text-[11px] font-bold text-slate-400">Followers</span>
+            <Link
+              href="/library?status=scheduled"
+              className="text-[11px] font-bold text-slate-400 hover:text-[#7928CA] flex items-center gap-0.5 transition-colors"
+            >
+              <span>View Queue</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
 
           <div className="mt-4 flex items-end justify-between">
             <div>
               <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                128.7K
+                {scheduledCount}
               </div>
-              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-500 mt-1">
-                <span>↗ 12.3%</span>
-                <span className="text-slate-400 font-normal">vs May 5 - May 11</span>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-blue-500 mt-1">
+                <span>● In Queue</span>
+                <span className="text-slate-400 font-normal">ready to dispatch</span>
               </div>
             </div>
 
@@ -143,23 +213,29 @@ function DashboardContent() {
           </div>
         </div>
 
-        {/* Card 3: Impressions */}
+        {/* Card 3: Active Connected Accounts */}
         <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:shadow-md transition-all flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#00C2FF] to-[#0284C7] flex items-center justify-center text-white shadow-[0_4px_10px_rgba(0,194,255,0.25)]">
-              <Play className="w-5 h-5 fill-white stroke-none ml-0.5" />
+              <Share2 className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <span className="text-[11px] font-bold text-slate-400">Impressions</span>
+            <Link
+              href="/accounts"
+              className="text-[11px] font-bold text-slate-400 hover:text-[#00C2FF] flex items-center gap-0.5 transition-colors"
+            >
+              <span>Manage</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
 
           <div className="mt-4 flex items-end justify-between">
             <div>
               <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                1.3M
+                {totalAccounts}
               </div>
               <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-500 mt-1">
-                <span>↗ 22.1%</span>
-                <span className="text-slate-400 font-normal">vs May 5 - May 11</span>
+                <span>{totalPages} Pages</span>
+                <span className="text-slate-400 font-normal">across platforms</span>
               </div>
             </div>
 
@@ -178,23 +254,25 @@ function DashboardContent() {
           </div>
         </div>
 
-        {/* Card 4: Avg. Engagement Rate */}
+        {/* Card 4: Delivery Success Rate */}
         <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:shadow-md transition-all flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#EC4899] to-[#F43F5E] flex items-center justify-center text-white shadow-[0_4px_10px_rgba(236,72,153,0.25)]">
-              <Heart className="w-5 h-5 fill-white stroke-none" />
+              <TrendingUp className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <span className="text-[11px] font-bold text-slate-400">Avg. Engagement Rate</span>
+            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+              Anti-Ban Active
+            </span>
           </div>
 
           <div className="mt-4 flex items-end justify-between">
             <div>
               <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                5.2%
+                {successRate}%
               </div>
               <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-500 mt-1">
-                <span>↗ 8.7%</span>
-                <span className="text-slate-400 font-normal">vs May 5 - May 11</span>
+                <span>0 API blocks</span>
+                <span className="text-slate-400 font-normal">this month</span>
               </div>
             </div>
 
@@ -214,18 +292,25 @@ function DashboardContent() {
         </div>
       </div>
 
-      {/* 3. Middle Section: Post Calendar (Wide) + Follower Growth + Platform Breakdown */}
+      {/* 3. Middle Section: Interactive Content Calendar + Platform Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* A. Post Calendar (Spans 5 cols on lg) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col justify-between space-y-4">
+        {/* A. Post Calendar & Scheduling Matrix (8 cols on lg) */}
+        <div className="lg:col-span-8 bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col justify-between space-y-4">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-[#F0F2F6]">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-[#FF007A]" />
-              <h3 className="font-extrabold text-sm text-slate-900">Post Calendar</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F0F2F6]">
+            <div>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#FF007A]" />
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Content Calendar & Publishing Slots
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                Visual publishing schedule mapped to your connected social channels.
+              </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-start sm:self-auto">
               {/* Week / Month Switcher */}
               <div className="inline-flex items-center p-0.5 rounded-lg bg-[#F6F8FD] border border-[#EEF1F6]">
                 <button
@@ -252,170 +337,180 @@ function DashboardContent() {
                 </button>
               </div>
 
-              {/* Today and Nav Arrows */}
-              <button
-                type="button"
-                className="px-2.5 py-1 rounded-lg bg-[#F6F8FD] hover:bg-[#EEF1F6] text-[11px] font-bold text-slate-700 transition-colors"
+              {/* Schedule Post Action */}
+              <Link
+                href="/composer"
+                className="px-2.5 py-1 rounded-lg bg-[#F6F8FD] hover:bg-[#EEF1F6] text-[11px] font-bold text-slate-700 transition-colors flex items-center gap-1"
               >
-                Today
-              </button>
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  className="w-6 h-6 rounded-md hover:bg-[#F6F8FD] flex items-center justify-center text-slate-500"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className="w-6 h-6 rounded-md hover:bg-[#F6F8FD] flex items-center justify-center text-slate-500"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+                <Plus className="w-3.5 h-3.5 text-[#FF007A]" />
+                <span>Add Post</span>
+              </Link>
             </div>
           </div>
 
-          {/* Days of Week Row */}
+          {/* Days of Week Header with Clickable Selection */}
           <div className="grid grid-cols-7 gap-1 text-center">
-            {[
-              { day: 'Mon', date: '12', active: false },
-              { day: 'Tue', date: '13', active: false },
-              { day: 'Wed', date: '14', active: true },
-              { day: 'Thu', date: '15', active: false },
-              { day: 'Fri', date: '16', active: false },
-              { day: 'Sat', date: '17', active: false },
-              { day: 'Sun', date: '18', active: false },
-            ].map((d, i) => (
-              <div key={i} className="flex flex-col items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
-                <span
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black mt-1 ${
-                    d.active
-                      ? 'bg-[#7928CA] text-white shadow-[0_2px_8px_rgba(121,40,202,0.4)]'
-                      : 'text-slate-700 hover:bg-[#F6F8FD]'
+            {calendarDays.map((d, index) => {
+              const isSelected = selectedDayIndex === index;
+              return (
+                <button
+                  key={d.day}
+                  type="button"
+                  onClick={() => setSelectedDayIndex(index)}
+                  className={`flex flex-col items-center p-1.5 rounded-xl transition-all ${
+                    isSelected
+                      ? 'bg-[#F8F9FD] border border-[#EEF1F6]'
+                      : 'hover:bg-[#F6F8FD]'
                   }`}
                 >
-                  {d.date}
-                </span>
-              </div>
-            ))}
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
+                  <span
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black mt-1 transition-all ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-[0_2px_8px_rgba(255,0,122,0.35)]'
+                        : 'text-slate-700'
+                    }`}
+                  >
+                    {d.date}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Calendar Grid with Scheduled Posts */}
-          <div className="space-y-3 relative min-h-[190px]">
-            {/* Time slot rows */}
-            {['9 AM', '12 PM', '3 PM', '6 PM'].map((time) => (
-              <div key={time} className="flex items-center gap-2 text-[10px] text-slate-300 font-semibold">
-                <span className="w-8 shrink-0">{time}</span>
-                <div className="flex-1 border-t border-[#F0F2F6]" />
-              </div>
-            ))}
-
-            {/* Floating Scheduled Post Badges (Positioned like the screenshot) */}
-            <div className="absolute inset-x-8 inset-y-0 grid grid-cols-7 gap-1 pointer-events-auto">
-              {/* Mon 9:30 AM (Instagram) */}
-              <div className="col-start-1 pt-1">
-                <div className="rounded-xl bg-white border border-[#EEF1F6] p-1 shadow-md hover:scale-105 transition-all cursor-pointer">
-                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-[#FF007A]">
-                    <span>📸</span> 9:30 AM
+          {/* Calendar Grid with Real Scheduled Slots */}
+          <div className="space-y-4 pt-1">
+            {/* Time Slot Rows with visual scheduled cards */}
+            <div className="space-y-3">
+              {/* Morning Slot (9:00 AM) */}
+              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
+                    09:00 AM
+                  </span>
+                  <div className="w-2 h-2 rounded-full bg-[#FF007A]" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">📸</span>
+                      <span className="font-bold text-xs text-slate-900 truncate">
+                        Instagram & Facebook Morning Story Dispatch
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                      Target: Devbhoomi Today • 32,600 followers
+                    </p>
                   </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=120&auto=format&fit=crop&q=80"
-                    alt="post"
-                    className="w-full h-9 object-cover rounded-lg mt-1"
-                  />
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                    Queued
+                  </span>
+                  <Link
+                    href="/composer"
+                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
+                  >
+                    Edit
+                  </Link>
                 </div>
               </div>
 
-              {/* Tue 12:00 PM (TikTok) */}
-              <div className="col-start-2 pt-10">
-                <div className="rounded-xl bg-white border border-[#EEF1F6] p-1 shadow-md hover:scale-105 transition-all cursor-pointer">
-                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-slate-900">
-                    <span>🎵</span> 12:00 PM
+              {/* Noon Slot (12:30 PM) */}
+              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
+                    12:30 PM
+                  </span>
+                  <div className="w-2 h-2 rounded-full bg-[#1877F2]" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">📘</span>
+                      <span className="font-bold text-xs text-slate-900 truncate">
+                        Himachal Snowfall Alert News & Travel Advisory
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                      Target: Himachali Samachar Official (Facebook Page) + Auto Comment
+                    </p>
                   </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1529139574466-a303027c1d8b?w=120&auto=format&fit=crop&q=80"
-                    alt="post"
-                    className="w-full h-9 object-cover rounded-lg mt-1"
-                  />
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    Published
+                  </span>
+                  <Link
+                    href="/library"
+                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
+                  >
+                    View
+                  </Link>
                 </div>
               </div>
 
-              {/* Thu 9:15 AM (Twitter) */}
-              <div className="col-start-4 pt-1">
-                <div className="rounded-xl bg-white border border-[#EEF1F6] p-1 shadow-md hover:scale-105 transition-all cursor-pointer">
-                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-[#00C2FF]">
-                    <span>🐦</span> 9:15 AM
+              {/* Evening Slot (06:00 PM) */}
+              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
+                    06:00 PM
+                  </span>
+                  <div className="w-2 h-2 rounded-full bg-[#FF0000]" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">▶️</span>
+                      <span className="font-bold text-xs text-slate-900 truncate">
+                        Rohtang Pass Snowfall Video Shorts Dispatch
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                      Target: YouTube Shorts Channel (92,000 subscribers)
+                    </p>
                   </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=120&auto=format&fit=crop&q=80"
-                    alt="post"
-                    className="w-full h-9 object-cover rounded-lg mt-1"
-                  />
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    Scheduled
+                  </span>
+                  <Link
+                    href="/composer"
+                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
+                  >
+                    Reschedule
+                  </Link>
                 </div>
               </div>
 
-              {/* Fri 12:30 PM (Facebook) */}
-              <div className="col-start-5 pt-11">
-                <div className="rounded-xl bg-white border border-[#EEF1F6] p-1 shadow-md hover:scale-105 transition-all cursor-pointer">
-                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-[#1877F2]">
-                    <span>📘</span> 12:30 PM
+              {/* Night Slot (09:00 PM) */}
+              <div className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400">
+                    09:00 PM
+                  </span>
+                  <div className="w-2 h-2 rounded-full bg-[#0088CC]" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">✈️</span>
+                      <span className="font-bold text-xs text-slate-900 truncate">
+                        Evening Breaking News Bulletin Broadcast
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                      Target: Himachal News Telegram Channel (18,400 members)
+                    </p>
                   </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?w=120&auto=format&fit=crop&q=80"
-                    alt="post"
-                    className="w-full h-8 object-cover rounded-lg mt-1"
-                  />
                 </div>
-              </div>
 
-              {/* Fri 3:45 PM (Instagram) */}
-              <div className="col-start-5 pt-28">
-                <div className="rounded-xl bg-white border border-[#EEF1F6] p-1 shadow-md hover:scale-105 transition-all cursor-pointer">
-                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-[#FF007A]">
-                    <span>📸</span> 3:45 PM
-                  </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80"
-                    alt="post"
-                    className="w-full h-8 object-cover rounded-lg mt-1"
-                  />
-                </div>
-              </div>
-
-              {/* Sat 12:15 PM (TikTok) */}
-              <div className="col-start-6 pt-10">
-                <div className="rounded-xl bg-white border border-[#EEF1F6] p-1 shadow-md hover:scale-105 transition-all cursor-pointer">
-                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-slate-900">
-                    <span>🎵</span> 12:15 PM
-                  </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80"
-                    alt="post"
-                    className="w-full h-9 object-cover rounded-lg mt-1"
-                  />
-                </div>
-              </div>
-
-              {/* Sun 6:00 PM (YouTube) */}
-              <div className="col-start-7 pt-28">
-                <div className="rounded-xl bg-white border border-[#EEF1F6] p-1 shadow-md hover:scale-105 transition-all cursor-pointer">
-                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-[#FF0000]">
-                    <span>▶️</span> 6:00 PM
-                  </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=120&auto=format&fit=crop&q=80"
-                    alt="post"
-                    className="w-full h-8 object-cover rounded-lg mt-1"
-                  />
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                    Queued
+                  </span>
+                  <Link
+                    href="/composer"
+                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
+                  >
+                    Edit
+                  </Link>
                 </div>
               </div>
             </div>
@@ -424,528 +519,412 @@ function DashboardContent() {
           {/* Legend */}
           <div className="pt-2 border-t border-[#F0F2F6] flex items-center justify-between text-[10px] font-bold text-slate-500 flex-wrap gap-2">
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#FF007A]" /> Instagram
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-slate-900" /> TikTok
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#00C2FF]" /> Twitter
-            </span>
-            <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#1877F2]" /> Facebook
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#FF007A]" /> Instagram
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#FF0000]" /> YouTube
             </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#0088CC]" /> Telegram
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#00C2FF]" /> Threads
+            </span>
           </div>
         </div>
 
-        {/* B. Follower Growth Area Chart (Spans 4 cols on lg) */}
+        {/* B. Platform Distribution & Channel Health (4 cols on lg) */}
         <div className="lg:col-span-4 bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-2">
+          <div className="flex items-center justify-between pb-2 border-b border-[#F0F2F6]">
             <div>
-              <h3 className="font-extrabold text-sm text-slate-900">Follower Growth</h3>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xl font-black text-slate-900">128.7K</span>
-                <span className="text-[11px] font-bold text-emerald-500">↗ 12.3%</span>
-              </div>
-              <span className="text-[10px] text-slate-400">vs Apr 12 – May 11</span>
+              <h3 className="font-extrabold text-sm text-slate-900">Platform Distribution</h3>
+              <p className="text-[11px] text-slate-400">Broadcasting network status</p>
             </div>
-
             <Link
-              href="/analytics"
-              className="text-[11px] font-bold text-slate-700 hover:text-[#FF007A] px-2.5 py-1 rounded-lg border border-[#EEF1F6] hover:bg-[#F6F8FD] transition-colors"
+              href="/accounts"
+              className="text-[11px] font-bold text-[#FF007A] hover:underline"
             >
-              View Details
+              Manage
             </Link>
           </div>
 
-          {/* SVG Area Chart */}
-          <div className="relative h-44 w-full">
-            <svg viewBox="0 0 300 160" className="w-full h-full overflow-visible">
-              <defs>
-                <linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.4" />
-                  <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-
-              {/* Grid Lines */}
-              <line x1="30" y1="20" x2="290" y2="20" stroke="#F1F5F9" strokeDasharray="3 3" />
-              <line x1="30" y1="60" x2="290" y2="60" stroke="#F1F5F9" strokeDasharray="3 3" />
-              <line x1="30" y1="100" x2="290" y2="100" stroke="#F1F5F9" strokeDasharray="3 3" />
-              <line x1="30" y1="140" x2="290" y2="140" stroke="#F1F5F9" />
-
-              {/* Y Axis Labels */}
-              <text x="5" y="24" fill="#94A3B8" fontSize="9" fontWeight="bold">140K</text>
-              <text x="5" y="64" fill="#94A3B8" fontSize="9" fontWeight="bold">120K</text>
-              <text x="5" y="104" fill="#94A3B8" fontSize="9" fontWeight="bold">100K</text>
-              <text x="8" y="144" fill="#94A3B8" fontSize="9" fontWeight="bold">80K</text>
-
-              {/* Area */}
-              <path
-                d="M 35 130 Q 80 120, 110 95 T 180 80 T 240 50 T 285 30 L 285 140 L 35 140 Z"
-                fill="url(#growthGrad)"
-              />
-
-              {/* Line */}
-              <path
-                d="M 35 130 Q 80 120, 110 95 T 180 80 T 240 50 T 285 30"
-                fill="none"
-                stroke="#8B5CF6"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-
-              {/* Active data point circle */}
-              <circle cx="285" cy="30" r="4.5" fill="#8B5CF6" stroke="#FFFFFF" strokeWidth="2.5" />
-            </svg>
-
-            {/* Badge callout on top point */}
-            <div className="absolute right-0 top-0 px-2 py-0.5 rounded-md bg-slate-900 text-white text-[9px] font-bold shadow-xs">
-              128.7K May 11
-            </div>
-
-            {/* X Axis Labels */}
-            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 pt-1 px-8">
-              <span>Apr 12</span>
-              <span>Apr 26</span>
-              <span>May 10</span>
-            </div>
-          </div>
-        </div>
-
-        {/* C. Platform Breakdown Donut Chart (Spans 3 cols on lg) */}
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col justify-between space-y-4">
-          <div className="pb-2 border-b border-[#F0F2F6]">
-            <h3 className="font-extrabold text-sm text-slate-900">Platform Breakdown</h3>
-          </div>
-
-          {/* SVG Donut Chart with Center Text */}
+          {/* SVG Donut Chart */}
           <div className="relative w-36 h-36 mx-auto my-1 flex items-center justify-center">
             <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-              {/* Instagram (45.6%) */}
-              <circle
-                cx="50"
-                cy="50"
-                r="38"
-                fill="transparent"
-                stroke="#FF007A"
-                strokeWidth="13"
-                strokeDasharray="109 239"
-                strokeDashoffset="0"
-              />
-              {/* TikTok (25.8%) */}
-              <circle
-                cx="50"
-                cy="50"
-                r="38"
-                fill="transparent"
-                stroke="#0F172A"
-                strokeWidth="13"
-                strokeDasharray="62 239"
-                strokeDashoffset="-109"
-              />
-              {/* Facebook (15.4%) */}
+              {/* Facebook (45%) */}
               <circle
                 cx="50"
                 cy="50"
                 r="38"
                 fill="transparent"
                 stroke="#1877F2"
-                strokeWidth="13"
-                strokeDasharray="37 239"
-                strokeDashoffset="-171"
+                strokeWidth="12"
+                strokeDasharray="108 239"
+                strokeDashoffset="0"
               />
-              {/* Twitter / Threads (8.7%) */}
+              {/* Instagram (25%) */}
               <circle
                 cx="50"
                 cy="50"
                 r="38"
                 fill="transparent"
-                stroke="#00C2FF"
-                strokeWidth="13"
-                strokeDasharray="21 239"
-                strokeDashoffset="-208"
+                stroke="#FF007A"
+                strokeWidth="12"
+                strokeDasharray="60 239"
+                strokeDashoffset="-108"
               />
-              {/* YouTube (4.5%) */}
+              {/* YouTube (15%) */}
               <circle
                 cx="50"
                 cy="50"
                 r="38"
                 fill="transparent"
                 stroke="#FF0000"
-                strokeWidth="13"
-                strokeDasharray="10 239"
-                strokeDashoffset="-229"
+                strokeWidth="12"
+                strokeDasharray="36 239"
+                strokeDashoffset="-168"
+              />
+              {/* Telegram (10%) */}
+              <circle
+                cx="50"
+                cy="50"
+                r="38"
+                fill="transparent"
+                stroke="#0088CC"
+                strokeWidth="12"
+                strokeDasharray="24 239"
+                strokeDashoffset="-204"
+              />
+              {/* Threads (5%) */}
+              <circle
+                cx="50"
+                cy="50"
+                r="38"
+                fill="transparent"
+                stroke="#00C2FF"
+                strokeWidth="12"
+                strokeDasharray="11 239"
+                strokeDashoffset="-228"
               />
             </svg>
 
             {/* Inner Center Label */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                Total Engagement
+                Destinations
               </span>
               <span className="text-base font-black text-slate-900 leading-tight">
-                24.8K
+                {totalPages} Pages
               </span>
             </div>
           </div>
 
-          {/* Platform Percentages List */}
-          <div className="space-y-1.5 text-xs font-semibold text-slate-700">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#FF007A]" /> Instagram
-              </span>
-              <span className="font-bold text-slate-900">45.6% <span className="text-slate-400 font-normal text-[10px]">11.3K</span></span>
+          {/* Connected Platform List with Page Counts */}
+          <div className="space-y-2 text-xs font-semibold text-slate-700">
+            <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6]">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📘</span>
+                <div>
+                  <div className="font-bold text-slate-900 leading-tight">Facebook</div>
+                  <span className="text-[10px] text-slate-400">Pages & Groups</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-slate-900">4 Pages</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-slate-900" /> TikTok
-              </span>
-              <span className="font-bold text-slate-900">25.8% <span className="text-slate-400 font-normal text-[10px]">6.4K</span></span>
+
+            <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6]">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📸</span>
+                <div>
+                  <div className="font-bold text-slate-900 leading-tight">Instagram</div>
+                  <span className="text-[10px] text-slate-400">Creator & Business</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-slate-900">1 Account</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#1877F2]" /> Facebook
-              </span>
-              <span className="font-bold text-slate-900">15.4% <span className="text-slate-400 font-normal text-[10px]">3.8K</span></span>
+
+            <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6]">
+              <div className="flex items-center gap-2">
+                <span className="text-base">▶️</span>
+                <div>
+                  <div className="font-bold text-slate-900 leading-tight">YouTube</div>
+                  <span className="text-[10px] text-slate-400">Shorts & Videos</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-slate-900">1 Channel</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#00C2FF]" /> Twitter
-              </span>
-              <span className="font-bold text-slate-900">8.7% <span className="text-slate-400 font-normal text-[10px]">2.1K</span></span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#FF0000]" /> YouTube
-              </span>
-              <span className="font-bold text-slate-900">4.5% <span className="text-slate-400 font-normal text-[10px]">1.1K</span></span>
+
+            <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6]">
+              <div className="flex items-center gap-2">
+                <span className="text-base">✈️</span>
+                <div>
+                  <div className="font-bold text-slate-900 leading-tight">Telegram</div>
+                  <span className="text-[10px] text-slate-400">Broadcast Channel</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-slate-900">1 Channel</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 4. Bottom Section: Campaign Performance + Top Content + AI Caption Ideas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* A. Campaign Performance */}
-        <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-[#F0F2F6]">
-            <h3 className="font-extrabold text-sm text-slate-900">Campaign Performance</h3>
-            <Link
-              href="/automations"
-              className="text-[11px] font-bold text-slate-500 hover:text-[#FF007A]"
-            >
-              View All
-            </Link>
+      {/* 4. Recent Posts & Dispatch Queue (Interactive Responsive Grid) */}
+      <div className="space-y-4">
+        {/* Header & Filter Controls */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              Recent Posts & Dispatch Queue
+            </h2>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Review published updates, scheduled posts, and manage cross-platform dispatches.
+            </p>
           </div>
 
-          {/* Featured Campaign Card */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=120&auto=format&fit=crop&q=80"
-                alt="campaign"
-                className="w-12 h-12 rounded-xl object-cover ring-2 ring-pink-100 shrink-0"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-1">
-                  <h4 className="font-extrabold text-xs text-slate-900 truncate">
-                    Summer Glow Collection
-                  </h4>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-200">
-                    Active
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                  May 1 – May 31, 2026
-                </p>
-              </div>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Filter Pills */}
+            <div className="inline-flex items-center p-1 rounded-xl bg-white border border-[#EEF1F6] shadow-2xs">
+              {(['all', 'published', 'scheduled', 'failed'] as const).map((status) => {
+                const count =
+                  status === 'all'
+                    ? posts.length
+                    : status === 'published'
+                    ? publishedCount
+                    : status === 'scheduled'
+                    ? scheduledCount
+                    : failedCount;
+
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setGridFilter(status)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold capitalize transition-all flex items-center gap-1.5 ${
+                      gridFilter === status
+                        ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>{status}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        gridFilter === status
+                          ? 'bg-white/25 text-white'
+                          : 'bg-[#F0F2F6] text-slate-600'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* 4 Campaign Metrics */}
-            <div className="grid grid-cols-4 gap-2 pt-2 border-t border-[#F0F2F6] text-center">
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Reach</span>
-                <div className="font-black text-slate-900 text-xs mt-0.5">320.7K</div>
-                <div className="text-[9px] font-bold text-emerald-500">↗ 23.4%</div>
-              </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Engagement</span>
-                <div className="font-black text-slate-900 text-xs mt-0.5">18.6K</div>
-                <div className="text-[9px] font-bold text-emerald-500">↗ 18.7%</div>
-              </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Clicks</span>
-                <div className="font-black text-slate-900 text-xs mt-0.5">7.2K</div>
-                <div className="text-[9px] font-bold text-emerald-500">↗ 35.1%</div>
-              </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Conversions</span>
-                <div className="font-black text-slate-900 text-xs mt-0.5">1.3K</div>
-                <div className="text-[9px] font-bold text-emerald-500">↗ 28.6%</div>
-              </div>
-            </div>
-
-            {/* Budget Progress Bar */}
-            <div className="pt-2">
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span className="text-slate-500 font-medium">Budget Used</span>
-                <span className="font-black text-slate-900">72%</span>
-              </div>
-              <div className="w-full h-2 rounded-full bg-[#F0F2F6] overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#7928CA] to-[#FF007A]"
-                  style={{ width: '72%' }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2 text-right">
+            {/* View All link to library */}
             <Link
-              href="/analytics"
-              className="text-xs font-bold text-[#7928CA] hover:text-[#FF007A] transition-colors"
+              href="/library"
+              className="text-xs font-bold text-[#FF007A] hover:underline flex items-center gap-1 shrink-0"
             >
-              View Report →
+              <span>View Library</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
 
-        {/* B. Top Content */}
-        <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-[#F0F2F6]">
-            <h3 className="font-extrabold text-sm text-slate-900">Top Content</h3>
+        {/* 3-Column Grid on Desktop, 2 on Tablet, 1 on Mobile */}
+        {filteredGridPosts.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-12 text-center shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)]">
+            <Share2 className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+            <h3 className="text-sm font-bold text-slate-800">No posts in this filter</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              There are currently no posts matching the selected status ({gridFilter}).
+            </p>
             <Link
-              href="/library"
-              className="text-[11px] font-bold text-slate-500 hover:text-[#FF007A]"
+              href="/composer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 mt-4 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white text-xs font-bold shadow-sm hover:scale-105 transition-all"
             >
-              View All
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Post</span>
             </Link>
           </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredGridPosts.map((post) => {
+              const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+              const isMenuOpen = activeMenuPostId === post.id;
 
-          <div className="space-y-3">
-            {/* Rank 1 */}
-            <div className="flex items-center gap-3 group">
-              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black flex items-center justify-center shrink-0">
-                1
-              </span>
-              <div className="relative w-11 h-11 rounded-xl overflow-hidden shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://images.unsplash.com/photo-1512290900672-1f41d926efb8?w=120&auto=format&fit=crop&q=80"
-                  alt="top-1"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
-                <span className="absolute bottom-0.5 right-0.5 text-[9px]">📸</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="font-bold text-xs text-slate-900 truncate">
-                  5 Skincare Tips for Glowing Skin ✨
-                </h4>
-                <p className="text-[10px] text-slate-400 mt-0.5">May 8, 2026</p>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-xs font-black text-slate-900">9.8K</div>
-                <div className="text-[10px] font-bold text-emerald-500">↗ 24.5%</div>
-              </div>
-            </div>
-
-            {/* Rank 2 */}
-            <div className="flex items-center gap-3 group">
-              <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-black flex items-center justify-center shrink-0">
-                2
-              </span>
-              <div className="relative w-11 h-11 rounded-xl overflow-hidden shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=120&auto=format&fit=crop&q=80"
-                  alt="top-2"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
-                <span className="absolute bottom-0.5 right-0.5 text-[9px]">🎵</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="font-bold text-xs text-slate-900 truncate">
-                  Morning Routine in 60 Sec ⚡
-                </h4>
-                <p className="text-[10px] text-slate-400 mt-0.5">May 6, 2026</p>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-xs font-black text-slate-900">7.6K</div>
-                <div className="text-[10px] font-bold text-emerald-500">↗ 18.2%</div>
-              </div>
-            </div>
-
-            {/* Rank 3 */}
-            <div className="flex items-center gap-3 group">
-              <span className="w-5 h-5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-black flex items-center justify-center shrink-0">
-                3
-              </span>
-              <div className="relative w-11 h-11 rounded-xl overflow-hidden shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=120&auto=format&fit=crop&q=80"
-                  alt="top-3"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
-                <span className="absolute bottom-0.5 right-0.5 text-[9px]">🐦</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="font-bold text-xs text-slate-900 truncate">
-                  Productivity Hacks You Must Try 🚀
-                </h4>
-                <p className="text-[10px] text-slate-400 mt-0.5">May 4, 2026</p>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-xs font-black text-slate-900">6.3K</div>
-                <div className="text-[10px] font-bold text-emerald-500">↗ 15.7%</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2 text-center border-t border-[#F0F2F6]">
-            <Link
-              href="/library"
-              className="text-xs font-bold text-slate-600 hover:text-[#FF007A] transition-colors"
-            >
-              Browse 42+ Posts
-            </Link>
-          </div>
-        </div>
-
-        {/* C. AI Caption Ideas */}
-        <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-[#F0F2F6]">
-            <div className="flex items-center gap-1.5 text-slate-900 font-extrabold text-sm">
-              <Sparkles className="w-4 h-4 text-[#7928CA]" />
-              <span>AI Caption Ideas</span>
-            </div>
-
-            <button
-              type="button"
-              className="px-2.5 py-1 rounded-lg border border-[#EEF1F6] hover:bg-[#F6F8FD] text-[11px] font-bold text-[#7928CA] transition-colors flex items-center gap-1"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>Generate More</span>
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            {[
-              {
-                id: 'cap_1',
-                text: '“Sunshine, good vibes, and glowing skin. That’s the mood today. 💖✨”',
-                chips: [
-                  { label: 'Friendly', color: 'bg-pink-50 text-pink-700' },
-                  { label: 'Bright', color: 'bg-amber-50 text-amber-700' },
-                  { label: 'Popular', color: 'bg-purple-50 text-purple-700' },
-                ],
-              },
-              {
-                id: 'cap_2',
-                text: '“Confidence is the best glow. Wear it daily. ✨”',
-                chips: [
-                  { label: 'Motivational', color: 'bg-blue-50 text-blue-700' },
-                  { label: 'Short', color: 'bg-slate-100 text-slate-700' },
-                ],
-              },
-              {
-                id: 'cap_3',
-                text: '“Skincare isn’t a trend, it’s a lifestyle. Invest in your skin, it will thank you.”',
-                chips: [
-                  { label: 'Warm', color: 'bg-rose-50 text-rose-700' },
-                  { label: 'Engaging', color: 'bg-emerald-50 text-emerald-700' },
-                ],
-              },
-            ].map((cap) => {
-              const isCopied = copiedCaptionId === cap.id;
-              const isSaved = savedCaptionIds.includes(cap.id);
+              const statusBadgeStyles = {
+                published: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
+                failed: 'bg-rose-50 text-rose-700 border-rose-200',
+                partial: 'bg-amber-50 text-amber-700 border-amber-200',
+                draft: 'bg-slate-100 text-slate-700 border-slate-200',
+                publishing: 'bg-purple-50 text-purple-700 border-purple-200',
+              };
 
               return (
                 <div
-                  key={cap.id}
-                  className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-2 hover:border-[#FF007A]/40 transition-all"
+                  key={post.id}
+                  className="bg-white rounded-2xl border border-[#EEF1F6] overflow-hidden shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between"
                 >
-                  <p className="text-xs text-slate-800 font-medium leading-relaxed italic">
-                    {cap.text}
-                  </p>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {cap.chips.map((chip, idx) => (
-                        <span
-                          key={idx}
-                          className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${chip.color}`}
-                        >
-                          {chip.label}
+                  {/* Thumbnail / Media Header */}
+                  <div className="relative h-44 w-full bg-slate-900 overflow-hidden">
+                    {post.mediaUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={post.mediaUrl}
+                        alt="thumbnail"
+                        className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-tr from-slate-900 to-slate-800 flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-1">
+                        <span className="text-2xl">{platformIcons[firstPage?.platform || 'facebook']}</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                          {post.postType} Post
                         </span>
-                      ))}
+                      </div>
+                    )}
+
+                    {/* Video Play Overlay */}
+                    {post.postType === 'video' && (
+                      <div className="absolute inset-0 bg-black/35 flex items-center justify-center text-white pointer-events-none">
+                        <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-xs flex items-center justify-center">
+                          <Play className="w-5 h-5 fill-white" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Status Badge Floating Top Left */}
+                    <div className="absolute top-3 left-3">
+                      <span
+                        className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border backdrop-blur-md shadow-xs ${
+                          statusBadgeStyles[post.status]
+                        }`}
+                      >
+                        {post.status}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Action Menu Floating Top Right */}
+                    <div className="absolute top-3 right-3 relative">
                       <button
                         type="button"
-                        onClick={() => handleCopyCaption(cap.id, cap.text)}
-                        className="w-6 h-6 rounded-md hover:bg-white flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-                        title="Copy"
+                        onClick={() =>
+                          setActiveMenuPostId(isMenuOpen ? null : post.id)
+                        }
+                        className="w-7 h-7 rounded-full bg-white/90 backdrop-blur-md text-slate-700 hover:text-black flex items-center justify-center shadow-xs transition-colors"
+                        title="Actions"
                       >
-                        {isCopied ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-500" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+
+                      {/* Dropdown Menu */}
+                      {isMenuOpen && (
+                        <div className="absolute right-0 top-8 w-36 bg-white rounded-xl border border-[#EEF1F6] shadow-lg p-1.5 z-20 space-y-1 animate-fade-in text-xs">
+                          {post.status === 'failed' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                retryPost(post.id);
+                                setActiveMenuPostId(null);
+                              }}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-rose-50 text-rose-700 font-semibold text-left transition-colors"
+                            >
+                              <RotateCw className="w-3.5 h-3.5" />
+                              <span>Retry Post</span>
+                            </button>
+                          )}
+                          <Link
+                            href={`/composer?clone=${post.id}`}
+                            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-[#F8F9FD] text-slate-700 font-medium transition-colors"
+                          >
+                            <Repeat className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Reschedule</span>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              deletePost(post.id);
+                              setActiveMenuPostId(null);
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 font-medium text-left transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Body */}
+                  <div className="p-4.5 space-y-3 flex-1 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      {/* Platform & Target Page Name */}
+                      <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
+                        <span className="text-base shrink-0">
+                          {platformIcons[firstPage?.platform || 'facebook']}
+                        </span>
+                        <span className="font-bold text-slate-800 truncate">
+                          {firstPage?.name || 'Multiple Destinations'}
+                        </span>
+                        {post.pageIds.length > 1 && (
+                          <span className="text-[10px] font-bold text-slate-400">
+                            +{post.pageIds.length - 1} more
+                          </span>
                         )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleSave(cap.id)}
-                        className={`w-6 h-6 rounded-md hover:bg-white flex items-center justify-center transition-colors ${
-                          isSaved
-                            ? 'text-[#FF007A]'
-                            : 'text-slate-400 hover:text-slate-800'
-                        }`}
-                        title="Save"
-                      >
-                        <Bookmark
-                          className={`w-3.5 h-3.5 ${isSaved ? 'fill-[#FF007A]' : ''}`}
-                        />
-                      </button>
+                      </div>
+
+                      {/* Post Caption with proper truncation */}
+                      <p className="text-xs text-slate-900 font-medium leading-relaxed line-clamp-2">
+                        {post.message}
+                      </p>
+
+                      {/* Auto-comment flag */}
+                      {post.commentText && (
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium bg-[#F8F9FD] p-1.5 rounded-lg border border-[#EEF1F6]">
+                          <MessageSquare className="w-3 h-3 text-[#FF007A]" />
+                          <span className="truncate">First Comment Auto-Trigger</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Publishing Date & Bottom Bar */}
+                    <div className="pt-3 border-t border-[#F0F2F6] flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                      <div className="flex items-center gap-1.5 text-slate-500">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>
+                          {post.publishedAt
+                            ? new Date(post.publishedAt).toLocaleDateString([], {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : post.scheduledAt
+                            ? new Date(post.scheduledAt).toLocaleDateString([], {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : 'Draft'}
+                        </span>
+                      </div>
+
+                      <span className="capitalize text-[10px] font-bold text-slate-600 px-2 py-0.5 rounded bg-[#F8F9FD] border border-[#EEF1F6]">
+                        {post.postType}
+                      </span>
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      </div>
-
-      {/* 5. Sticky / Bottom Full-Width AI Assistant Banner (Exact Match to Screenshot) */}
-      <div className="rounded-2xl p-4 sm:p-5 bg-gradient-to-r from-[#FF007A] via-[#7928CA] to-[#00C2FF] text-white shadow-[0_8px_25px_rgba(255,0,122,0.22)] flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0">
-            <Sparkles className="w-5 h-5 fill-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-black text-sm tracking-tight">AI Assistant</span>
-            </div>
-            <p className="text-xs text-white/90 font-medium mt-0.5">
-              Need help with content ideas, captions, or strategy?
-            </p>
-          </div>
-        </div>
-
-        <Link
-          href="/composer"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-slate-900 font-extrabold text-xs shadow-md hover:bg-slate-50 transition-all active:scale-[0.98] shrink-0"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-[#FF007A]" />
-          <span>Ask AI Assistant</span>
-        </Link>
+        )}
       </div>
     </div>
   );

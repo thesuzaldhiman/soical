@@ -52,23 +52,17 @@ export function AppSidebar() {
     {
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { href: '/composer', label: 'Calendar & Content', icon: Calendar },
+        { href: '/composer', label: 'Create Post', icon: Calendar },
         { href: '/library', label: 'Content Library', icon: BookmarkCheck },
-        { href: '/automations', label: 'Campaigns & Feeds', icon: Megaphone },
+        { href: '/automations', label: 'Blogger → FB', icon: Megaphone },
         { href: '/analytics', label: 'Analytics', icon: BarChart3 },
         {
           href: '/pages',
           label: 'Social Pages',
           icon: Mail,
-          badge: { text: '12', variant: 'pink' },
+          badge: { text: '18', variant: 'pink' },
         },
-        {
-          href: '/image-generator',
-          label: 'AI Assistant',
-          icon: Sparkles,
-          badge: { text: 'New', variant: 'cyan' },
-        },
-        { href: '/logs', label: 'Reports & Logs', icon: FileText },
+        { href: '/logs', label: 'Publishing Logs', icon: FileText },
         { href: '/settings', label: 'Settings', icon: Settings },
         { href: '/accounts', label: 'Integrations', icon: Sliders },
       ],
