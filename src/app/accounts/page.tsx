@@ -207,7 +207,7 @@ function AccountsContent() {
                   <button
                     type="button"
                     onClick={() => setSelectedPlatformModal('facebook')}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs"
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF4E98] hover:from-[#E6006E] hover:to-[#E62080] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-[0_4px_12px_rgba(255,0,122,0.25)]"
                   >
                     <Users2 className="w-3.5 h-3.5" />
                     <span>View Pages ({platformPages.length})</span>

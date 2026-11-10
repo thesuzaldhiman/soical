@@ -327,7 +327,7 @@ function ComposerContent() {
           </div>
 
           {/* Step 4: Schedule or Publish Now */}
-          <div className="bg-white rounded-2xl border border-[#E8E8E4] p-5 shadow-2xs space-y-4">
+          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
                 4. Publishing Time
@@ -338,8 +338,8 @@ function ComposerContent() {
                   onClick={() => setIsScheduleMode(false)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                     !isScheduleMode
-                      ? 'bg-slate-950 text-white shadow-2xs'
-                      : 'bg-[#F6F6F3] text-slate-600 hover:bg-[#EAEAE6]'
+                      ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-xs'
+                      : 'bg-[#F6F8FD] text-slate-600 hover:bg-[#EEF1F6]'
                   }`}
                 >
                   Publish Now
@@ -349,8 +349,8 @@ function ComposerContent() {
                   onClick={() => setIsScheduleMode(true)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                     isScheduleMode
-                      ? 'bg-slate-950 text-white shadow-2xs'
-                      : 'bg-[#F6F6F3] text-slate-600 hover:bg-[#EAEAE6]'
+                      ? 'bg-gradient-to-r from-[#7928CA] to-[#9333EA] text-white shadow-xs'
+                      : 'bg-[#F6F8FD] text-slate-600 hover:bg-[#EEF1F6]'
                   }`}
                 >
                   Schedule Post
@@ -359,7 +359,7 @@ function ComposerContent() {
             </div>
 
             {isScheduleMode && (
-              <div className="pt-2 border-t border-[#F0F0ED] space-y-2 animate-fade-in">
+              <div className="pt-2 border-t border-[#F0F2F6] space-y-2 animate-fade-in">
                 <label className="text-xs font-semibold text-slate-700 block">
                   Select Future Date & Time
                 </label>
@@ -367,7 +367,7 @@ function ComposerContent() {
                   type="datetime-local"
                   value={scheduledDateTime}
                   onChange={(e) => setScheduledDateTime(e.target.value)}
-                  className="w-full p-3 rounded-xl border border-[#E8E8E4] text-xs text-slate-900 bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full p-3 rounded-xl border border-[#EEF1F6] text-xs text-slate-900 bg-[#F8F9FD] focus:outline-none focus:border-[#FF007A]"
                 />
               </div>
             )}
@@ -378,7 +378,7 @@ function ComposerContent() {
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => handlePublish(!isScheduleMode)}
-                className="w-full py-3.5 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-2"
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] disabled:opacity-50 text-white font-bold text-xs transition-all shadow-[0_4px_14px_rgba(255,0,122,0.3)] flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99]"
               >
                 {isSubmitting ? (
                   <>

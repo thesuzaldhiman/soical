@@ -5,231 +5,205 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  Users2,
+  Calendar,
   Layers,
-  Tags,
-  PenSquare,
+  FileText,
+  Megaphone,
+  BarChart3,
+  Mail,
+  Sparkles,
+  Sliders,
+  Settings,
+  Share2,
+  Trash2,
   CalendarClock,
   BookmarkCheck,
-  Trash2,
-  Cpu,
   Palette,
-  BarChart3,
-  FileText,
-  Settings,
+  Tags,
   Bug,
-  Search,
-  ChevronsUpDown,
-  Zap,
+  Crown,
   ChevronDown,
   ChevronRight,
+  ArrowRight,
+  Zap,
 } from 'lucide-react';
 import { useApp } from '@/lib/context/app-context';
 
-interface NavGroup {
-  id: string;
+interface NavItem {
+  href: string;
   label: string;
-  items: {
-    href: string;
-    label: string;
-    icon: React.ComponentType<{ className?: string }>;
-    badge?: string;
-  }[];
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: {
+    text: string;
+    variant: 'pink' | 'cyan';
+  };
+}
+
+interface NavSection {
+  title?: string;
+  items: NavItem[];
 }
 
 export function AppSidebar() {
   const pathname = usePathname();
   const { user, workspace } = useApp();
 
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-
-  const toggleGroup = (groupId: string) => {
-    setCollapsedGroups((prev) => ({
-      ...prev,
-      [groupId]: !prev[groupId],
-    }));
-  };
-
-  const navGroups: NavGroup[] = [
+  const navSections: NavSection[] = [
     {
-      id: 'overview',
-      label: 'OVERVIEW',
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      ],
-    },
-    {
-      id: 'social-accounts',
-      label: 'SOCIAL ACCOUNTS',
-      items: [
-        { href: '/accounts', label: 'Accounts', icon: Users2 },
-        { href: '/pages', label: 'Pages', icon: Layers },
-        { href: '/categories', label: 'Categories', icon: Tags },
-      ],
-    },
-    {
-      id: 'publishing',
-      label: 'PUBLISHING',
-      items: [
-        { href: '/composer', label: 'Create Post', icon: PenSquare },
-        { href: '/bulk-scheduler', label: 'Bulk Scheduler', icon: CalendarClock },
-        { href: '/library', label: 'Post Library', icon: BookmarkCheck },
-        { href: '/bulk-delete', label: 'Bulk Delete Posts', icon: Trash2 },
-      ],
-    },
-    {
-      id: 'automation-tools',
-      label: 'AUTOMATION & TOOLS',
-      items: [
-        { href: '/automations', label: 'Blogger → FB', icon: Cpu },
-        { href: '/image-generator', label: 'Image Generator', icon: Palette, badge: 'SIG' },
-      ],
-    },
-    {
-      id: 'analytics',
-      label: 'ANALYTICS',
-      items: [
+        { href: '/composer', label: 'Calendar & Content', icon: Calendar },
+        { href: '/library', label: 'Content Library', icon: BookmarkCheck },
+        { href: '/automations', label: 'Campaigns & Feeds', icon: Megaphone },
         { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+        {
+          href: '/pages',
+          label: 'Social Pages',
+          icon: Mail,
+          badge: { text: '12', variant: 'pink' },
+        },
+        {
+          href: '/image-generator',
+          label: 'AI Assistant',
+          icon: Sparkles,
+          badge: { text: 'New', variant: 'cyan' },
+        },
+        { href: '/logs', label: 'Reports & Logs', icon: FileText },
+        { href: '/settings', label: 'Settings', icon: Settings },
+        { href: '/accounts', label: 'Integrations', icon: Sliders },
       ],
     },
     {
-      id: 'system',
-      label: 'SYSTEM',
+      title: 'ADVANCED TOOLS',
       items: [
-        { href: '/logs', label: 'Logs', icon: FileText },
-        { href: '/settings', label: 'Settings', icon: Settings },
-        { href: '/debug', label: 'Debug', icon: Bug },
+        { href: '/bulk-scheduler', label: 'Bulk Scheduler', icon: CalendarClock },
+        { href: '/categories', label: 'Categories', icon: Tags },
+        { href: '/bulk-delete', label: 'Bulk Cleanup', icon: Trash2 },
+        { href: '/debug', label: 'System Debug', icon: Bug },
       ],
     },
   ];
 
   return (
-    <aside className="w-[260px] bg-[#FFFFFF] border-r border-[#EBEBE8] flex flex-col h-screen sticky top-0 select-none z-30 shrink-0 font-sans">
-      {/* 1. Workspace Switcher Header */}
-      <div className="p-3.5 border-b border-[#F0F0ED]">
-        <div className="flex items-center justify-between p-2 rounded-xl hover:bg-[#F7F7F5] transition-colors cursor-pointer group">
-          <div className="flex items-center gap-2.5 min-w-0">
-            {/* Logo box */}
-            <div className="w-8 h-8 rounded-xl bg-slate-950 flex items-center justify-center text-white shadow-2xs shrink-0">
-              <Zap className="w-4 h-4 fill-amber-400 text-amber-400" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-slate-900 text-xs tracking-tight truncate">
-                  {workspace.name}
-                </span>
-                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-slate-900 text-white leading-none">
-                  Pro
-                </span>
+    <aside className="w-[260px] bg-white border-r border-[#EEF1F6] flex flex-col h-screen sticky top-0 select-none z-30 shrink-0 font-sans shadow-[2px_0_12px_rgba(0,0,0,0.015)]">
+      {/* 1. Brand Logo Header */}
+      <div className="p-5 pb-4">
+        <Link href="/dashboard" className="flex items-center gap-2.5 group">
+          {/* Glowing Gradient Logo 'C' */}
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF007A] via-[#8B5CF6] to-[#00C2FF] flex items-center justify-center text-white shadow-[0_4px_12px_rgba(255,0,122,0.35)] group-hover:scale-105 transition-transform">
+            <span className="font-black text-lg tracking-tighter">C</span>
+          </div>
+          <div className="flex items-center tracking-tight">
+            <span className="text-lg font-black text-slate-900">Creator</span>
+            <span className="text-lg font-bold text-[#FF007A]">Flow</span>
+          </div>
+        </Link>
+      </div>
+
+      {/* 2. Navigation Items */}
+      <div className="flex-1 overflow-y-auto px-3.5 py-1 space-y-4">
+        {navSections.map((section, sIdx) => (
+          <div key={sIdx} className="space-y-1">
+            {section.title && (
+              <div className="px-3 pt-3 pb-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                {section.title}
               </div>
-              <p className="text-[10px] text-slate-400 font-medium truncate">
-                {user.email}
-              </p>
-            </div>
+            )}
+            {section.items.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
+                    isActive
+                      ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-[0_4px_14px_rgba(255,0,122,0.32)] font-bold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-[#F6F8FD]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Icon
+                      className={`w-4 h-4 shrink-0 transition-colors ${
+                        isActive
+                          ? 'text-white stroke-[2.2]'
+                          : 'text-slate-400 group-hover:text-[#FF007A] stroke-[1.9]'
+                      }`}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </div>
+
+                  {item.badge && (
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        isActive
+                          ? 'bg-white/25 text-white'
+                          : item.badge.variant === 'pink'
+                          ? 'bg-pink-100 text-[#FF007A]'
+                          : 'bg-cyan-100 text-cyan-700'
+                      }`}
+                    >
+                      {item.badge.text}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
           </div>
-          <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0 ml-1" />
+        ))}
+
+        {/* 3. Upgrade to Pro Card (Exact match to screenshot) */}
+        <div className="pt-2 pb-1">
+          <div className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-[#7928CA] via-[#9B2CBE] to-[#FF0080] text-white shadow-[0_8px_20px_rgba(121,40,202,0.28)] space-y-3">
+            {/* Ambient blur glow */}
+            <div className="absolute -top-10 -right-10 w-24 h-24 bg-white/20 rounded-full blur-xl pointer-events-none" />
+
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                <Crown className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+              </div>
+              <h4 className="font-extrabold text-xs tracking-tight">Upgrade to Pro</h4>
+            </div>
+
+            <p className="text-[11px] text-white/90 leading-relaxed font-medium">
+              Unlock advanced analytics, AI tools & unlimited scheduling.
+            </p>
+
+            <Link
+              href="/settings?tab=billing"
+              className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-50 text-[#7928CA] font-extrabold text-xs transition-all shadow flex items-center justify-center gap-1.5 active:scale-[0.98]"
+            >
+              <span>Upgrade Now</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
       </div>
 
-      {/* 2. Quick Search Bar */}
-      <div className="px-3.5 pt-2.5 pb-1">
-        <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-[#F6F6F3] border border-[#EEEEEC] text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <Search className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-500 font-normal text-[11px]">Search</span>
-          </div>
-          <kbd className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white border border-[#E0E0DC] text-slate-400 shadow-2xs">
-            /
-          </kbd>
-        </div>
-      </div>
-
-      {/* 3. Grouped Navigation Links */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4">
-        {navGroups.map((group) => {
-          const isCollapsed = collapsedGroups[group.id];
-
-          return (
-            <div key={group.id} className="space-y-0.5">
-              {/* Group Label / Toggle */}
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between px-2.5 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors"
-              >
-                <span>{group.label}</span>
-                {isCollapsed ? (
-                  <ChevronRight className="w-3 h-3 text-slate-400" />
-                ) : (
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
-                )}
-              </button>
-
-              {/* Group Items */}
-              {!isCollapsed && (
-                <div className="space-y-0.5">
-                  {group.items.map((item) => {
-                    const isActive = pathname === item.href;
-                    const Icon = item.icon;
-
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-medium transition-all ${
-                          isActive
-                            ? 'bg-[#F4F4F0] text-slate-900 font-bold shadow-2xs border border-[#ECECE8]'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-[#FAF9F6]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <Icon
-                            className={`w-4 h-4 shrink-0 ${
-                              isActive
-                                ? 'text-slate-900 stroke-[2.2]'
-                                : 'text-slate-400 stroke-[1.8]'
-                            }`}
-                          />
-                          <span className="truncate">{item.label}</span>
-                        </div>
-                        {item.badge && (
-                          <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-violet-100 text-violet-700 shrink-0">
-                            {item.badge}
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 4. Bottom User Profile Card */}
-      <div className="p-3 border-t border-[#F0F0ED]">
+      {/* 4. Bottom User Profile (Avatar, Name, Role, Dropdown) */}
+      <div className="p-3 border-t border-[#EEF1F6]">
         <Link
           href="/settings"
-          className="flex items-center justify-between p-2 rounded-xl bg-[#F6F6F3] border border-[#EEEEEC] hover:border-slate-300 transition-all cursor-pointer block"
+          className="flex items-center justify-between p-2 rounded-xl hover:bg-[#F6F8FD] transition-colors"
         >
           <div className="flex items-center gap-2.5 min-w-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={user.avatar}
-              alt={user.name}
-              className="w-8 h-8 rounded-lg object-cover border border-[#E0E0DC] shrink-0"
+              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+              alt="Ava Morgan"
+              className="w-9 h-9 rounded-full object-cover ring-2 ring-pink-100 shrink-0"
             />
             <div className="min-w-0">
-              <div className="font-bold text-slate-900 text-xs truncate">
-                {user.name}
+              <div className="font-extrabold text-slate-900 text-xs truncate">
+                Ava Morgan
               </div>
-              <div className="text-[10px] text-slate-400 truncate">
-                {user.email}
+              <div className="text-[10px] text-slate-400 font-medium truncate">
+                Creator
               </div>
             </div>
           </div>
-          <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
         </Link>
       </div>
     </aside>
