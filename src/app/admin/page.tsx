@@ -81,7 +81,7 @@ export default function AdminDashboardPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto animate-fade-in font-sans">
+    <div className="space-y-4 max-w-[1400px] mx-auto animate-fade-in font-sans">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-lg flex items-center gap-2 border border-slate-800 animate-slide-in">
@@ -90,22 +90,22 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* Top Header Card */}
-      <div className="p-6 rounded-3xl bg-white border border-[#E2E8F0] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
+      {/* Top Header Card (Compact Modern Studio) */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="space-y-0.5">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
-              <Shield className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center shadow-xs">
+              <Shield className="w-3.5 h-3.5" />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
               Admin SaaS Management Console
             </h1>
             <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-[#E2E8F0]">
-              Master Level
+              Master
             </span>
           </div>
-          <p className="text-xs text-slate-500 font-medium">
-            Review incoming user signups, approve accounts, customize subscription tiers, and control platform access limits.
+          <p className="text-xs text-slate-500 font-medium line-clamp-1">
+            Review incoming user signups, approve accounts, customize subscription tiers, and control access limits.
           </p>
         </div>
 
