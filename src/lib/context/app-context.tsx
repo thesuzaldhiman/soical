@@ -479,6 +479,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         monthlyPostsUsed: prev.monthlyPostsUsed + 1,
       }));
+
+      // Immediately register in post performances so it appears in analytics
+      const nowIso = new Date().toISOString();
+      const perfEntries: PostPerformanceMetric[] = postData.pageIds.map((pid) => {
+        const pg = pages.find((p) => p.id === pid);
+        return {
+          id: `perf_${Date.now()}_${pid}`,
+          postId: newPost.id,
+          pageId: pid,
+          pageName: pg?.name || 'Destination',
+          externalPostId: `ext_${Date.now()}_${pid}`,
+          postType: postData.postType,
+          message: postData.message,
+          mediaUrl: postData.mediaUrl,
+          permalinkUrl: postData.linkUrl || pg?.targetUrl || undefined,
+          publishedAt: nowIso,
+          reach: 0,
+          mediaViews: 0,
+          likes: 0,
+          reactions: { like: 0, love: 0, wow: 0, haha: 0, sad: 0, angry: 0 },
+          commentsCount: 0,
+          sharesCount: 0,
+          estimatedEarningsMicro: 0,
+          lastSyncedAt: nowIso,
+          isToday: true,
+        };
+      });
+      setPostPerformances((prev) => [...perfEntries, ...prev]);
     }
 
     return newPost;
