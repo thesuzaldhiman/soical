@@ -50,14 +50,14 @@
    - Visual thumbnails with video overlays, status badges, and 3-dot dropdown menus
    - Post Inspection Modal with copy caption, destination results, reschedule, retry, and delete actions
 
-6. **Authentic Official Social Media Brand SVG Logos (`SocialIcon`)**:
-   - Replaced all generic/hardcoded emoji symbols across the application (`dashboard`, `accounts`, `pages`, `composer`, `library`, `logs`) with pixel-perfect, authentic official brand SVGs:
-     - Facebook (Official blue circular badge with white `f`)
-     - Instagram (Official camera radial gradient glyph)
-     - YouTube (Official red badge with play triangle)
-     - Threads (Official black tile with white `@` glyph)
-     - Telegram (Official paper airplane in sky blue circle)
-     - Twitter / X, LinkedIn, Pinterest, Blogger
+6. **User-Provided Monochrome Studio Social Media Logos (`SocialIcon`)**:
+   - Extracted and processed the 5 authentic studio monochrome logos provided by the user with true anti-aliased transparency:
+     - Facebook (Solid black circular badge with white `f`)
+     - Instagram (Solid black rounded squircle with white camera outline and dot)
+     - YouTube (Solid black circular badge with white play icon)
+     - Threads (Solid black circular badge with white `@` glyph)
+     - Telegram (Solid black circular badge with white angled paper airplane)
+   - Integrated into `public/icons/social/` and mapped cleanly inside `SocialIcon.tsx` across all pages (Dashboard, Accounts, Pages, Composer, Library, Logs).
 
 7. **Connected Accounts Screen (`/accounts`) UI/UX Upgrade**:
    - Tasklify Clean Neutral Studio aesthetic (`#F8F9FA` canvas, `#FFFFFF` cards, `#E2E8F0` borders, `#0F172A` buttons)
