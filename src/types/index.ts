@@ -277,6 +277,8 @@ export interface AppSettings {
   autoRetryEnabled?: boolean;
   autoRetryMax?: number;
   autoRetryIntervalMin?: number;
+  pageIntervalMinSeconds?: number;
+  pageIntervalMaxSeconds?: number;
   telegramBotToken: string;
   openaiApiKey: string;
   sensitiveWords: string[];

@@ -674,6 +674,8 @@ export const INITIAL_SETTINGS: AppSettings = {
   autoRetryEnabled: true,
   autoRetryMax: 3,
   autoRetryIntervalMin: 15,
+  pageIntervalMinSeconds: 0,
+  pageIntervalMaxSeconds: 0,
   telegramBotToken: '',
   openaiApiKey: '',
   sensitiveWords: DEFAULT_SENSITIVE_WORDS,

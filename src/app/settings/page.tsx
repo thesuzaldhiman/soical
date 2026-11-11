@@ -33,6 +33,19 @@ import {
   Plus,
 } from 'lucide-react';
 
+const PAGE_INTERVAL_OPTIONS = [
+  { label: '0 sec (Instant)', seconds: 0 },
+  { label: '15 sec', seconds: 15 },
+  { label: '30 sec', seconds: 30 },
+  { label: '1 min', seconds: 60 },
+  { label: '2 min', seconds: 120 },
+  { label: '5 min', seconds: 300 },
+  { label: '10 min', seconds: 600 },
+  { label: '15 min', seconds: 900 },
+  { label: '30 min', seconds: 1800 },
+  { label: '60 min', seconds: 3600 },
+];
+
 export default function SettingsPage() {
   return (
     <AppShell>
@@ -96,6 +109,10 @@ function SettingsContent() {
   const [autoRetryMax, setAutoRetryMax] = useState(settings?.autoRetryMax ?? 3);
   const [autoRetryIntervalMin, setAutoRetryIntervalMin] = useState(settings?.autoRetryIntervalMin ?? 15);
 
+  // Page Interval (Random Range in seconds)
+  const [pageIntervalMinSeconds, setPageIntervalMinSeconds] = useState(settings?.pageIntervalMinSeconds ?? 0);
+  const [pageIntervalMaxSeconds, setPageIntervalMaxSeconds] = useState(settings?.pageIntervalMaxSeconds ?? 0);
+
   // Sensitive Words
   const [sensitiveWordsRaw, setSensitiveWordsRaw] = useState(
     (settings?.sensitiveWords && settings.sensitiveWords.length > 0
@@ -135,6 +152,8 @@ function SettingsContent() {
       if (settings.autoRetryEnabled !== undefined) setAutoRetryEnabled(settings.autoRetryEnabled);
       if (settings.autoRetryMax !== undefined) setAutoRetryMax(settings.autoRetryMax);
       if (settings.autoRetryIntervalMin !== undefined) setAutoRetryIntervalMin(settings.autoRetryIntervalMin);
+      if (settings.pageIntervalMinSeconds !== undefined) setPageIntervalMinSeconds(settings.pageIntervalMinSeconds);
+      if (settings.pageIntervalMaxSeconds !== undefined) setPageIntervalMaxSeconds(settings.pageIntervalMaxSeconds);
       if (settings.sensitiveWords && settings.sensitiveWords.length > 0) {
         setSensitiveWordsRaw(settings.sensitiveWords.join(', '));
       }
@@ -326,6 +345,8 @@ function SettingsContent() {
       autoRetryEnabled,
       autoRetryMax: Number(autoRetryMax) || 3,
       autoRetryIntervalMin: Number(autoRetryIntervalMin) || 15,
+      pageIntervalMinSeconds: Number(pageIntervalMinSeconds) || 0,
+      pageIntervalMaxSeconds: Math.max(Number(pageIntervalMinSeconds) || 0, Number(pageIntervalMaxSeconds) || 0),
       sensitiveWords: wordsArray.length > 0 ? wordsArray : DEFAULT_SENSITIVE_WORDS,
       cronSecretKey: cronSecret.trim(),
     });
@@ -1015,6 +1036,65 @@ function SettingsContent() {
               >
                 Regenerate Cron Secret Key
               </button>
+            </div>
+
+            {/* Interval Between Pages (Random Range) */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-4">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-700 shrink-0 mt-0.5">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-slate-900">
+                    Interval Between Pages (Random Range)
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    0–0 = simultaneous broadcast to all pages. With a range set, each page uses a different random delay inside the window (natural delivery, avoids bot patterns).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-600">Min</span>
+                  <select
+                    value={pageIntervalMinSeconds}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setPageIntervalMinSeconds(val);
+                      if (val > pageIntervalMaxSeconds) setPageIntervalMaxSeconds(val);
+                    }}
+                    className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
+                  >
+                    {PAGE_INTERVAL_OPTIONS.map((opt) => (
+                      <option key={`min-${opt.seconds}`} value={opt.seconds}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <span className="text-slate-400 font-bold">–</span>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-600">Max</span>
+                  <select
+                    value={pageIntervalMaxSeconds}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setPageIntervalMaxSeconds(val);
+                      if (val < pageIntervalMinSeconds) setPageIntervalMinSeconds(val);
+                    }}
+                    className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
+                  >
+                    {PAGE_INTERVAL_OPTIONS.map((opt) => (
+                      <option key={`max-${opt.seconds}`} value={opt.seconds}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
         )}

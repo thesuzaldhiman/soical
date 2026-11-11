@@ -26,7 +26,6 @@ import {
   ExternalLink,
   Search,
   Hash,
-  Timer,
   Save,
   Sparkles,
   Play,
@@ -36,34 +35,12 @@ import {
   Eraser,
 } from 'lucide-react';
 
-const INTERVAL_OPTIONS = [
-  { label: '0 sec (Instant)', seconds: 0 },
-  { label: '15 sec', seconds: 15 },
-  { label: '30 sec', seconds: 30 },
-  { label: '1 min', seconds: 60 },
-  { label: '2 min', seconds: 120 },
-  { label: '5 min', seconds: 300 },
-  { label: '10 min', seconds: 600 },
-  { label: '15 min', seconds: 900 },
-  { label: '30 min', seconds: 1800 },
-  { label: '60 min', seconds: 3600 },
-];
-
 const POST_TYPES: { id: PostType; label: string; desc: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'text', label: 'Text', desc: 'Status update', icon: FileText },
   { id: 'image', label: 'Image', desc: 'Photo + caption', icon: ImageIcon },
   { id: 'video', label: 'Video', desc: 'Reel / Short', icon: VideoIcon },
   { id: 'link', label: 'Link', desc: 'Article share', icon: Link2 },
 ];
-
-function formatDurationShort(totalSeconds: number): string {
-  if (totalSeconds <= 0) return '0s';
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const mins = Math.round(totalSeconds / 60);
-  if (mins < 60) return `${mins}m`;
-  const hrs = (mins / 60).toFixed(1).replace(/\.0$/, '');
-  return `${hrs}h`;
-}
 
 function getLocalDateTimeOffset(hoursAhead: number, fixedHour?: number): string {
   const date = new Date();
@@ -91,7 +68,7 @@ export default function ComposerPage() {
 
 function ComposerContent() {
   const router = useRouter();
-  const { pages, accounts, categories, createPost } = useApp();
+  const { pages, accounts, categories, settings, createPost } = useApp();
 
   // Selected Destinations (Page IDs)
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>(
@@ -106,10 +83,6 @@ function ComposerContent() {
   const [mediaMode, setMediaMode] = useState<'upload' | 'url'>('upload');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaFileName, setMediaFileName] = useState<string | null>(null);
-
-  // Anti-Ban Interval Range (seconds)
-  const [intervalMin, setIntervalMin] = useState(0);
-  const [intervalMax, setIntervalMax] = useState(0);
 
   // Scheduling
   const [isScheduleMode, setIsScheduleMode] = useState(false);
@@ -281,20 +254,6 @@ function ComposerContent() {
     }
   };
 
-  const handleMinIntervalChange = (val: number) => {
-    setIntervalMin(val);
-    if (val > intervalMax) {
-      setIntervalMax(val);
-    }
-  };
-
-  const handleMaxIntervalChange = (val: number) => {
-    setIntervalMax(val);
-    if (val < intervalMin) {
-      setIntervalMin(val);
-    }
-  };
-
   const handleInsertHashtags = () => {
     if (suggestedHashtags.length === 0) return;
     const missing = suggestedHashtags.filter((tag) => !message.includes(tag));
@@ -319,8 +278,6 @@ function ComposerContent() {
     removeMedia();
     setScheduledDateTime('');
     setIsScheduleMode(false);
-    setIntervalMin(0);
-    setIntervalMax(0);
     setStatusBanner(null);
   };
 
@@ -329,6 +286,8 @@ function ComposerContent() {
 
     const activeMediaUrl = postType === 'image' || postType === 'video' ? mediaUrl.trim() : '';
     const activeLinkUrl = postType === 'link' ? linkUrl.trim() : '';
+    const intervalMin = settings?.pageIntervalMinSeconds ?? 0;
+    const intervalMax = settings?.pageIntervalMaxSeconds ?? 0;
 
     if (mode !== 'draft') {
       if (!message.trim() && !activeMediaUrl && !activeLinkUrl) {
@@ -477,18 +436,6 @@ function ComposerContent() {
       }, 1400);
     }
   };
-
-  // Estimated delivery window
-  const estimatedWindowText = useMemo(() => {
-    const count = selectedPageIds.length;
-    if (count <= 1 || (intervalMin === 0 && intervalMax === 0)) {
-      return 'Instant parallel broadcast to all selected pages';
-    }
-    const gaps = count - 1;
-    const minTotal = gaps * intervalMin;
-    const maxTotal = gaps * intervalMax;
-    return `Natural stagger across ${count} pages (~${formatDurationShort(minTotal)} – ${formatDurationShort(maxTotal)} total)`;
-  }, [selectedPageIds.length, intervalMin, intervalMax]);
 
   return (
     <div className="space-y-6 font-sans max-w-6xl mx-auto animate-fade-in pb-14">
@@ -916,61 +863,6 @@ function ComposerContent() {
                   />
                 </div>
               )}
-            </div>
-
-            {/* Interval Between Pages (Random Range) — Anti-Ban */}
-            <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-3.5">
-              <div className="flex items-start gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-700 shrink-0 mt-0.5">
-                  <Timer className="w-4 h-4" />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-bold text-slate-900">
-                    Interval Between Pages (Random Range)
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    0–0 = simultaneous broadcast to all pages. With a range set, each page uses a different random delay inside the window (natural delivery, avoids bot patterns).
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-500">Min</span>
-                  <select
-                    value={intervalMin}
-                    onChange={(e) => handleMinIntervalChange(Number(e.target.value))}
-                    className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
-                  >
-                    {INTERVAL_OPTIONS.map((opt) => (
-                      <option key={`min-${opt.seconds}`} value={opt.seconds}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <span className="text-slate-400 font-bold">–</span>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-500">Max</span>
-                  <select
-                    value={intervalMax}
-                    onChange={(e) => handleMaxIntervalChange(Number(e.target.value))}
-                    className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
-                  >
-                    {INTERVAL_OPTIONS.map((opt) => (
-                      <option key={`max-${opt.seconds}`} value={opt.seconds}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <span className="text-[11px] font-semibold text-slate-500 ml-auto">
-                  {estimatedWindowText}
-                </span>
-              </div>
             </div>
           </div>
 
