@@ -1,14 +1,22 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono, Noto_Sans_Devanagari } from 'next/font/google';
+import { Plus_Jakarta_Sans, Inter, Geist_Mono, Noto_Sans_Devanagari } from 'next/font/google';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: '--font-sans',
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+});
+
+const inter = Inter({
+  variable: '--font-inter',
+  subsets: ['latin'],
+  display: 'swap',
 });
 
 const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+  variable: '--font-mono',
   subsets: ['latin'],
 });
 
@@ -32,9 +40,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${notoDevanagari.variable} h-full antialiased`}
+      className={`${plusJakartaSans.variable} ${inter.variable} ${geistMono.variable} ${notoDevanagari.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+      <body className="min-h-full flex flex-col font-sans selection:bg-slate-900 selection:text-white">
         {children}
       </body>
     </html>
