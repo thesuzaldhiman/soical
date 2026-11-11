@@ -1,22 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/lib/context/app-context';
 import {
   ShieldCheck,
   ArrowRight,
-  Sparkles,
   AlertCircle,
   CheckCircle2,
-  Lock,
-  Globe,
   Radio,
-  ExternalLink,
   Copy,
-  Check,
-  Zap,
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -28,14 +22,9 @@ export default function LoginPage() {
 }
 
 function LoginContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loginWithGoogle, isAuthenticated, logout } = useApp();
+  const { user, isAuthenticated, logout } = useApp();
 
-  const [emailInput, setEmailInput] = useState('');
-  const [googleNameInput, setGoogleNameInput] = useState('Suzal Dhiman');
-  const [googleEmailInput, setGoogleEmailInput] = useState('suzal@khabarmonkey.com');
-  const [showDirectGoogleModal, setShowDirectGoogleModal] = useState(false);
   const [copiedRedirectUri, setCopiedRedirectUri] = useState(false);
 
   const errorParam = searchParams.get('error');
@@ -54,31 +43,6 @@ function LoginContent() {
   const handleLiveGoogleOAuth = () => {
     // Redirect to the server-side Google OAuth initiator
     window.location.href = '/api/auth/google';
-  };
-
-  const handleDirectGoogleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!googleEmailInput.trim()) return;
-
-    loginWithGoogle({
-      name: googleNameInput.trim() || 'Google User',
-      email: googleEmailInput.trim(),
-      avatar: `https://lh3.googleusercontent.com/a/default-user`,
-    });
-
-    router.push('/dashboard');
-  };
-
-  const handleEmailLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailInput.trim()) return;
-
-    loginWithGoogle({
-      name: emailInput.split('@')[0],
-      email: emailInput.trim(),
-    });
-
-    router.push('/dashboard');
   };
 
   return (
@@ -153,8 +117,8 @@ function LoginContent() {
               </p>
             </div>
 
-            {/* Missing Google Client ID Helper Banner */}
-            {isGoogleMissing && (
+            {/* Google OAuth Error / Setup Helper Banner */}
+            {isGoogleMissing ? (
               <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs space-y-2 text-left animate-fade-in">
                 <div className="flex items-center gap-2 font-bold text-amber-950">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -175,61 +139,30 @@ function LoginContent() {
                   </button>
                 </div>
               </div>
-            )}
+            ) : errorParam ? (
+              <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 text-rose-900 text-xs flex items-start gap-2 text-left animate-fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-rose-950">Google Sign-In Failed</div>
+                  <p className="text-[11px] text-rose-800 mt-0.5">{errorParam}</p>
+                </div>
+              </div>
+            ) : null}
 
             {/* Primary Action: Official Google Login Button */}
             <div className="space-y-3">
               <button
                 type="button"
                 onClick={handleLiveGoogleOAuth}
-                className="w-full py-3 px-4 rounded-xl border border-[#E2E8F0] hover:border-slate-400 bg-white hover:bg-[#F8F9FA] text-slate-800 font-bold text-xs flex items-center justify-center gap-3 transition-all shadow-2xs hover:scale-[1.01] active:scale-[0.99] group"
+                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-3 transition-all shadow-xs hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
               >
-                <GoogleGLogo className="w-4 h-4 shrink-0" />
+                <span className="w-5 h-5 rounded-md bg-white flex items-center justify-center shrink-0">
+                  <GoogleGLogo className="w-3.5 h-3.5" />
+                </span>
                 <span>Continue with Google</span>
-              </button>
-
-              {/* Direct Google Login Option for instant testing */}
-              <button
-                type="button"
-                onClick={() => setShowDirectGoogleModal(true)}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs hover:scale-[1.01] active:scale-[0.99]"
-              >
-                <span>Instant Google Sign-In (Direct)</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
-
-            {/* Clean Divider */}
-            <div className="relative flex items-center justify-center">
-              <div className="border-t border-[#E2E8F0] w-full" />
-              <span className="bg-white px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider relative">
-                or with email
-              </span>
-            </div>
-
-            {/* Work Email Magic Link */}
-            <form onSubmit={handleEmailLogin} className="space-y-3">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1 text-left">
-                  Work Email Address
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="suzal@khabarmonkey.com"
-                  className="w-full px-3 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 rounded-xl border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors"
-              >
-                Continue with Email
-              </button>
-            </form>
 
             {/* Trust & Compliance Badge */}
             <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-400">
@@ -239,70 +172,6 @@ function LoginContent() {
           </div>
         )}
       </div>
-
-      {/* Direct Google Account Sign-In Modal */}
-      {showDirectGoogleModal && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#E2E8F0] max-w-sm w-full p-6 shadow-2xl space-y-5 animate-scale-up">
-            <div className="flex items-center gap-3 pb-3 border-b border-[#E2E8F0]">
-              <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
-                <GoogleGLogo className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-slate-900">Google Account Sign-In</h3>
-                <p className="text-[11px] text-slate-400">Sign in with your Google profile</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleDirectGoogleLogin} className="space-y-3.5">
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={googleNameInput}
-                  onChange={(e) => setGoogleNameInput(e.target.value)}
-                  placeholder="Suzal Dhiman"
-                  className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                  Google Email Address
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={googleEmailInput}
-                  onChange={(e) => setGoogleEmailInput(e.target.value)}
-                  placeholder="suzal@gmail.com"
-                  className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
-                <button
-                  type="button"
-                  onClick={() => setShowDirectGoogleModal(false)}
-                  className="px-3.5 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Sign In Now</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Bottom Footer */}
       <div className="max-w-6xl w-full mx-auto text-center text-xs text-slate-400 py-2">

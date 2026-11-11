@@ -102,8 +102,8 @@ interface AppContextType {
   loadDemoData: () => void;
 
   // Facebook Analytics & Monetization Actions
-  syncPageLiveFollowers: (pageId?: string) => void;
-  syncPostInsights: (pageId?: string) => void;
+  syncPageLiveFollowers: (pageId?: string) => Promise<void> | void;
+  syncPostInsights: (pageId?: string) => Promise<void> | void;
   replyToComment: (commentId: string, message: string) => void;
   toggleLikeComment: (commentId: string) => void;
   toggleHideComment: (commentId: string) => void;
@@ -649,35 +649,85 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPostComments(DEMO_POST_COMMENTS);
   };
 
-  // Facebook Live sync actions
-  const syncPageLiveFollowers = (pageId?: string) => {
+  // Live sync actions (Authentic API query, zero random artificial inflation)
+  const syncPageLiveFollowers = async (pageId?: string) => {
     const now = new Date().toISOString();
+    const targetPages = pages.filter((p) => !pageId || p.id === pageId);
+
+    try {
+      const res = await fetch('/api/sync/followers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pages: targetPages.map((p) => ({
+            id: p.id,
+            platform: p.platform,
+            pageId: p.pageId,
+            accessToken: p.accessToken,
+            botToken: p.botToken,
+            chatId: p.chatId,
+            targetUrl: p.targetUrl,
+            fanCount: p.fanCount,
+            followersCount: p.followersCount,
+          })),
+          ytApiKey: settings?.ytApiKey || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.results)) {
+        const resultMap = new Map<string, { followersCount: number; fanCount: number; live?: boolean }>();
+        data.results.forEach((r: any) => resultMap.set(r.id, r));
+
+        setPages((prev) =>
+          prev.map((pg) => {
+            if (pageId && pg.id !== pageId) return pg;
+            const resData = resultMap.get(pg.id);
+            if (!resData) {
+              return {
+                ...pg,
+                lastFollowerSyncAt: now,
+              };
+            }
+            const oldCount = pg.followersCount ?? pg.fanCount ?? 0;
+            const newCount = resData.followersCount;
+            const delta = resData.live ? newCount - oldCount : (pg.followersDeltaToday ?? 0);
+
+            return {
+              ...pg,
+              followersCount: newCount,
+              fanCount: resData.fanCount,
+              followersDeltaToday: delta,
+              lastFollowerSyncAt: now,
+            };
+          })
+        );
+        return;
+      }
+    } catch (e) {
+      console.warn('Live follower sync API error:', e);
+    }
+
+    // Fallback: keep exact counts, just update timestamp without random fake increment
     setPages((prev) =>
       prev.map((pg) => {
         if (pageId && pg.id !== pageId) return pg;
-        const randomGain = Math.floor(Math.random() * 8) + 1;
-        const updatedCount = (pg.followersCount || pg.fanCount) + randomGain;
         return {
           ...pg,
-          followersCount: updatedCount,
-          fanCount: updatedCount,
-          followersDeltaToday: (pg.followersDeltaToday || 0) + randomGain,
           lastFollowerSyncAt: now,
         };
       })
     );
   };
 
-  const syncPostInsights = (pageId?: string) => {
+  const syncPostInsights = async (pageId?: string) => {
     const now = new Date().toISOString();
+    // Maintain genuine numbers and update timestamp
     setPostPerformances((prev) =>
       prev.map((metric) => {
         if (pageId && metric.pageId !== pageId) return metric;
         return {
           ...metric,
-          reach: metric.reach + Math.floor(Math.random() * 45) + 5,
-          mediaViews: metric.mediaViews + Math.floor(Math.random() * 60) + 10,
-          likes: metric.likes + Math.floor(Math.random() * 4) + 1,
           lastSyncedAt: now,
         };
       })
@@ -736,14 +786,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPages((prev) =>
       prev.map((pg) => {
         if (!pg.monetization || pg.monetization.status !== 'monetized_active') return pg;
-        const microBump = Math.floor(Math.random() * 850000) + 150000;
         return {
           ...pg,
           monetization: {
             ...pg.monetization,
-            todayEarningsMicro: pg.monetization.todayEarningsMicro + microBump,
-            last7dEarningsMicro: pg.monetization.last7dEarningsMicro + microBump,
-            last30dEarningsMicro: pg.monetization.last30dEarningsMicro + microBump,
             lastSyncedAt: now,
           },
         };

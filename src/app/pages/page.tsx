@@ -72,7 +72,7 @@ function PagesContent() {
   const totalPages = pages.length;
   const activePages = pages.filter((p) => p.isActive).length;
   const disabledPages = pages.filter((p) => !p.isActive).length;
-  const totalAudience = pages.reduce((acc, p) => acc + (p.fanCount || 0), 0);
+  const totalAudience = pages.reduce((acc, p) => acc + (p.followersCount ?? p.fanCount ?? 0), 0);
 
   // Bulk actions
   const handleActivateAll = () => {
@@ -93,7 +93,7 @@ function PagesContent() {
       `"${p.name}"`,
       p.platform,
       p.pageId,
-      p.fanCount,
+      p.followersCount ?? p.fanCount ?? 0,
       `"${p.category || 'General'}"`,
       p.isActive ? 'Active' : 'Disabled',
     ]);
@@ -426,7 +426,7 @@ function PagesContent() {
                     </td>
 
                     <td className="py-3.5 px-5 font-bold text-slate-900">
-                      {page.fanCount.toLocaleString()}
+                      {(page.followersCount ?? page.fanCount ?? 0).toLocaleString()}
                     </td>
 
                     {/* API Permissions: Replaced clutter with a clean 'Show Permissions' button */}
@@ -623,7 +623,12 @@ function PagesContent() {
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500 font-medium">Audience / Followers</span>
                 <span className="font-bold text-slate-900">
-                  {selectedPageForModal.fanCount.toLocaleString()} Fans
+                  {(selectedPageForModal.followersCount ?? selectedPageForModal.fanCount ?? 0).toLocaleString()}{' '}
+                  {selectedPageForModal.platform === 'youtube'
+                    ? 'Subscribers'
+                    : selectedPageForModal.platform === 'telegram'
+                    ? 'Members'
+                    : 'Followers'}
                 </span>
               </div>
 

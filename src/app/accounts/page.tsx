@@ -691,7 +691,14 @@ function AccountsContent() {
                           {page.name}
                         </div>
                         <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                          <span>{page.fanCount.toLocaleString()} Audience</span>
+                          <span>
+                            {(page.followersCount ?? page.fanCount ?? 0).toLocaleString()}{' '}
+                            {page.platform === 'youtube'
+                              ? 'Subscribers'
+                              : page.platform === 'telegram'
+                              ? 'Members'
+                              : 'Audience'}
+                          </span>
                           <span>•</span>
                           <span className="font-mono text-[10px] text-slate-400">ID: {page.pageId}</span>
                         </div>
