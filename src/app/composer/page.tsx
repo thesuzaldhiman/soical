@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
@@ -33,6 +33,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Eraser,
+  ThumbsUp,
+  Heart,
+  Share2,
+  MoreHorizontal,
+  Bookmark,
 } from 'lucide-react';
 
 const POST_TYPES: { id: PostType; label: string; desc: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -191,6 +196,14 @@ function ComposerContent() {
   const previewPage =
     selectedPagesList[previewIndex % Math.max(selectedPagesList.length, 1)] ||
     pages[0];
+
+  const [previewPlatform, setPreviewPlatform] = useState<Platform>('facebook');
+
+  useEffect(() => {
+    if (previewPage?.platform) {
+      setPreviewPlatform(previewPage.platform);
+    }
+  }, [previewPage?.platform]);
 
   const allSelected = pages.length > 0 && pages.every((p) => selectedPageIds.includes(p.id));
 
@@ -629,15 +642,38 @@ function ComposerContent() {
                   </p>
                 </div>
               ) : mediaUrl ? (
-                <div className="relative rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-900 max-h-56 flex items-center justify-center">
-                  {postType === 'video' ? (
-                    <video src={mediaUrl} controls className="max-h-56 w-auto" />
-                  ) : (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={mediaUrl} alt="Upload preview" className="max-h-56 w-auto object-contain" />
-                  )}
-                  <div className="absolute top-2.5 right-2.5 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] px-2.5 py-1 rounded-full font-mono">
-                    {mediaFileName || 'Attached'}
+                <div className="rounded-2xl border border-[#E2E8F0] bg-slate-50 p-3 space-y-2.5">
+                  <div className="relative rounded-xl overflow-hidden max-h-72 w-full bg-slate-950/5 border border-[#E2E8F0] flex items-center justify-center p-2">
+                    {postType === 'video' ? (
+                      <video src={mediaUrl} controls className="max-h-68 w-auto rounded-lg object-contain" />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={mediaUrl} alt="Upload preview" className="max-h-68 w-auto rounded-lg object-contain" />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs px-1">
+                    <span className="font-mono text-[11px] text-slate-600 truncate max-w-[200px]">
+                      {mediaFileName || 'Attached File'}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-[11px] font-bold text-slate-700 hover:text-slate-900 underline"
+                      >
+                        Change file
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMediaUrl('');
+                          setMediaFileName('');
+                        }}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-700 underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -1170,108 +1206,304 @@ function ComposerContent() {
 
           {/* Card 2: Live Social Preview */}
           {showPreview && (
-            <div className="bg-white rounded-3xl border border-[#E2E8F0] p-5 shadow-2xs space-y-3.5 animate-fade-in">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-                  <Eye className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Live Preview</span>
+            <div className="bg-white rounded-3xl border border-[#E2E8F0] p-5 shadow-2xs space-y-4 animate-fade-in">
+              {/* Header with Platform Selector & Page Navigator */}
+              <div className="flex flex-col gap-3 pb-2 border-b border-[#E2E8F0]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <Eye className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Live Preview</span>
+                  </div>
+
+                  {selectedPagesList.length > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewIndex((i) => (i - 1 + selectedPagesList.length) % selectedPagesList.length)
+                        }
+                        className="p-1 rounded-lg border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-600"
+                        aria-label="Previous selected page"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-[10px] font-bold text-slate-500 px-1">
+                        {(previewIndex % selectedPagesList.length) + 1}/{selectedPagesList.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewIndex((i) => (i + 1) % selectedPagesList.length)}
+                        className="p-1 rounded-lg border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-600"
+                        aria-label="Next selected page"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {selectedPagesList.length > 1 && (
-                  <div className="flex items-center gap-1">
+                {/* Platform Toggle Bar */}
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
+                  {(['facebook', 'telegram', 'instagram'] as Platform[]).map((plat) => (
                     <button
+                      key={plat}
                       type="button"
-                      onClick={() =>
-                        setPreviewIndex((i) => (i - 1 + selectedPagesList.length) % selectedPagesList.length)
-                      }
-                      className="p-1 rounded-lg border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-600"
-                      aria-label="Previous selected page"
+                      onClick={() => setPreviewPlatform(plat)}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold capitalize flex items-center justify-center gap-1.5 transition-all ${
+                        previewPlatform === plat
+                          ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
                     >
-                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <SocialIcon platform={plat} className="w-3.5 h-3.5 rounded-xs" />
+                      <span>{plat}</span>
                     </button>
-                    <span className="text-[10px] font-bold text-slate-500 px-1">
-                      {(previewIndex % selectedPagesList.length) + 1}/{selectedPagesList.length}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewIndex((i) => (i + 1) % selectedPagesList.length)}
-                      className="p-1 rounded-lg border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-600"
-                      aria-label="Next selected page"
-                    >
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Author bar */}
-              <div className="flex items-center gap-3 pt-1">
-                {previewPage?.avatarUrl ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={previewPage.avatarUrl}
-                    alt={previewPage.name}
-                    className="w-9 h-9 rounded-full object-cover border border-[#E2E8F0]"
-                  />
-                ) : (
-                  <div className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold">
-                    {previewPage?.name?.charAt(0) || 'P'}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-slate-900 leading-tight truncate">
-                    {previewPage?.name || 'Selected Channel'}
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
-                    <span className="capitalize">{previewPage?.platform || 'Social'}</span>
-                    <span>•</span>
-                    <span>{isScheduleMode && scheduledDateTime ? 'Scheduled' : 'Just now'}</span>
-                    <span>•</span>
-                    <Globe className="w-3 h-3" />
-                  </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Post text */}
-              <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-line font-medium min-h-[36px]">
-                {message || 'Your post caption will appear here as you type...'}
-              </p>
-
-              {/* Link Card Preview */}
-              {postType === 'link' && linkUrl.trim() && (
-                <div className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-white border border-[#E2E8F0] flex items-center justify-center shrink-0">
-                    <Link2 className="w-4 h-4 text-slate-600" />
+              {/* PLATFORM SPECIFIC PREVIEWS */}
+              {previewPlatform === 'facebook' && (
+                <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-xs space-y-3 p-4">
+                  {/* Author Bar */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {previewPage?.avatarUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={previewPage.avatarUrl}
+                          alt={previewPage.name}
+                          className="w-10 h-10 rounded-full object-cover border border-[#E2E8F0]"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                          {previewPage?.name?.charAt(0) || 'F'}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs font-bold text-slate-900 truncate">
+                            {previewPage?.name || 'Facebook Page'}
+                          </span>
+                          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-600 text-white text-[9px] font-bold">
+                            ✓
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <span>{isScheduleMode && scheduledDateTime ? 'Scheduled' : 'Just now'}</span>
+                          <span>•</span>
+                          <Globe className="w-3 h-3 text-slate-400" />
+                        </div>
+                      </div>
+                    </div>
+                    <MoreHorizontal className="w-4 h-4 text-slate-400" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase text-slate-400">Attached Link</div>
-                    <div className="text-xs font-semibold text-slate-800 truncate">{linkUrl}</div>
-                  </div>
-                </div>
-              )}
 
-              {/* Media Box */}
-              {(postType === 'image' || postType === 'video') && mediaUrl && (
-                <div className="rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-900">
-                  {postType === 'video' ? (
-                    <video src={mediaUrl} controls className="w-full max-h-52 object-contain" />
-                  ) : (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={mediaUrl} alt="Post preview" className="w-full max-h-52 object-cover" />
+                  {/* Caption */}
+                  <p className="text-[13px] text-slate-900 leading-relaxed whitespace-pre-line font-normal break-words">
+                    {message || 'Your Facebook post caption will appear here in real-time as you compose...'}
+                  </p>
+
+                  {/* Link Card Preview */}
+                  {postType === 'link' && linkUrl.trim() && (
+                    <div className="rounded-xl border border-[#E2E8F0] overflow-hidden bg-[#F8F9FA]">
+                      <div className="p-3 border-b border-[#E2E8F0] flex items-center gap-2 text-slate-500 text-xs">
+                        <Link2 className="w-4 h-4" />
+                        <span className="font-mono text-[11px] truncate">{linkUrl}</span>
+                      </div>
+                      <div className="p-3">
+                        <p className="text-xs font-bold text-slate-900 line-clamp-1">Shared Article Link</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Click preview to visit original webpage</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Media (Uncropped full aspect container) */}
+                  {(postType === 'image' || postType === 'video') && mediaUrl && (
+                    <div className="rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-950/5 flex items-center justify-center p-1">
+                      {postType === 'video' ? (
+                        <video src={mediaUrl} controls className="max-h-[380px] w-auto max-w-full rounded-lg object-contain" />
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={mediaUrl}
+                          alt="Post preview"
+                          className="max-h-[380px] w-auto max-w-full rounded-lg object-contain shadow-xs"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Reactions Summary */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 pb-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center -space-x-1">
+                        <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] flex items-center justify-center border border-white">👍</span>
+                        <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center border border-white">❤️</span>
+                        <span className="w-4 h-4 rounded-full bg-amber-400 text-white text-[9px] flex items-center justify-center border border-white">😮</span>
+                      </div>
+                      <span className="font-semibold text-slate-600">428</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                      <span>24 comments</span>
+                      <span>•</span>
+                      <span>12 shares</span>
+                    </div>
+                  </div>
+
+                  {/* Facebook Action Buttons */}
+                  <div className="grid grid-cols-3 border-t border-b border-[#E2E8F0] py-1 text-slate-600 text-xs font-semibold">
+                    <button type="button" className="py-1.5 flex items-center justify-center gap-1.5 hover:bg-slate-50 rounded-lg">
+                      <ThumbsUp className="w-3.5 h-3.5" />
+                      <span>Like</span>
+                    </button>
+                    <button type="button" className="py-1.5 flex items-center justify-center gap-1.5 hover:bg-slate-50 rounded-lg">
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Comment</span>
+                    </button>
+                    <button type="button" className="py-1.5 flex items-center justify-center gap-1.5 hover:bg-slate-50 rounded-lg">
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Share</span>
+                    </button>
+                  </div>
+
+                  {/* Pinned First Comment */}
+                  {firstComment.trim() && (
+                    <div className="flex items-start gap-2 pt-1">
+                      <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                        {previewPage?.name?.charAt(0) || 'F'}
+                      </div>
+                      <div className="bg-[#F0F2F5] rounded-2xl p-2.5 text-xs space-y-0.5 flex-1">
+                        <div className="font-bold text-slate-900 text-[11px] flex items-center gap-1">
+                          <span>{previewPage?.name || 'Page'}</span>
+                          <span className="text-[9px] bg-slate-200 text-slate-700 px-1 rounded-sm font-semibold">Author</span>
+                        </div>
+                        <p className="text-slate-800 text-xs whitespace-pre-line">{firstComment}</p>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* First Comment Preview */}
-              {firstComment.trim() && (
-                <div className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-1">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                    <MessageSquare className="w-3 h-3 text-slate-400" />
-                    <span>First Comment</span>
+              {previewPlatform === 'telegram' && (
+                <div className="bg-[#0e1621] text-white rounded-2xl p-4 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-700">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-[#2AABEE] flex items-center justify-center text-white font-bold text-xs">
+                        ✈️
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white flex items-center gap-1">
+                          <span>{previewPage?.name || 'Telegram Channel'}</span>
+                          <span className="text-[#2AABEE]">✓</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">broadcast channel</div>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-700 font-medium whitespace-pre-line">
-                    {firstComment}
-                  </p>
+
+                  {/* Telegram Message Bubble */}
+                  <div className="bg-[#182533] rounded-2xl p-3 border border-slate-700/60 space-y-2.5 max-w-sm ml-auto">
+                    {(postType === 'image' || postType === 'video') && mediaUrl && (
+                      <div className="rounded-xl overflow-hidden bg-black/40 flex items-center justify-center">
+                        {postType === 'video' ? (
+                          <video src={mediaUrl} controls className="max-h-[320px] w-auto max-w-full rounded-lg object-contain" />
+                        ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={mediaUrl}
+                            alt="Telegram preview"
+                            className="max-h-[320px] w-auto max-w-full rounded-lg object-contain"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    <p className="text-xs text-slate-100 whitespace-pre-line leading-relaxed">
+                      {message || 'Your Telegram channel post will appear here...'}
+                    </p>
+
+                    <div className="flex items-center justify-end gap-1.5 text-[10px] text-slate-400 pt-1">
+                      <span>👁 1.4K</span>
+                      <span>•</span>
+                      <span>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+
+                  {firstComment.trim() && (
+                    <div className="bg-[#182533]/80 rounded-xl p-2.5 text-xs text-slate-300 border border-slate-700 flex items-center gap-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-[#2AABEE]" />
+                      <span className="truncate">Auto Comment: {firstComment}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {previewPlatform === 'instagram' && (
+                <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-xs space-y-3">
+                  {/* IG Header */}
+                  <div className="flex items-center justify-between p-3 border-b border-[#E2E8F0]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full p-0.5 bg-linear-to-tr from-amber-500 via-rose-500 to-purple-600">
+                        <div className="w-full h-full rounded-full bg-white flex items-center justify-center font-bold text-xs text-slate-900">
+                          {previewPage?.name?.charAt(0) || 'I'}
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">
+                        {previewPage?.name?.toLowerCase().replace(/\s+/g, '_') || 'instagram_account'}
+                      </span>
+                    </div>
+                    <MoreHorizontal className="w-4 h-4 text-slate-400" />
+                  </div>
+
+                  {/* IG Media (Uncropped) */}
+                  <div className="bg-slate-950/5 flex items-center justify-center min-h-[220px]">
+                    {(postType === 'image' || postType === 'video') && mediaUrl ? (
+                      postType === 'video' ? (
+                        <video src={mediaUrl} controls className="max-h-[380px] w-auto max-w-full object-contain" />
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={mediaUrl}
+                          alt="Instagram preview"
+                          className="max-h-[380px] w-auto max-w-full object-contain"
+                        />
+                      )
+                    ) : (
+                      <div className="text-xs text-slate-400 py-12 text-center">
+                        Upload an image or video to view Instagram preview
+                      </div>
+                    )}
+                  </div>
+
+                  {/* IG Action Icons */}
+                  <div className="px-3 space-y-2 pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Heart className="w-5 h-5 text-rose-500 fill-rose-500 cursor-pointer" />
+                        <MessageSquare className="w-5 h-5 text-slate-800 cursor-pointer" />
+                        <Share2 className="w-5 h-5 text-slate-800 cursor-pointer" />
+                      </div>
+                      <Bookmark className="w-5 h-5 text-slate-800 cursor-pointer" />
+                    </div>
+
+                    <div className="text-xs font-bold text-slate-900">
+                      Liked by creators and 892 others
+                    </div>
+
+                    <p className="text-xs text-slate-800 leading-snug">
+                      <strong className="font-bold mr-1.5">
+                        {previewPage?.name?.toLowerCase().replace(/\s+/g, '_') || 'instagram_account'}
+                      </strong>
+                      <span className="whitespace-pre-line font-normal">{message}</span>
+                    </p>
+
+                    {firstComment.trim() && (
+                      <p className="text-[11px] text-slate-500 font-medium pt-0.5">
+                        <span className="font-bold text-slate-700">First comment:</span> {firstComment}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

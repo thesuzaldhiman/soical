@@ -1855,13 +1855,21 @@ function DashboardContent() {
             {/* Media & Caption Preview */}
             <div className="space-y-3">
               {selectedPostForModal.mediaUrl && (
-                <div className="rounded-xl overflow-hidden max-h-56 w-full bg-slate-900 relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={selectedPostForModal.mediaUrl}
-                    alt="post preview"
-                    className="w-full h-full object-cover"
-                  />
+                <div className="rounded-2xl overflow-hidden max-h-72 w-full bg-slate-950/5 border border-[#E2E8F0] flex items-center justify-center p-2">
+                  {selectedPostForModal.postType === 'video' ? (
+                    <video
+                      src={selectedPostForModal.mediaUrl}
+                      controls
+                      className="max-h-68 w-auto rounded-xl object-contain"
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={selectedPostForModal.mediaUrl}
+                      alt="post preview"
+                      className="max-h-68 w-auto rounded-xl object-contain"
+                    />
+                  )}
                 </div>
               )}
 

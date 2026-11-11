@@ -113,7 +113,11 @@ interface AppContextType {
   syncMonetizationAll: () => void;
 }
 
-const AppContext = createContext<AppContextType | null>(null);
+const globalForContext = globalThis as unknown as { __appContext?: React.Context<AppContextType | null> };
+const AppContext = globalForContext.__appContext || createContext<AppContextType | null>(null);
+if (process.env.NODE_ENV !== 'production') {
+  globalForContext.__appContext = AppContext;
+}
 
 const STORAGE_KEY = 'sap_saas_live_v1';
 
@@ -123,6 +127,73 @@ export const GUEST_USER: User = {
   email: '',
   avatar: '',
   role: 'owner',
+};
+
+const noop = () => {};
+const noopAsync = async () => {};
+
+export const FALLBACK_APP_CONTEXT: AppContextType = {
+  user: GUEST_USER,
+  workspace: INITIAL_WORKSPACE,
+  accounts: INITIAL_ACCOUNTS,
+  pages: INITIAL_PAGES,
+  categories: INITIAL_CATEGORIES,
+  posts: INITIAL_POSTS,
+  sigTemplates: INITIAL_SIG_TEMPLATES,
+  analytics: INITIAL_ANALYTICS,
+  pageAnalytics: INITIAL_PAGE_ANALYTICS,
+  postPerformances: INITIAL_POST_PERFORMANCES,
+  postComments: INITIAL_POST_COMMENTS,
+  automations: INITIAL_AUTOMATIONS,
+  settings: INITIAL_SETTINGS,
+  isHydrated: true,
+  addAccount: () => ({
+    id: '',
+    platform: 'facebook',
+    accountId: '',
+    name: '',
+    avatarUrl: '',
+    status: 'active',
+    lastCheckedAt: new Date().toISOString(),
+  }),
+  addPages: noop,
+  removeAccount: noop,
+  togglePageActive: noop,
+  disconnectPage: noop,
+  updateUser: noop,
+  updateWorkspace: noop,
+  createCategory: noop,
+  updateCategory: noop,
+  deleteCategory: noop,
+  createPost: (data: any) => ({
+    ...data,
+    id: `pst_${Date.now()}`,
+    workspaceId: 'ws_default',
+    results: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }),
+  retryPost: noop,
+  deletePost: noop,
+  updateSettings: noop,
+  createAutomation: noop,
+  toggleAutomation: noop,
+  deleteAutomation: noop,
+  saveSigTemplate: noop,
+  isAuthenticated: false,
+  loginWithGoogle: noop,
+  logout: noop,
+  clearAllData: noop,
+  loadDemoData: noop,
+  syncPageLiveFollowers: noopAsync,
+  syncPostInsights: noopAsync,
+  replyToComment: noop,
+  toggleLikeComment: noop,
+  toggleHideComment: noop,
+  deleteComment: noop,
+  sendPrivateReply: noop,
+  simulateWebhookEvent: () => 'Simulated event',
+  syncMonetizationAll: noop,
 };
 
 const getStorageKeyForEmail = (email?: string) => {
@@ -884,10 +955,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useApp() {
+export function useApp(): AppContextType {
   const ctx = useContext(AppContext);
   if (!ctx) {
-    throw new Error('useApp must be used within an AppProvider');
+    return FALLBACK_APP_CONTEXT;
   }
   return ctx;
 }
