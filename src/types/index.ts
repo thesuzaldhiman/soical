@@ -82,6 +82,7 @@ export interface SocialPage {
   followersCount?: number;
   followersDeltaToday?: number;
   lastFollowerSyncAt?: string;
+  lastCheckedAt?: string;
   integrityStatus?: PageIntegrityStatus;
   integrityAlertReason?: string;
   monetization?: PageMonetizationSummary;
