@@ -10,6 +10,7 @@ export interface User {
   email: string;
   avatar: string;
   role: 'owner' | 'admin' | 'editor';
+  provider?: 'google' | 'email' | 'demo';
 }
 
 export interface Workspace {

@@ -270,13 +270,18 @@ export function AppSidebar() {
             <div className="flex items-center gap-2.5 min-w-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+                src={user.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"}
                 alt={user.name}
                 className="w-8 h-8 rounded-lg object-cover ring-1 ring-slate-200 shrink-0"
               />
               <div className="min-w-0">
-                <div className="font-bold text-slate-900 text-xs truncate">
-                  {user.name}
+                <div className="font-bold text-slate-900 text-xs truncate flex items-center gap-1.5">
+                  <span>{user.name}</span>
+                  {user.provider === 'google' && (
+                    <span className="text-[9px] font-extrabold px-1 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                      G
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium truncate">
                   {user.email}

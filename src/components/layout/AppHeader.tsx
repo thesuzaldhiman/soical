@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -9,12 +9,15 @@ import {
   Bell,
   Settings,
   ChevronDown,
+  LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 import { useApp } from '@/lib/context/app-context';
 
 export function AppHeader() {
-  const { user, workspace } = useApp();
+  const { user, workspace, logout } = useApp();
   const pathname = usePathname();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   // Dynamic route-aware breadcrumb mapping
   const breadcrumbs: Record<string, { group: string; label: string; groupHref: string }> = {
@@ -54,14 +57,14 @@ export function AppHeader() {
         </div>
 
         {/* Search input in header */}
-        <div className="hidden md:block relative w-64">
+        <div className="hidden md:flex items-center relative">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search content, posts..."
-            className="w-full pl-8 pr-10 py-1.5 rounded-lg bg-[#F8F9FA] border border-[#E2E8F0] text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 focus:bg-white transition-all"
+            className="pl-8 pr-7 py-1.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:bg-white transition-all w-56 lg:w-72"
           />
-          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono px-1 py-0.2 rounded bg-white border border-[#E2E8F0] text-slate-400">
+          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono px-1 rounded bg-white border border-[#E2E8F0] text-slate-400">
             /
           </kbd>
         </div>
@@ -69,29 +72,60 @@ export function AppHeader() {
 
       {/* Right: Tasklify Action Controls (Avatars, Settings, Bell, Dark + Create Post) */}
       <div className="flex items-center gap-3">
-        {/* Workspace Team Avatar Stack */}
-        <div className="hidden sm:flex items-center -space-x-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&auto=format&fit=crop&q=80"
-            alt="Team member"
-            className="w-7 h-7 rounded-full object-cover ring-2 ring-white"
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60&auto=format&fit=crop&q=80"
-            alt="Team member"
-            className="w-7 h-7 rounded-full object-cover ring-2 ring-white"
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=60&auto=format&fit=crop&q=80"
-            alt="Team member"
-            className="w-7 h-7 rounded-full object-cover ring-2 ring-white"
-          />
-          <span className="w-7 h-7 rounded-full bg-slate-100 ring-2 ring-white flex items-center justify-center text-[10px] font-bold text-slate-600">
-            +4
-          </span>
+        {/* User Profile Dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#F8F9FA] transition-colors"
+            title="User Profile"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&auto=format&fit=crop&q=80'}
+              alt={user.name}
+              className="w-7 h-7 rounded-full object-cover ring-2 ring-slate-200"
+            />
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </button>
+
+          {userMenuOpen && (
+            <div className="absolute right-0 top-10 w-56 bg-white rounded-2xl border border-[#E2E8F0] shadow-xl p-2 z-30 space-y-1 animate-scale-up text-xs">
+              <div className="p-2 border-b border-[#E2E8F0]">
+                <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                  <span>{user.name}</span>
+                  {user.provider === 'google' && (
+                    <span className="text-[9px] font-black px-1 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                      Google
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 truncate mt-0.5">{user.email}</div>
+              </div>
+
+              <Link
+                href="/settings"
+                onClick={() => setUserMenuOpen(false)}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-[#F8F9FA] text-slate-700 font-medium transition-colors"
+              >
+                <Settings className="w-3.5 h-3.5 text-slate-400" />
+                <span>Account Settings</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => {
+                  logout();
+                  setUserMenuOpen(false);
+                  window.location.href = '/login';
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 font-medium transition-colors text-left"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Settings Button */}
@@ -113,7 +147,7 @@ export function AppHeader() {
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
         </button>
 
-        {/* Solid Dark Obsidian + Create Post Button (Tasklify style) */}
+        {/* Solid Dark Obsidian + Create Post Button */}
         <Link
           href="/composer"
           className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98]"

@@ -95,6 +95,9 @@ interface AppContextType {
   saveSigTemplate: (template: SigTemplate) => void;
 
   // Real & Live Utilities
+  isAuthenticated: boolean;
+  loginWithGoogle: (profile: { id?: string; name: string; email: string; avatar?: string }) => void;
+  logout: () => void;
   clearAllData: () => void;
   loadDemoData: () => void;
 
@@ -128,11 +131,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [postComments, setPostComments] = useState<PostComment[]>(INITIAL_POST_COMMENTS);
   const [automations, setAutomations] = useState<AutomationFeed[]>(INITIAL_AUTOMATIONS);
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [isHydrated, setIsHydrated] = useState(false);
 
   // Hydrate from localStorage on client mount
   useEffect(() => {
     try {
+      // Check for Google Session cookie
+      if (typeof document !== 'undefined') {
+        const match = document.cookie.match(new RegExp('(^| )sap_google_user=([^;]+)'));
+        if (match) {
+          const parsed = JSON.parse(decodeURIComponent(match[2]));
+          if (parsed && parsed.email) {
+            setUser((prev) => ({
+              ...prev,
+              id: parsed.id || prev.id,
+              name: parsed.name || prev.name,
+              email: parsed.email,
+              avatar: parsed.avatar || prev.avatar,
+              provider: 'google',
+            }));
+            setIsAuthenticated(true);
+          }
+        }
+      }
+
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
@@ -406,6 +429,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Real & Live Utilities
+  const loginWithGoogle = (profile: { id?: string; name: string; email: string; avatar?: string }) => {
+    const googleUser: User = {
+      id: profile.id || `google_${Date.now()}`,
+      name: profile.name,
+      email: profile.email,
+      avatar: profile.avatar || '/icons/social/google.png',
+      role: 'owner',
+      provider: 'google',
+    };
+    setUser(googleUser);
+    setIsAuthenticated(true);
+    if (typeof document !== 'undefined') {
+      document.cookie = `sap_google_user=${encodeURIComponent(JSON.stringify(googleUser))}; path=/; max-age=2592000; SameSite=Lax`;
+    }
+  };
+
+  const logout = () => {
+    if (typeof document !== 'undefined') {
+      document.cookie = 'sap_google_user=; path=/; max-age=0; SameSite=Lax';
+    }
+    setIsAuthenticated(false);
+  };
+
   const clearAllData = () => {
     setAccounts([]);
     setPages([]);
@@ -571,6 +617,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleAutomation,
         deleteAutomation,
         saveSigTemplate,
+        isAuthenticated,
+        loginWithGoogle,
+        logout,
         clearAllData,
         loadDemoData,
         syncPageLiveFollowers,
