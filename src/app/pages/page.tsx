@@ -13,17 +13,16 @@ import {
   Trash2,
   Plus,
   CheckCircle2,
-  ExternalLink,
   ShieldCheck,
   ChevronRight,
-  Filter,
-  Check,
   X,
   Radio,
-  SlidersHorizontal,
   Download,
-  AlertCircle,
   Eye,
+  Key,
+  Lock,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function PagesManagementPage() {
@@ -34,12 +33,23 @@ export default function PagesManagementPage() {
   );
 }
 
+const DEFAULT_SCOPES = [
+  { key: 'pages_manage_posts', label: 'Manage & Publish Posts', desc: 'Allows publishing, scheduling, and updating posts and videos' },
+  { key: 'pages_read_engagement', label: 'Read Engagement Metrics', desc: 'Allows reading follower counts, reactions, and interaction stats' },
+  { key: 'pages_read_user_content', label: 'Read User Content', desc: 'Allows inspecting published media assets and captions' },
+  { key: 'pages_manage_engagement', label: 'Manage Comment Replies', desc: 'Enables auto-commenting and managing interaction responses' },
+  { key: 'pages_manage_metadata', label: 'Webhook & Subscriptions', desc: 'Permits subscribing to real-time feed update webhooks' },
+  { key: 'read_insights', label: 'Audience & Page Insights', desc: 'Enables deep performance, reach, and demographic reporting' },
+  { key: 'pages_show_list', label: 'Enumerate Pages List', desc: 'Permits listing verified business pages linked to the account' },
+];
+
 function PagesContent() {
   const { pages, togglePageActive, disconnectPage } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
   const [selectedPageForModal, setSelectedPageForModal] = useState<SocialPage | null>(null);
+  const [selectedPermissionsPage, setSelectedPermissionsPage] = useState<SocialPage | null>(null);
 
   // Filtered pages based on platform, status, and search query
   const filteredPages = useMemo(() => {
@@ -215,11 +225,11 @@ function PagesContent() {
         </div>
       </div>
 
-      {/* 3. Search & Platform Filter Bar */}
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 shadow-2xs space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Platform Filter Buttons with User's Monochrome Badges */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 custom-scrollbar">
+      {/* 3. Search & Platform Filter Bar (Re-architected with Clean Hierarchy & Spacing) */}
+      <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 shadow-2xs space-y-4">
+        {/* Tier 1: Platform Filter Badges (Full width, no horizontal crowding, ample space) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {(['all', 'facebook', 'instagram', 'youtube', 'threads', 'telegram'] as const).map((plat) => {
               const count =
                 plat === 'all' ? pages.length : pages.filter((p) => p.platform === plat).length;
@@ -232,7 +242,7 @@ function PagesContent() {
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all shrink-0 flex items-center gap-2 ${
                     platformFilter === plat
                       ? 'bg-slate-900 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-[#F8F9FA]'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-[#F8F9FA] border border-transparent hover:border-[#E2E8F0]'
                   }`}
                 >
                   {plat !== 'all' && (
@@ -242,7 +252,7 @@ function PagesContent() {
                   <span
                     className={`text-[10px] px-1.5 py-0.2 rounded-full ${
                       platformFilter === plat
-                        ? 'bg-white/20 text-white'
+                        ? 'bg-white/20 text-white font-bold'
                         : 'bg-[#F8F9FA] text-slate-600 border border-[#E2E8F0]'
                     }`}
                   >
@@ -253,17 +263,48 @@ function PagesContent() {
             })}
           </div>
 
-          {/* Right: Search & Status Filter */}
-          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
-            {/* Status Filter */}
-            <div className="inline-flex items-center p-0.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs font-bold text-slate-600 shrink-0">
+          <div className="text-xs font-semibold text-slate-500 self-end sm:self-center">
+            Showing <strong className="text-slate-900">{filteredPages.length}</strong> of {pages.length} destinations
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="h-px bg-[#E2E8F0]" />
+
+        {/* Tier 2: Search Input + Repositioned Status Filter + Bulk Actions */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
+          {/* Left: Search input + Status Filter cleanly grouped */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-72">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by page name, category, ID..."
+                className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-400 transition-all placeholder:text-slate-400"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {/* Repositioned Status Filter: Dedicated segmented button with distinct styling */}
+            <div className="inline-flex items-center p-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs font-bold text-slate-600 shrink-0 shadow-2xs">
               <button
                 type="button"
                 onClick={() => setStatusFilter('all')}
-                className={`px-2.5 py-1 rounded-lg transition-all ${
+                className={`px-3 py-1 rounded-lg transition-all ${
                   statusFilter === 'all'
-                    ? 'bg-white text-slate-900 shadow-2xs border border-[#E2E8F0]'
-                    : 'hover:text-slate-900'
+                    ? 'bg-slate-900 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 All
@@ -271,10 +312,10 @@ function PagesContent() {
               <button
                 type="button"
                 onClick={() => setStatusFilter('active')}
-                className={`px-2.5 py-1 rounded-lg transition-all ${
+                className={`px-3 py-1 rounded-lg transition-all ${
                   statusFilter === 'active'
-                    ? 'bg-white text-emerald-700 shadow-2xs border border-[#E2E8F0]'
-                    : 'hover:text-slate-900'
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-emerald-700'
                 }`}
               >
                 Active
@@ -282,68 +323,51 @@ function PagesContent() {
               <button
                 type="button"
                 onClick={() => setStatusFilter('disabled')}
-                className={`px-2.5 py-1 rounded-lg transition-all ${
+                className={`px-3 py-1 rounded-lg transition-all ${
                   statusFilter === 'disabled'
-                    ? 'bg-white text-slate-700 shadow-2xs border border-[#E2E8F0]'
-                    : 'hover:text-slate-900'
+                    ? 'bg-slate-700 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Disabled
               </button>
             </div>
-
-            {/* Search Input */}
-            <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name, ID..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-400 transition-all"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Bulk Action Controls */}
-        <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-slate-500 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <span>Showing <strong className="text-slate-900">{filteredPages.length}</strong> of {pages.length} destinations</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Right: Bulk Action Controls */}
+          <div className="flex items-center gap-2 self-start lg:self-center">
             <button
               type="button"
               onClick={handleActivateAll}
-              className="text-xs font-bold text-slate-700 hover:text-black transition-colors"
+              className="px-3 py-1.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors shadow-2xs flex items-center gap-1.5"
             >
-              Activate All Filtered
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Activate All</span>
             </button>
-            <span className="text-slate-300">•</span>
             <button
               type="button"
               onClick={handleDisableAll}
-              className="text-xs font-bold text-slate-700 hover:text-black transition-colors"
+              className="px-3 py-1.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors shadow-2xs flex items-center gap-1.5"
             >
-              Disable All Filtered
+              <X className="w-3.5 h-3.5 text-slate-400" />
+              <span>Disable All</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* 4. Pages Table (Tasklify Clean Layout) */}
+      {/* 4. Pages Table (Tasklify Clean Layout with Show Permissions Trigger) */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-[#F8F9FA] text-slate-500 uppercase tracking-wider font-extrabold text-[10px] border-b border-[#E2E8F0]">
               <tr>
-                <th className="py-3 px-5">Page / Destination Name</th>
-                <th className="py-3 px-5">Platform</th>
-                <th className="py-3 px-5">Category</th>
-                <th className="py-3 px-5">Audience / Followers</th>
-                <th className="py-3 px-5">API Permissions</th>
-                <th className="py-3 px-5 text-right">Status & Actions</th>
+                <th className="py-3.5 px-5">Page / Destination Name</th>
+                <th className="py-3.5 px-5">Platform</th>
+                <th className="py-3.5 px-5">Category</th>
+                <th className="py-3.5 px-5">Audience / Followers</th>
+                <th className="py-3.5 px-5">API Permissions</th>
+                <th className="py-3.5 px-5 text-right">Status & Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E2E8F0]">
@@ -396,7 +420,7 @@ function PagesContent() {
                     </td>
 
                     <td className="py-3.5 px-5 text-slate-600 font-medium">
-                      <span className="px-2 py-0.5 rounded-md bg-[#F8F9FA] border border-[#E2E8F0] text-[10px] font-bold text-slate-700">
+                      <span className="px-2.5 py-0.5 rounded-md bg-[#F8F9FA] border border-[#E2E8F0] text-[10px] font-bold text-slate-700">
                         {page.category || 'General'}
                       </span>
                     </td>
@@ -405,17 +429,20 @@ function PagesContent() {
                       {page.fanCount.toLocaleString()}
                     </td>
 
-                    <td className="py-3.5 px-5">
-                      <div className="flex items-center gap-1 flex-wrap max-w-xs">
-                        {(page.permissions || ['pages_manage_posts', 'pages_read_engagement']).map((p, i) => (
-                          <span
-                            key={i}
-                            className="px-1.5 py-0.5 rounded bg-[#F8F9FA] text-slate-600 font-mono text-[9px] border border-[#E2E8F0]"
-                          >
-                            {p}
-                          </span>
-                        ))}
-                      </div>
+                    {/* API Permissions: Replaced clutter with a clean 'Show Permissions' button */}
+                    <td className="py-3.5 px-5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPermissionsPage(page)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#F8F9FA] hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-[#E2E8F0] text-xs font-semibold transition-all group/perm shadow-2xs"
+                        title="View granted Graph API scopes"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 group-hover/perm:scale-110 transition-transform" />
+                        <span>Show Permissions</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white text-slate-600 border border-[#E2E8F0]">
+                          {(page.permissions || DEFAULT_SCOPES.map((s) => s.key)).length}
+                        </span>
+                      </button>
                     </td>
 
                     <td className="py-3.5 px-5 text-right" onClick={(e) => e.stopPropagation()}>
@@ -449,7 +476,103 @@ function PagesContent() {
         </div>
       </div>
 
-      {/* 5. Detailed Destination Inspect Modal */}
+      {/* 5. Dedicated API Permissions Inspector Modal */}
+      {selectedPermissionsPage && (
+        <div
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setSelectedPermissionsPage(null)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-[#E2E8F0] max-w-lg w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-3">
+                <SocialIcon platform={selectedPermissionsPage.platform} className="w-10 h-10 rounded-xl shadow-xs" />
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base leading-tight">
+                    API Permissions & Scopes
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    {selectedPermissionsPage.name} • <span className="font-mono text-[11px] text-slate-400">ID: {selectedPermissionsPage.pageId}</span>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedPermissionsPage(null)}
+                className="w-8 h-8 rounded-xl bg-[#F8F9FA] text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Token Status Badge */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold text-emerald-950">OAuth 2.0 Token Active & Verified</div>
+                  <div className="text-[11px] text-emerald-700">Permanent Page Access Token with full broadcasting clearance</div>
+                </div>
+              </div>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                Valid
+              </span>
+            </div>
+
+            {/* Granted Scopes List */}
+            <div className="space-y-2">
+              <div className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                Granted Capabilities ({(selectedPermissionsPage.permissions || DEFAULT_SCOPES.map((s) => s.key)).length})
+              </div>
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {(selectedPermissionsPage.permissions || DEFAULT_SCOPES.map((s) => s.key)).map((permKey) => {
+                  const scopeMeta = DEFAULT_SCOPES.find((s) => s.key === permKey);
+                  return (
+                    <div
+                      key={permKey}
+                      className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] flex items-start gap-2.5"
+                    >
+                      <div className="w-5 h-5 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                        ✓
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-xs text-slate-900">
+                            {scopeMeta?.label || permKey}
+                          </span>
+                          <code className="text-[10px] text-slate-500 bg-white px-1.5 py-0.2 rounded border border-[#E2E8F0] font-mono shrink-0">
+                            {permKey}
+                          </code>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {scopeMeta?.desc || 'Authorized during social account connection handshake.'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedPermissionsPage(null)}
+                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Destination Details Inspect Modal */}
       {selectedPageForModal && (
         <div
           className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
@@ -512,20 +635,30 @@ function PagesContent() {
               </div>
             </div>
 
-            {/* Permissions */}
+            {/* Permissions Summary with Open Inspector action */}
             <div className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Granted OAuth Scopes
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {(selectedPageForModal.permissions || ['pages_manage_posts', 'pages_read_engagement']).map((p, i) => (
-                  <span
-                    key={i}
-                    className="px-2 py-1 rounded-lg bg-[#F8F9FA] text-slate-700 font-mono text-[10px] border border-[#E2E8F0]"
-                  >
-                    ✓ {p}
-                  </span>
-                ))}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  API Permissions
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const page = selectedPageForModal;
+                    setSelectedPageForModal(null);
+                    setSelectedPermissionsPage(page);
+                  }}
+                  className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Inspect Full Scopes</span>
+                </button>
+              </div>
+              <div className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs text-slate-600 flex items-center justify-between">
+                <span>{(selectedPageForModal.permissions || DEFAULT_SCOPES.map((s) => s.key)).length} verified OAuth permissions granted</span>
+                <span className="font-bold text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Verified
+                </span>
               </div>
             </div>
 
