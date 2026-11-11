@@ -95,24 +95,24 @@ function AutomationsContent() {
   };
 
   return (
-    <div className="space-y-7 font-sans max-w-5xl animate-fade-in pb-12">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#EEF1F6]">
+    <div className="space-y-4 font-sans max-w-5xl animate-fade-in pb-10">
+      {/* Header (Compact Modern Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#EEF1F6]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
             Feed & Blogger Automations
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Ingest posts automatically from Blogger, WordPress, or external RSS feeds and cross-post to your social pages.
+          <p className="text-xs text-slate-500 mt-0.5 font-medium line-clamp-1">
+            Ingest posts automatically from Blogger, WordPress, or external RSS feeds and cross-post.
           </p>
         </div>
 
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] text-white text-xs font-bold transition-all shadow-[0_4px_14px_rgba(255,0,122,0.3)] hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto shrink-0 cursor-pointer"
         >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
           <span>New Ingestion Feed</span>
         </button>
       </div>

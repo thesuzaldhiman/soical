@@ -43,14 +43,14 @@ function BulkDeleteContent() {
   };
 
   return (
-    <div className="space-y-7 font-sans max-w-4xl animate-fade-in pb-12">
-      {/* 1. Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#EEF1F6]">
+    <div className="space-y-4 font-sans max-w-4xl animate-fade-in pb-12">
+      {/* 1. Header (Compact Modern Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#EEF1F6]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
             Bulk Delete Posts
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+          <p className="text-xs text-slate-500 mt-0.5 font-medium line-clamp-1">
             Safely clean up old published posts, failed attempts, or leftover drafts in bulk.
           </p>
         </div>

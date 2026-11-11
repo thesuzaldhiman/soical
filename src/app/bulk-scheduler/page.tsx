@@ -434,21 +434,21 @@ function BulkSchedulerContent() {
   }, [bulkItems.length, gapMinutes]);
 
   return (
-    <div className="space-y-6 font-sans max-w-6xl mx-auto animate-fade-in pb-28">
-      {/* Studio Header (matching /composer design) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E2E8F0]">
+    <div className="space-y-4 font-sans max-w-6xl mx-auto animate-fade-in pb-20">
+      {/* Studio Header (Compact Modern Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#E2E8F0]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 flex items-center gap-2.5">
-            <CalendarClock className="w-7 h-7 text-slate-900" />
+          <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900 flex items-center gap-2">
+            <CalendarClock className="w-5 h-5 text-slate-900" />
             <span>Bulk Post Scheduler</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Ek saath bahut saari images/videos upload karo, side panel se categories &amp; pages chuno, aur ek click me schedule karo.
+          <p className="text-xs text-slate-500 mt-0.5 font-medium line-clamp-1">
+            Ek saath multiple media upload karein, targets chunein, aur schedule karein.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
             <span
               className={`w-2 h-2 rounded-full ${
                 selectedPageIds.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'
@@ -457,7 +457,7 @@ function BulkSchedulerContent() {
             <span>{selectedPageIds.length} Pages Selected</span>
           </div>
 
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
             <span className="w-2 h-2 rounded-full bg-blue-500" />
             <span>{bulkItems.length} Posts in Batch</span>
           </div>

@@ -164,6 +164,14 @@ function LoginContent() {
               </button>
             </div>
 
+            {/* Link to Signup */}
+            <div className="text-center text-xs text-slate-500 pt-1">
+              New to Social Auto Poster?{' '}
+              <Link href="/signup" className="font-bold text-slate-900 hover:underline">
+                Create an Account (Signup)
+              </Link>
+            </div>
+
             {/* Trust & Compliance Badge */}
             <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-400">
               <span>🔒 Encrypted TLS Session</span>

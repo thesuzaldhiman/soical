@@ -17,9 +17,10 @@ import {
   PostComment,
   AutomationFeed,
   AppSettings,
+  SubscriptionTier,
+  UserSubscription,
 } from '@/types';
 import {
-  INITIAL_USER,
   INITIAL_ALL_USERS,
   INITIAL_WORKSPACE,
   INITIAL_ACCOUNTS,
@@ -107,19 +108,19 @@ interface AppContextType {
   allUsers: User[];
   approveUser: (
     userId: string,
-    tier?: any,
+    tier?: SubscriptionTier,
     durationDays?: number,
     maxPages?: number,
     maxPosts?: number
   ) => void;
   rejectUser: (userId: string, reason?: string) => void;
-  updateUserSubscription: (userId: string, sub: any) => void;
+  updateUserSubscription: (userId: string, sub: Partial<UserSubscription>) => void;
   toggleUserSuspension: (userId: string, reason?: string) => void;
   deleteUser: (userId: string) => void;
   registerUser: (
     name: string,
     email: string,
-    tierPreference?: any
+    tierPreference?: SubscriptionTier
   ) => { success: boolean; user: User; message: string };
   switchActiveUser: (userId: string) => void;
 
@@ -188,7 +189,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   createCategory: noop,
   updateCategory: noop,
   deleteCategory: noop,
-  createPost: (data: any) => ({
+  createPost: (data: Parameters<AppContextType['createPost']>[0]) => ({
     ...data,
     id: `pst_${Date.now()}`,
     workspaceId: 'ws_default',
@@ -249,7 +250,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [allUsers, setAllUsers] = useState<User[]>(INITIAL_ALL_USERS);
+  const [allUsers, setAllUsers] = useState<User[]>(() => {
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sap_all_registered_users');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return INITIAL_ALL_USERS;
+  });
 
   // Sync registered users to localStorage
   useEffect(() => {
@@ -350,9 +362,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       let loggedInUser: User | null = null;
-      let currentUsers = INITIAL_ALL_USERS;
+      let currentUsers = allUsers;
 
-      // 0. Load registered users directory
+      // 0. Load registered users directory for session matching
       if (typeof localStorage !== 'undefined') {
         const storedUsers = localStorage.getItem('sap_all_registered_users');
         if (storedUsers) {
@@ -360,7 +372,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const parsed = JSON.parse(storedUsers);
             if (Array.isArray(parsed) && parsed.length > 0) {
               currentUsers = parsed;
-              setAllUsers(parsed);
             }
           } catch {}
         }
@@ -438,9 +449,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: false, canUseAnalytics: true },
                 },
           };
-          setAllUsers((prev) => [loggedInUser!, ...prev.filter((u) => u.email !== clean)]);
         }
 
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setUser(loggedInUser);
         setIsAuthenticated(true);
         loadUserDataForEmail(loggedInUser.email, loggedInUser.name);
@@ -870,7 +881,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const registerUser = (
     name: string,
     email: string,
-    tierPreference: any = 'starter'
+    tierPreference: SubscriptionTier = 'starter'
   ) => {
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -942,7 +953,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const approveUser = (
     userId: string,
-    tier: any = 'pro',
+    tier: SubscriptionTier = 'pro',
     durationDays: number = 30,
     maxPages?: number,
     maxPosts?: number
@@ -1051,7 +1062,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateUserSubscription = (userId: string, sub: any) => {
+  const updateUserSubscription = (userId: string, sub: Partial<UserSubscription>) => {
     setAllUsers((prev) =>
       prev.map((u) => {
         if (u.id !== userId) return u;
@@ -1198,7 +1209,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
       if (data.success && Array.isArray(data.results)) {
         const resultMap = new Map<string, { followersCount: number; fanCount: number; live?: boolean }>();
-        data.results.forEach((r: any) => resultMap.set(r.id, r));
+        data.results.forEach((r: { id: string; followersCount: number; fanCount: number; live?: boolean }) => resultMap.set(r.id, r));
 
         setPages((prev) =>
           prev.map((pg) => {

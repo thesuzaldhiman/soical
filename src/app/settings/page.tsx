@@ -360,21 +360,21 @@ function SettingsContent() {
   };
 
   return (
-    <div className="space-y-6 font-sans max-w-5xl animate-fade-in pb-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E2E8F0]">
+    <div className="space-y-4 font-sans max-w-5xl animate-fade-in pb-8">
+      {/* Header (Compact Modern Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#E2E8F0]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
             Platform Settings & Anti-Ban Controls
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Configure Facebook own app credentials, YouTube Google API, anti-ban dictionary, and auto-retry engine.
+          <p className="text-xs text-slate-500 mt-0.5 font-medium line-clamp-1">
+            Configure Facebook app credentials, YouTube API, anti-ban dictionary, and auto-retry engine.
           </p>
         </div>
 
         {savedSuccess && (
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 animate-fade-in shadow-2xs">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 animate-fade-in shadow-2xs">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span>Settings saved successfully</span>
           </div>
         )}

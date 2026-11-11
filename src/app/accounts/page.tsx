@@ -452,19 +452,19 @@ function AccountsContent() {
   };
 
   return (
-    <div className="space-y-7 font-sans animate-fade-in pb-10">
-      {/* 1. Page Header (Tasklify Clean Neutral Studio) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-5 font-sans animate-fade-in pb-10">
+      {/* 1. Page Header (Compact Modern Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#E2E8F0]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
             Connected Accounts
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Manage your social networks, OAuth authentications, and multi-channel publishing destinations.
+          <p className="text-xs text-slate-500 mt-0.5 font-medium line-clamp-1">
+            Manage your social networks, OAuth authentications, and publishing destinations.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap shrink-0">
           {/* Reset Workspace Data Button */}
           {accounts.length > 0 && (
             <button
@@ -474,7 +474,7 @@ function AccountsContent() {
                   clearAllData();
                 }
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-700 text-xs font-bold transition-all shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-700 text-xs font-bold transition-all shadow-2xs cursor-pointer"
               title="Clear all workspace data and start clean"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
@@ -489,9 +489,9 @@ function AccountsContent() {
               setConnectSuccess(null);
               setConnectModalOpen(true);
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] shrink-0 cursor-pointer"
           >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Connect Account</span>
           </button>
         </div>

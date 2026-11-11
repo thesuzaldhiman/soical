@@ -185,35 +185,35 @@ function ImageGeneratorContent() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-4">
+      {/* Page Header (Compact Modern Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#EEF1F6]">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Palette className="w-6 h-6 text-violet-600" />
+          <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <Palette className="w-5 h-5 text-violet-600" />
             <span>Social Image Generator (SIG)</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
+          <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
             Generate high-CTR Hindi news cards with pixel-perfect Devanagari text & dual-color highlights.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#EEF1F6] bg-white hover:bg-[#F8F9FD] text-slate-700 text-xs font-bold transition-all shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-white hover:bg-[#F8F9FD] text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
             <span>{downloading ? 'Exporting...' : 'Download PNG'}</span>
           </button>
           <button
             type="button"
             onClick={handleSendToComposer}
-            className="inline-flex items-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] text-white text-xs font-bold transition-all shadow-[0_4px_14px_rgba(255,0,122,0.3)] hover:scale-[1.02] active:scale-[0.98]"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
           >
-            <Send className="w-4 h-4" />
-            <span>Send to Post Composer</span>
+            <Send className="w-3.5 h-3.5" />
+            <span>Send to Composer</span>
           </button>
         </div>
       </div>

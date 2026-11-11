@@ -185,7 +185,7 @@ function MonetizationContent() {
   };
 
   return (
-    <div className="space-y-6 font-sans animate-fade-in pb-10">
+    <div className="space-y-4 font-sans animate-fade-in pb-10">
       {toastMsg && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-xl flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -193,28 +193,28 @@ function MonetizationContent() {
         </div>
       )}
 
-      {/* 1. Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-[#EEF1F6]">
+      {/* 1. Header (Compact Modern Studio) */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pb-2.5 border-b border-[#EEF1F6]">
         <div>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <DollarSign className="w-6 h-6 text-emerald-600" />
-              <span>Multi-Page Monetization &amp; Integrity Monitor</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-emerald-600" />
+              <span>Multi-Page Monetization &amp; Integrity</span>
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-extrabold">
+            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-extrabold">
               100-Page Portfolio View
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Sabhi connected Facebook Pages ki estimated kamai, active monetization tools aur policy alerts ek hi jagah.
+          <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
+            Sabhi connected Facebook Pages ki estimated kamai, active monetization tools aur policy alerts.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#EEF1F6] bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
@@ -223,10 +223,10 @@ function MonetizationContent() {
           <button
             type="button"
             onClick={handleScanAll}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF4E98] hover:opacity-95 text-white text-xs font-bold transition-all shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-            <span>Scan All {fbPages.length} Pages Now</span>
+            <span>Scan All ({fbPages.length})</span>
           </button>
         </div>
       </div>

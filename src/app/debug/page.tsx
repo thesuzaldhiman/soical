@@ -55,13 +55,13 @@ function DebugContent() {
   };
 
   return (
-    <div className="space-y-6 font-sans">
-      {/* Header */}
-      <div className="pb-4 border-b border-[#EBEBE8]">
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+    <div className="space-y-4 font-sans">
+      {/* Header (Compact Modern Studio) */}
+      <div className="pb-2.5 border-b border-[#EBEBE8]">
+        <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
           System Diagnostics & Debug
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+        <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
           Inspect OAuth security vault, webhook listeners, background cron workers, and runtime health.
         </p>
       </div>

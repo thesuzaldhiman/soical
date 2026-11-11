@@ -472,29 +472,29 @@ function ComposerContent() {
   };
 
   return (
-    <div className="space-y-6 font-sans max-w-6xl mx-auto animate-fade-in pb-14">
-      {/* 1. Studio Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E2E8F0]">
+    <div className="space-y-4 font-sans max-w-6xl mx-auto animate-fade-in pb-12">
+      {/* 1. Studio Header (Compact Modern Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#E2E8F0]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
             Create New Post
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+          <p className="text-xs text-slate-500 mt-0.5 font-medium line-clamp-1">
             Choose post format, craft your caption &amp; first comment, pick categories or pages, and publish safely.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
           <button
             type="button"
             onClick={() => setShowPreview((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] hover:bg-[#F8F9FA] text-xs font-semibold text-slate-700 shadow-2xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] hover:bg-[#F8F9FA] text-xs font-semibold text-slate-700 shadow-2xs transition-colors cursor-pointer"
           >
             <Eye className="w-3.5 h-3.5 text-slate-500" />
             <span>{showPreview ? 'Hide Preview' : 'Show Preview'}</span>
           </button>
 
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
             <span
               className={`w-2 h-2 rounded-full ${
                 selectedPageIds.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'
