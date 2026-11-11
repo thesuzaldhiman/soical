@@ -112,6 +112,33 @@ function DashboardContent() {
 
   const activeDay = daysWithPosts[selectedDayIndex] || daysWithPosts[0];
 
+  // Active day statistics breakdown
+  const activeDayStats = useMemo(() => {
+    const dayPosts = activeDay?.posts || [];
+    const published = dayPosts.filter((p) => p.status === 'published').length;
+    const scheduled = dayPosts.filter((p) => p.status === 'scheduled' || p.status === 'publishing').length;
+    const failed = dayPosts.filter((p) => p.status === 'failed' || p.status === 'partial').length;
+    return {
+      total: dayPosts.length,
+      published,
+      scheduled,
+      failed,
+    };
+  }, [activeDay]);
+
+  // Selected date for month view
+  const [selectedMonthDate, setSelectedMonthDate] = useState<string>('10');
+
+  // Month view selected date posts
+  const monthSelectedPosts = useMemo(() => {
+    return posts.filter((p) => {
+      const dateStr = p.scheduledAt || p.publishedAt || p.createdAt;
+      if (!dateStr) return false;
+      const dObj = new Date(dateStr);
+      return dObj.getDate().toString() === selectedMonthDate;
+    });
+  }, [posts, selectedMonthDate]);
+
   // Month days for month view (November 2026)
   const monthDays = useMemo(() => {
     return Array.from({ length: 30 }, (_, i) => {
@@ -346,18 +373,49 @@ function DashboardContent() {
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F0F2F6]">
             <div>
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-[#FF007A]" />
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="w-7 h-7 rounded-lg bg-pink-50 flex items-center justify-center text-[#FF007A]">
+                  <Calendar className="w-4 h-4 stroke-[2.2]" />
+                </div>
                 <h3 className="font-extrabold text-sm text-slate-900">
                   Content Calendar & Publishing Slots
                 </h3>
+
+                {/* Selected Date & Total Posts Pill */}
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-gradient-to-r from-pink-50 via-purple-50 to-pink-50 text-[#FF007A] border border-pink-200/90 shadow-2xs">
+                  <span className="text-slate-600 font-semibold">Selected:</span>
+                  <span className="font-black text-slate-900">
+                    {calendarView === 'week' ? activeDay.full : `Nov ${selectedMonthDate}, 2026`}
+                  </span>
+                  <span className="w-1 h-1 rounded-full bg-slate-300" />
+                  <span className="text-[#FF007A] font-black">
+                    {calendarView === 'week' ? activeDay.count : monthSelectedPosts.length}{' '}
+                    {(calendarView === 'week' ? activeDay.count : monthSelectedPosts.length) === 1
+                      ? 'Total Post'
+                      : 'Total Posts'}
+                  </span>
+                </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                Visual publishing schedule mapped to your connected social channels.
+
+              <p className="text-[11px] text-slate-400 font-medium mt-1">
+                Visual publishing schedule mapped to your connected social channels •{' '}
+                <span className="text-slate-700 font-bold">
+                  {calendarView === 'week' ? `${activeDay.day}, ${activeDay.full}` : `Nov ${selectedMonthDate}, 2026`}
+                </span>{' '}
+                has{' '}
+                <span className="text-[#FF007A] font-extrabold">
+                  {calendarView === 'week' ? activeDay.count : monthSelectedPosts.length}{' '}
+                  {(calendarView === 'week' ? activeDay.count : monthSelectedPosts.length) === 1 ? 'post' : 'posts'}
+                </span>{' '}
+                ({calendarView === 'week' ? activeDayStats.published : monthSelectedPosts.filter((p) => p.status === 'published').length} published,{' '}
+                {calendarView === 'week' ? activeDayStats.scheduled : monthSelectedPosts.filter((p) => p.status === 'scheduled' || p.status === 'publishing').length} scheduled
+                {(calendarView === 'week' ? activeDayStats.failed : monthSelectedPosts.filter((p) => p.status === 'failed' || p.status === 'partial').length) > 0
+                  ? `, ${calendarView === 'week' ? activeDayStats.failed : monthSelectedPosts.filter((p) => p.status === 'failed' || p.status === 'partial').length} failed`
+                  : ''})
               </p>
             </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto">
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
               {/* Week / Month Switcher */}
               <div className="inline-flex items-center p-0.5 rounded-lg bg-[#F6F8FD] border border-[#EEF1F6]">
                 <button
@@ -398,8 +456,8 @@ function DashboardContent() {
           {/* Calendar View Switcher Content */}
           {calendarView === 'week' ? (
             <div className="space-y-4">
-              {/* Days of Week Header with Clickable Selection */}
-              <div className="grid grid-cols-7 gap-1 text-center">
+              {/* Days of Week Header with Clickable Selection and Post Counts */}
+              <div className="grid grid-cols-7 gap-1.5 text-center">
                 {daysWithPosts.map((d, index) => {
                   const isSelected = selectedDayIndex === index;
                   return (
@@ -409,8 +467,8 @@ function DashboardContent() {
                       onClick={() => setSelectedDayIndex(index)}
                       className={`flex flex-col items-center p-2 rounded-xl transition-all relative ${
                         isSelected
-                          ? 'bg-[#F8F9FD] border border-[#EEF1F6] shadow-xs'
-                          : 'hover:bg-[#F6F8FD]'
+                          ? 'bg-[#F8F9FD] border-2 border-[#FF007A]/30 shadow-xs'
+                          : 'hover:bg-[#F6F8FD] border border-transparent'
                       }`}
                     >
                       <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
@@ -423,31 +481,50 @@ function DashboardContent() {
                       >
                         {d.date}
                       </span>
-                      {d.count > 0 && (
-                        <span
-                          className={`mt-1 w-1.5 h-1.5 rounded-full ${
-                            isSelected ? 'bg-[#FF007A]' : 'bg-[#FF007A]/60'
-                          }`}
-                        />
-                      )}
+                      <span
+                        className={`text-[9px] font-extrabold mt-1 px-1.5 py-0.5 rounded-full transition-colors ${
+                          isSelected
+                            ? 'bg-[#FF007A] text-white'
+                            : d.count > 0
+                            ? 'bg-pink-100 text-[#FF007A]'
+                            : 'bg-slate-100 text-slate-400'
+                        }`}
+                      >
+                        {d.count} {d.count === 1 ? 'post' : 'posts'}
+                      </span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Dynamic Day Timeline Header */}
-              <div className="flex items-center justify-between pt-1 px-1">
-                <div className="flex items-center gap-2">
+              {/* Dynamic Day Timeline Header with Total Posts & Breakdown */}
+              <div className="flex items-center justify-between pt-1 px-1 flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-black text-slate-900">
                     Schedule for {activeDay.full}
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-pink-50 text-[#FF007A] border border-pink-100">
-                    {activeDay.count} {activeDay.count === 1 ? 'Post' : 'Posts'}
+                  <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-pink-50 text-[#FF007A] border border-pink-200">
+                    Total: {activeDay.count} {activeDay.count === 1 ? 'Post' : 'Posts'}
                   </span>
+                  {activeDayStats.published > 0 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      ✓ {activeDayStats.published} Published
+                    </span>
+                  )}
+                  {activeDayStats.scheduled > 0 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      ● {activeDayStats.scheduled} Scheduled
+                    </span>
+                  )}
+                  {activeDayStats.failed > 0 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                      ✕ {activeDayStats.failed} Failed
+                    </span>
+                  )}
                 </div>
                 <Link
                   href="/composer"
-                  className="text-[11px] font-bold text-[#FF007A] hover:underline flex items-center gap-1"
+                  className="text-[11px] font-bold text-[#FF007A] hover:underline flex items-center gap-1 shrink-0"
                 >
                   <Plus className="w-3 h-3" />
                   <span>Schedule for this Day</span>
@@ -548,14 +625,26 @@ function DashboardContent() {
               </div>
             </div>
           ) : (
-            /* Month Calendar Grid */
-            <div className="space-y-3">
-              <div className="flex items-center justify-between pb-1">
-                <span className="text-xs font-black text-slate-900">November 2026</span>
-                <span className="text-[10px] font-bold text-slate-400">
-                  {posts.length} total posts this month
-                </span>
+            /* Month Calendar Grid with Day Click & Post List */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-1 flex-wrap gap-2">
+                <div>
+                  <span className="text-xs font-black text-slate-900">November 2026</span>
+                  <span className="text-[11px] text-slate-500 font-medium ml-2">
+                    Click any day to view scheduled posts
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-pink-50 text-[#FF007A] border border-pink-200">
+                    Selected Nov {selectedMonthDate}: {monthSelectedPosts.length}{' '}
+                    {monthSelectedPosts.length === 1 ? 'Total Post' : 'Total Posts'}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    {posts.length} total posts this month
+                  </span>
+                </div>
               </div>
+
               <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold text-slate-400 pb-1">
                 <span>MON</span>
                 <span>TUE</span>
@@ -565,29 +654,118 @@ function DashboardContent() {
                 <span>SAT</span>
                 <span>SUN</span>
               </div>
+
               <div className="grid grid-cols-7 gap-1">
-                {monthDays.map((d) => (
-                  <div
-                    key={d.dateNum}
-                    className={`h-12 p-1 rounded-xl border flex flex-col justify-between transition-all ${
-                      d.hasPosts
-                        ? 'bg-pink-50/40 border-pink-200'
-                        : 'bg-[#F8F9FD] border-[#EEF1F6]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-700">{d.dateNum}</span>
-                      {d.hasPosts && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#FF007A]" />
+                {monthDays.map((d) => {
+                  const isSelected = selectedMonthDate === d.dateNum;
+                  return (
+                    <button
+                      key={d.dateNum}
+                      type="button"
+                      onClick={() => setSelectedMonthDate(d.dateNum)}
+                      className={`h-13 p-1.5 rounded-xl border flex flex-col justify-between transition-all text-left ${
+                        isSelected
+                          ? 'bg-gradient-to-tr from-pink-50 to-purple-50 border-[#FF007A] shadow-xs ring-1 ring-[#FF007A]'
+                          : d.hasPosts
+                          ? 'bg-pink-50/40 border-pink-200 hover:border-pink-300'
+                          : 'bg-[#F8F9FD] border-[#EEF1F6] hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span
+                          className={`text-[10px] font-bold ${
+                            isSelected ? 'text-[#FF007A] font-black' : 'text-slate-700'
+                          }`}
+                        >
+                          {d.dateNum}
+                        </span>
+                        {d.hasPosts && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#FF007A]" />
+                        )}
+                      </div>
+                      {d.hasPosts ? (
+                        <span className="text-[9px] font-black text-[#FF007A] truncate">
+                          {d.count} {d.count === 1 ? 'post' : 'posts'}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-slate-300 font-medium">0</span>
                       )}
-                    </div>
-                    {d.hasPosts && (
-                      <span className="text-[9px] font-black text-[#FF007A] truncate">
-                        {d.count} {d.count === 1 ? 'post' : 'posts'}
-                      </span>
-                    )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Month View Selected Day Posts List */}
+              <div className="pt-3 border-t border-[#F0F2F6] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-slate-900">
+                      Dispatches for Nov {selectedMonthDate}, 2026
+                    </span>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-pink-50 text-[#FF007A] border border-pink-100">
+                      {monthSelectedPosts.length} {monthSelectedPosts.length === 1 ? 'Post' : 'Posts'}
+                    </span>
                   </div>
-                ))}
+                  <Link
+                    href="/composer"
+                    className="text-[11px] font-bold text-[#FF007A] hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Add Post for this Date</span>
+                  </Link>
+                </div>
+
+                {monthSelectedPosts.length > 0 ? (
+                  <div className="space-y-2">
+                    {monthSelectedPosts.map((post) => {
+                      const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                      return (
+                        <div
+                          key={post.id}
+                          className="p-2.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="text-base">
+                              {platformIcons[firstPage?.platform || 'facebook']}
+                            </span>
+                            <div className="min-w-0">
+                              <span className="font-bold text-slate-900 truncate block">
+                                {post.message}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {firstPage?.name} • <span className="uppercase font-semibold">{post.postType}</span>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span
+                              className={`text-[9px] font-bold capitalize px-2 py-0.5 rounded-md border ${
+                                post.status === 'published'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : post.status === 'scheduled'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                              }`}
+                            >
+                              {post.status}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPostForModal(post)}
+                              className="text-[11px] font-bold text-slate-600 hover:text-[#FF007A]"
+                            >
+                              Details
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-4 px-3 rounded-xl bg-[#F8F9FD] border border-dashed border-[#EEF1F6] text-center text-[11px] text-slate-400">
+                    No posts scheduled on Nov {selectedMonthDate}, 2026. Click &quot;Add Post for this Date&quot; to queue content.
+                  </div>
+                )}
               </div>
             </div>
           )}
