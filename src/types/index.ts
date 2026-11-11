@@ -270,6 +270,7 @@ export interface AppSettings {
   metaAppSecret: string;
   ytClientId: string;
   ytClientSecret: string;
+  ytApiKey?: string;
   ytAutoShort?: boolean;
   ytDescriptionTemplate?: string;
   alertEmail?: string;

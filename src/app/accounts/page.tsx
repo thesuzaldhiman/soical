@@ -66,7 +66,11 @@ function AccountsContent() {
   const [fbMode, setFbMode] = useState<'token' | 'oauth'>('token');
   const [fbAccessToken, setFbAccessToken] = useState('');
   const [fbPageId, setFbPageId] = useState('');
-  // Generic / YouTube / Threads
+  // YouTube
+  const [ytMode, setYtMode] = useState<'oauth' | 'direct'>('oauth');
+  const [ytChannelInput, setYtChannelInput] = useState('');
+  const [ytApiKeyInput, setYtApiKeyInput] = useState('');
+  // Generic / Threads
   const [accountNameInput, setAccountNameInput] = useState('');
 
   // Status & loading
@@ -123,6 +127,49 @@ function AccountsContent() {
           }
         } catch (e) {
           console.error('Failed importing pending Facebook pages:', e);
+        }
+      }
+    }
+  }, [addAccount, addPages]);
+
+  // Check for pending imported YouTube channel from OAuth callback
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const match = document.cookie.match(new RegExp('(^| )sap_pending_yt_import=([^;]+)'));
+      if (match) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(match[2]));
+          if (parsed.channel) {
+            const ch = parsed.channel;
+            const newAcc = addAccount('youtube', `${ch.name} (YouTube Account)`, {
+              accessToken: parsed.accessToken,
+              avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
+              fanCount: ch.subscriberCount,
+            });
+
+            const pageToAdd: SocialPage = {
+              id: `pg_yt_${Date.now()}`,
+              accountId: newAcc.id,
+              platform: 'youtube',
+              pageId: ch.id,
+              name: ch.name,
+              avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
+              fanCount: ch.subscriberCount || 0,
+              isActive: true,
+              accessToken: parsed.accessToken,
+              targetUrl: ch.customUrl
+                ? `https://youtube.com/${ch.customUrl}`
+                : `https://youtube.com/channel/${ch.id}`,
+              category: 'YouTube Shorts',
+              permissions: ['youtube.upload', 'youtube.readonly'],
+            };
+
+            addPages([pageToAdd]);
+            setConnectSuccess(`Successfully connected "${ch.name}" via YouTube OAuth!`);
+            document.cookie = 'sap_pending_yt_import=; path=/; max-age=0; SameSite=Lax';
+          }
+        } catch (e) {
+          console.error('Failed importing pending YouTube channel:', e);
         }
       }
     }
@@ -245,7 +292,69 @@ function AccountsContent() {
     }
   };
 
-  // 3. Generic Connect
+  // 3. Connect YouTube Direct (Handle or Channel ID)
+  const handleConnectYouTubeDirect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ytChannelInput.trim()) return;
+    setIsVerifying(true);
+    setConnectError(null);
+    setConnectSuccess(null);
+
+    try {
+      const res = await fetch('/api/connect/youtube', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channelHandleOrId: ytChannelInput.trim(),
+          apiKey: ytApiKeyInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.success || !data.channel) {
+        setConnectError(data.error || 'Failed to verify YouTube channel.');
+        setIsVerifying(false);
+        return;
+      }
+
+      const ch = data.channel;
+      const newAcc = addAccount('youtube', `${ch.name} (YouTube Account)`, {
+        avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
+        fanCount: ch.subscriberCount,
+      });
+
+      const pageToAdd: SocialPage = {
+        id: `pg_yt_${Date.now()}`,
+        accountId: newAcc.id,
+        platform: 'youtube',
+        pageId: ch.id,
+        name: ch.name,
+        avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
+        fanCount: ch.subscriberCount || 0,
+        isActive: true,
+        targetUrl: ch.customUrl
+          ? `https://youtube.com/${ch.customUrl}`
+          : `https://youtube.com/channel/${ch.id}`,
+        category: 'YouTube Shorts',
+        permissions: ['youtube.upload', 'youtube.readonly'],
+      };
+
+      addPages([pageToAdd]);
+      setConnectSuccess(`Successfully connected "${ch.name}" live!`);
+      setYtChannelInput('');
+      setYtApiKeyInput('');
+      setTimeout(() => {
+        setConnectModalOpen(false);
+        setConnectSuccess(null);
+      }, 1500);
+    } catch (err: unknown) {
+      setConnectError(err instanceof Error ? err.message : 'Network error verifying YouTube channel.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // 4. Generic Connect
   const handleGenericConnect = (e: React.FormEvent) => {
     e.preventDefault();
     if (!accountNameInput.trim()) return;
@@ -916,8 +1025,159 @@ function AccountsContent() {
               </div>
             )}
 
-            {/* 3. INSTAGRAM, YOUTUBE, THREADS */}
-            {connectPlatformChoice !== 'telegram' && connectPlatformChoice !== 'facebook' && (
+            {/* 3. YOUTUBE FORM */}
+            {connectPlatformChoice === 'youtube' && (
+              <div className="space-y-4">
+                {/* Mode Selector */}
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setYtMode('oauth')}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      ytMode === 'oauth'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    OAuth Login (Google Cloud)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setYtMode('direct')}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      ytMode === 'direct'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Direct Channel Handle / ID
+                  </button>
+                </div>
+
+                {ytMode === 'oauth' ? (
+                  <div className="space-y-4 text-xs">
+                    <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-800">Target Google Client ID:</span>
+                        <span className="font-mono text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-[#E2E8F0] truncate max-w-[200px]">
+                          {settings?.ytClientId || 'Configure in Settings'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] font-mono text-[11px]">
+                        <span className="truncate">{redirectUriMap.youtube}</span>
+                        <button
+                          type="button"
+                          onClick={handleCopyUri}
+                          className="ml-2 text-slate-900 hover:text-black font-bold flex items-center gap-1 shrink-0"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{copiedUri ? 'Copied!' : 'Copy'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-red-50/70 border border-red-200/80 text-[11px] text-red-900 leading-relaxed">
+                      ▶️ <strong>Google Cloud Console:</strong> Make sure <code>{redirectUriMap.youtube}</code> is added to <em>Authorized redirect URIs</em> in your Google Cloud credentials.
+                    </div>
+
+                    {/* Prominent Official OAuth Button */}
+                    <a
+                      href={`/api/auth/youtube?client_id=${encodeURIComponent(
+                        settings?.ytClientId || ''
+                      )}&client_secret=${encodeURIComponent(settings?.ytClientSecret || '')}`}
+                      className="w-full py-3 px-4 rounded-xl bg-[#CC0000] hover:bg-[#B30000] text-white font-bold text-xs flex items-center justify-center gap-2.5 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
+                    >
+                      <SocialIcon platform="youtube" className="w-4 h-4 rounded-xs" />
+                      <span>Log In with Google & Authorize YouTube Channel</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                    </a>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                      <span>Uses YouTube Data API v3 Scopes</span>
+                      <Link href="/settings" className="font-bold text-slate-800 hover:underline">
+                        YouTube Client Secret in Settings &rarr;
+                      </Link>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#E2E8F0]">
+                      <button
+                        type="button"
+                        onClick={() => setConnectModalOpen(false)}
+                        className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleConnectYouTubeDirect} className="space-y-3.5">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-[#E2E8F0] text-[11px] text-slate-600 leading-relaxed">
+                      💡 <strong>Instant Handle Connect:</strong> Enter your YouTube channel handle (e.g. <code>@khabarmonkey</code>) or Channel ID (e.g. <code>UC...</code>). You can also provide an optional YouTube Data API Key for live metadata verification.
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        Channel Handle or Channel ID *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={ytChannelInput}
+                        onChange={(e) => setYtChannelInput(e.target.value)}
+                        placeholder="e.g. @MrBeast, @khabarmonkey or UCX6OQ3DkcsbYNE6H8uQQuVA"
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        YouTube Data API Key (Optional)
+                      </label>
+                      <input
+                        type="password"
+                        value={ytApiKeyInput}
+                        onChange={(e) => setYtApiKeyInput(e.target.value)}
+                        placeholder={settings?.ytApiKey ? 'Defaults to saved Settings API Key' : 'AIzaSy... (optional for live metadata lookup)'}
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setConnectModalOpen(false)}
+                        className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA]"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isVerifying}
+                        className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-all disabled:opacity-60 flex items-center gap-1.5"
+                      >
+                        {isVerifying ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Verifying Channel...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Verify & Connect Channel</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* 4. INSTAGRAM & THREADS (GENERIC) */}
+            {connectPlatformChoice !== 'telegram' &&
+              connectPlatformChoice !== 'facebook' &&
+              connectPlatformChoice !== 'youtube' && (
               <form onSubmit={handleGenericConnect} className="space-y-4">
                 <div className="p-3.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs text-slate-800 space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold">

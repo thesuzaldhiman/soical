@@ -666,6 +666,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   metaAppSecret: '',
   ytClientId: '',
   ytClientSecret: '',
+  ytApiKey: '',
   ytAutoShort: true,
   ytDescriptionTemplate:
     "{title}\n\n👉 ताज़ा और महत्वपूर्ण खबरों के लिए चैनल सब्सक्राइब करें!\n#Shorts #News #Viral",
