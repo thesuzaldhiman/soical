@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // 2. YOUTUBE LIVE SYNC
+        // 2. YOUTUBE LIVE SYNC (Supports both API Key and Google OAuth Access Token)
         if (pg.platform === 'youtube' && (pg.pageId || pg.targetUrl)) {
           try {
             const rawId = pg.pageId || '';
@@ -58,13 +58,21 @@ export async function POST(request: NextRequest) {
             const handleMatch = pg.targetUrl?.match(/@([a-zA-Z0-9_.-]+)/);
             const handle = handleMatch ? handleMatch[1] : rawId.replace('@', '');
 
-            if (ytApiKey) {
+            if (ytApiKey || pg.accessToken) {
               const query = isChannelId
                 ? `id=${encodeURIComponent(rawId)}`
                 : `forHandle=${encodeURIComponent(handle)}`;
-              const ytRes = await fetch(
-                `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&${query}&key=${ytApiKey}`
-              );
+
+              const url = ytApiKey
+                ? `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&${query}&key=${ytApiKey}`
+                : `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&${query}`;
+
+              const headers: Record<string, string> = {};
+              if (pg.accessToken) {
+                headers['Authorization'] = `Bearer ${pg.accessToken.trim()}`;
+              }
+
+              const ytRes = await fetch(url, { headers });
               const ytData = await ytRes.json();
               if (ytData.items && ytData.items.length > 0) {
                 const item = ytData.items[0];

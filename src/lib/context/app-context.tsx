@@ -659,17 +659,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pages: targetPages.map((p) => ({
-            id: p.id,
-            platform: p.platform,
-            pageId: p.pageId,
-            accessToken: p.accessToken,
-            botToken: p.botToken,
-            chatId: p.chatId,
-            targetUrl: p.targetUrl,
-            fanCount: p.fanCount,
-            followersCount: p.followersCount,
-          })),
+          pages: targetPages.map((p) => {
+            const acc = accounts.find((a) => a.id === p.accountId);
+            return {
+              id: p.id,
+              platform: p.platform,
+              pageId: p.pageId,
+              accessToken: p.accessToken || acc?.accessToken,
+              botToken: p.botToken || acc?.botToken,
+              chatId: p.chatId,
+              targetUrl: p.targetUrl,
+              fanCount: p.fanCount,
+              followersCount: p.followersCount,
+            };
+          }),
           ytApiKey: settings?.ytApiKey || undefined,
         }),
       });
