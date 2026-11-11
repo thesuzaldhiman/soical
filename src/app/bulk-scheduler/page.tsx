@@ -9,7 +9,7 @@ import { SocialPage, Platform } from '@/types';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 import {
   CalendarClock,
-  Upload,
+  UploadCloud,
   CheckCircle2,
   Trash2,
   Clock,
@@ -19,6 +19,9 @@ import {
   RotateCw,
   Layers,
   ArrowRight,
+  Sparkles,
+  Hash,
+  Search,
 } from 'lucide-react';
 
 interface BulkPostItem {
@@ -57,12 +60,15 @@ export default function BulkSchedulerPage() {
 
 function BulkSchedulerContent() {
   const router = useRouter();
-  const { pages, accounts, settings, createPost } = useApp();
+  const { pages, accounts, categories, settings, createPost } = useApp();
 
-  // STEP 1: Common Settings
+  // STEP 1: Common Settings & Destinations
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>(
     pages.filter((p) => p.isActive).map((p) => p.id)
   );
+
+  const [pageSearch, setPageSearch] = useState('');
+  const [platformFilter, setPlatformFilter] = useState<Platform | 'all'>('all');
 
   const [startDateTime, setStartDateTime] = useState(getDefaultStartTime());
   const [gapMinutes, setGapMinutes] = useState(30);
@@ -79,7 +85,7 @@ function BulkSchedulerContent() {
   const [poolPickMin, setPoolPickMin] = useState(3);
   const [poolPickMax, setPoolPickMax] = useState(4);
 
-  // STEP 2 & 3: Uploaded Post Cards
+  // STEP 2 & 3: Post Cards Queue
   const [bulkItems, setBulkItems] = useState<BulkPostItem[]>([]);
   const [pastedTitles, setPastedTitles] = useState('');
   const [onlyEmptyCards, setOnlyEmptyCards] = useState(false);
@@ -90,14 +96,63 @@ function BulkSchedulerContent() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Group pages by parent account (matching screenshot "Facebook — Rahul Thakur" grouping)
+  // Categories with count helpers (exact match with /composer design)
+  const categoriesWithCounts = useMemo(() => {
+    const existingIds = new Set(pages.map((p) => p.id));
+    return categories.map((cat) => {
+      const validIds = cat.pageIds.filter((id) => existingIds.has(id));
+      const allSelected = validIds.length > 0 && validIds.every((id) => selectedPageIds.includes(id));
+      const someSelected = validIds.some((id) => selectedPageIds.includes(id));
+      return {
+        ...cat,
+        validIds,
+        allSelected,
+        someSelected,
+      };
+    });
+  }, [categories, pages, selectedPageIds]);
+
+  // Suggested tags from selected categories
+  const suggestedCategoryTags = useMemo(() => {
+    const tags = new Set<string>();
+    categories.forEach((cat) => {
+      const touchesSelected = cat.pageIds.some((pid) => selectedPageIds.includes(pid));
+      if (touchesSelected) {
+        cat.tags.forEach((t) => tags.add(t.startsWith('#') ? t : `#${t}`));
+      }
+    });
+    return Array.from(tags);
+  }, [categories, selectedPageIds]);
+
+  // Available platforms among connected pages
+  const availablePlatforms = useMemo(() => {
+    const set = new Set<Platform>();
+    pages.forEach((p) => set.add(p.platform));
+    return Array.from(set);
+  }, [pages]);
+
+  // Filtered pages for destination picker
+  const filteredPages = useMemo(() => {
+    const q = pageSearch.trim().toLowerCase();
+    return pages.filter((p) => {
+      const matchesPlatform = platformFilter === 'all' || p.platform === platformFilter;
+      const matchesQuery =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.platform.toLowerCase().includes(q) ||
+        (p.category || '').toLowerCase().includes(q);
+      return matchesPlatform && matchesQuery;
+    });
+  }, [pages, pageSearch, platformFilter]);
+
+  // Group pages by parent account (matching /composer and WordPress plugin)
   const groupedPages = useMemo(() => {
     const groups = new Map<string, { accountName: string; platform: Platform; pages: SocialPage[] }>();
 
-    pages.forEach((page) => {
+    filteredPages.forEach((page) => {
       const acc = accounts.find((a) => a.id === page.accountId);
       const key = acc ? acc.id : `other_${page.platform}`;
-      const accountName = acc ? `${acc.platform.toUpperCase()} — ${acc.name}` : `${page.platform.toUpperCase()} Pages`;
+      const accountName = acc ? `${acc.platform.toUpperCase()} — ${acc.name}` : `${page.platform.toUpperCase()} Channels`;
       if (!groups.has(key)) {
         groups.set(key, { accountName, platform: acc?.platform || page.platform, pages: [] });
       }
@@ -105,9 +160,9 @@ function BulkSchedulerContent() {
     });
 
     return Array.from(groups.entries()).map(([id, data]) => ({ id, ...data }));
-  }, [pages, accounts]);
+  }, [filteredPages, accounts]);
 
-  // Hashtags in pool count
+  // Parsed Hashtags in pool count
   const parsedPoolTags = useMemo(() => {
     return hashtagPool
       .split(/[\s,]+/)
@@ -115,6 +170,16 @@ function BulkSchedulerContent() {
       .filter((t) => t.length > 1)
       .map((t) => (t.startsWith('#') ? t : `#${t}`));
   }, [hashtagPool]);
+
+  // Toggle Category Pages (Select / Deselect all pages in category)
+  const toggleCategoryPages = (validIds: string[], isAllSelected: boolean) => {
+    if (validIds.length === 0) return;
+    if (isAllSelected) {
+      setSelectedPageIds((prev) => prev.filter((id) => !validIds.includes(id)));
+    } else {
+      setSelectedPageIds((prev) => Array.from(new Set([...prev, ...validIds])));
+    }
+  };
 
   // Account Group Selection Handlers
   const handleSelectAllInGroup = (groupPages: SocialPage[]) => {
@@ -131,6 +196,28 @@ function BulkSchedulerContent() {
     setSelectedPageIds((prev) =>
       prev.includes(pageId) ? prev.filter((id) => id !== pageId) : [...prev, pageId]
     );
+  };
+
+  const allPagesSelected = pages.length > 0 && pages.every((p) => selectedPageIds.includes(p.id));
+
+  const toggleSelectAllPages = () => {
+    if (allPagesSelected) {
+      setSelectedPageIds([]);
+    } else {
+      setSelectedPageIds(pages.map((p) => p.id));
+    }
+  };
+
+  // Add category tags into Hashtag Pool
+  const handleAddCategoryTagsToPool = () => {
+    if (suggestedCategoryTags.length === 0) return;
+    const existing = new Set(parsedPoolTags);
+    const newTags = suggestedCategoryTags.filter((t) => !existing.has(t));
+    if (newTags.length === 0) {
+      alert('Selected categories ke saare tags already pool me hain.');
+      return;
+    }
+    setHashtagPool((prev) => (prev.trim() ? `${prev.trim()} ${newTags.join(' ')}` : newTags.join(' ')));
   };
 
   // Random Tag Generator
@@ -181,7 +268,6 @@ function BulkSchedulerContent() {
       const scheduledAt = computeTimeForIndex(startIndex + i, startDateTime);
       const tempId = `bulk_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 7)}`;
 
-      // Generate local object URL for instant preview
       const objectUrl = URL.createObjectURL(file);
 
       newItems.push({
@@ -229,7 +315,6 @@ function BulkSchedulerContent() {
     }
 
     if (bulkItems.length === 0) {
-      // Auto-create text cards if no cards exist
       const autoCards: BulkPostItem[] = lines.map((line, idx) => ({
         id: `bulk_title_${Date.now()}_${idx}`,
         title: line,
@@ -326,26 +411,42 @@ function BulkSchedulerContent() {
   };
 
   return (
-    <div className="space-y-6 font-sans max-w-6xl mx-auto animate-fade-in pb-28">
-      {/* Top Banner (Matching the Orange-Amber Header in Screenshot) */}
-      <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white rounded-3xl p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-7 font-sans max-w-6xl mx-auto animate-fade-in pb-28">
+      {/* Studio Header (Tasklify Clean Neutral Studio matching /composer) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E2E8F0]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-2.5">
-            <CalendarClock className="w-7 h-7 stroke-[2.3]" />
-            <span>Bulk Scheduler</span>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 flex items-center gap-2.5">
+            <CalendarClock className="w-7 h-7 text-slate-900" />
+            <span>Bulk Post Scheduler</span>
           </h1>
-          <p className="text-xs sm:text-sm text-amber-50 font-medium mt-1">
-            Ek saath bahut saari images/videos select karo, titles lagao, time auto-set — ek click me sab schedule.
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+            Ek saath bahut saari images/videos select karo, categories chuno, titles lagao, time auto-set — ek click me sab schedule.
           </p>
         </div>
 
-        <Link
-          href="/library"
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors self-start sm:self-auto backdrop-blur-xs shadow-2xs"
-        >
-          <span>Post Library</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                selectedPageIds.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'
+              }`}
+            />
+            <span>{selectedPageIds.length} Pages Selected</span>
+          </div>
+
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-blue-500" />
+            <span>{bulkItems.length} Posts in Batch</span>
+          </div>
+
+          <Link
+            href="/library"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs transition-colors"
+          >
+            <span>Post Library</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
 
       {scheduleSuccessMsg && (
@@ -370,16 +471,158 @@ function BulkSchedulerContent() {
         className="hidden"
       />
 
-      {/* STEP 1: Common Settings */}
+      {/* STEP 1: Common Settings & Destinations */}
       <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-2xs space-y-6">
-        <div className="flex items-center gap-2.5 pb-4 border-b border-[#E2E8F0]">
-          <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
-            1
-          </span>
-          <h2 className="font-black text-sm sm:text-base text-slate-900">
-            Common settings (sab posts par lagu)
-          </h2>
+        <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0]">
+          <div className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-xl bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
+              1
+            </span>
+            <div>
+              <h2 className="font-black text-sm sm:text-base text-slate-900">
+                Common settings (sab posts par lagu)
+              </h2>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                Target destinations, category filtering, intervals, and default caption tags
+              </p>
+            </div>
+          </div>
+
+          {pages.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleSelectAllPages}
+              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-black cursor-pointer"
+            >
+              <span
+                className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                  allPagesSelected
+                    ? 'bg-slate-900 border-slate-900 text-white'
+                    : 'bg-white border-slate-300'
+                }`}
+              >
+                {allPagesSelected && <Check className="w-3 h-3 stroke-[3]" />}
+              </span>
+              <span>Select All Pages</span>
+            </button>
+          )}
         </div>
+
+        {/* Quick Select by Category (matching /composer design) */}
+        {categoriesWithCounts.length > 0 && (
+          <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-slate-400" />
+                <span>Quick Select by Category</span>
+              </span>
+              <div className="flex items-center gap-3">
+                {suggestedCategoryTags.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAddCategoryTagsToPool}
+                    className="text-[11px] font-bold text-slate-700 hover:text-black flex items-center gap-1 cursor-pointer"
+                    title="Add tags from selected categories into hashtag pool"
+                  >
+                    <Hash className="w-3 h-3 text-slate-500" />
+                    <span>Import Tags to Pool ({suggestedCategoryTags.length})</span>
+                  </button>
+                )}
+                <Link
+                  href="/categories"
+                  className="text-[11px] font-bold text-slate-500 hover:text-slate-900"
+                >
+                  Manage Categories
+                </Link>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPageIds([])}
+                className={`px-3 py-1.5 rounded-full border text-[11px] font-bold transition-all cursor-pointer ${
+                  selectedPageIds.length === 0
+                    ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
+                    : 'bg-white border-[#E2E8F0] text-slate-600 hover:border-slate-400'
+                }`}
+              >
+                None
+              </button>
+
+              {categoriesWithCounts.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => toggleCategoryPages(cat.validIds, cat.allSelected)}
+                  style={{
+                    borderColor: cat.allSelected ? cat.color : undefined,
+                    backgroundColor: cat.allSelected ? `${cat.color}18` : undefined,
+                  }}
+                  className={`px-3 py-1.5 rounded-full border text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    cat.allSelected
+                      ? 'text-slate-900 shadow-2xs font-extrabold'
+                      : 'bg-white border-[#E2E8F0] text-slate-700 hover:border-slate-400'
+                  }`}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: cat.color }}
+                  />
+                  <span>{cat.name}</span>
+                  <span className="text-[10px] opacity-70 font-semibold">{cat.validIds.length}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Search & Platform Filter */}
+        {pages.length > 5 && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={pageSearch}
+                onChange={(e) => setPageSearch(e.target.value)}
+                placeholder="Search destination pages..."
+                className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+              />
+            </div>
+
+            {availablePlatforms.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPlatformFilter('all')}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                    platformFilter === 'all'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-[#F8F9FA] border border-[#E2E8F0] text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All
+                </button>
+                {availablePlatforms.map((plat) => (
+                  <button
+                    key={plat}
+                    type="button"
+                    onClick={() => setPlatformFilter(plat)}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold capitalize flex items-center gap-1 transition-colors cursor-pointer ${
+                      platformFilter === plat
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-[#F8F9FA] border border-[#E2E8F0] text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <SocialIcon platform={plat} className="w-3 h-3 rounded-xs" />
+                    <span>{plat}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Kaha post karna hai (Grouped by Account with "Sab" | "Koi nahi" buttons) */}
         <div className="space-y-4">
@@ -388,8 +631,8 @@ function BulkSchedulerContent() {
           </label>
 
           {groupedPages.length === 0 ? (
-            <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-dashed border-[#E2E8F0] text-center space-y-2">
-              <p className="text-xs font-bold text-slate-700">Koi broadcasting page ya channel connect nahi hai</p>
+            <div className="p-5 rounded-2xl bg-[#F8F9FA] border border-dashed border-[#E2E8F0] text-center space-y-2">
+              <p className="text-xs font-bold text-slate-700">Koi broadcasting page ya channel match nahi hua</p>
               <Link
                 href="/accounts"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-2xs"
@@ -402,7 +645,7 @@ function BulkSchedulerContent() {
               return (
                 <div key={group.id} className="space-y-2.5">
                   <div className="flex items-center gap-2.5 text-xs">
-                    <span className="font-bold text-slate-800">{group.accountName}</span>
+                    <span className="font-extrabold text-slate-800">{group.accountName}</span>
                     <button
                       type="button"
                       onClick={() => handleSelectAllInGroup(group.pages)}
@@ -438,13 +681,18 @@ function BulkSchedulerContent() {
                             className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
                               isSelected
                                 ? 'bg-slate-900 border-slate-900 text-white'
-                                : 'bg-white border-slate-300'
+                                : 'border-slate-300 bg-white'
                             }`}
                           >
                             {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                           </div>
                           <SocialIcon platform={page.platform} className="w-3.5 h-3.5 rounded-xs shrink-0" />
                           <span>{page.name}</span>
+                          {page.category && (
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({page.category})
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -465,10 +713,7 @@ function BulkSchedulerContent() {
             <input
               type="datetime-local"
               value={startDateTime}
-              onChange={(e) => {
-                setStartDateTime(e.target.value);
-                // optionally update times
-              }}
+              onChange={(e) => setStartDateTime(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-medium"
             />
           </div>
@@ -551,7 +796,7 @@ function BulkSchedulerContent() {
               value={globalComment}
               onChange={(e) => setGlobalComment(e.target.value)}
               placeholder="Link ya koi line..."
-              className="w-full p-3 rounded-2xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 leading-relaxed font-medium"
+              className="w-full p-3.5 rounded-2xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 leading-relaxed font-medium"
             />
           </div>
 
@@ -564,22 +809,33 @@ function BulkSchedulerContent() {
               value={captionSuffix}
               onChange={(e) => setCaptionSuffix(e.target.value)}
               placeholder="#himachal #news"
-              className="w-full p-3 rounded-2xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 leading-relaxed font-medium"
+              className="w-full p-3.5 rounded-2xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 leading-relaxed font-medium"
             />
           </div>
         </div>
 
         {/* Hashtag Pool (Original Plugin Feature) */}
         <div className="pt-2 border-t border-[#E2E8F0] space-y-2.5">
-          <label className="text-xs font-bold text-slate-700 block">
-            Hashtag pool — yaha 20-30 tags save karo (space / comma / nayi line se alag)
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-700">
+              Hashtag pool — yaha 20-30 tags save karo (space / comma / nayi line se alag)
+            </label>
+            {suggestedCategoryTags.length > 0 && (
+              <button
+                type="button"
+                onClick={handleAddCategoryTagsToPool}
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline"
+              >
+                + Auto-fill category tags
+              </button>
+            )}
+          </div>
           <textarea
             rows={3}
             value={hashtagPool}
             onChange={(e) => setHashtagPool(e.target.value)}
             placeholder="#AstroMahima #SanatanDharma #Bhakti #HinduDharma #Dharmik #Spirituality #Shorts ..."
-            className="w-full p-3 rounded-2xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 leading-relaxed font-medium font-mono"
+            className="w-full p-3.5 rounded-2xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 leading-relaxed font-medium font-mono"
           />
 
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
@@ -623,7 +879,7 @@ function BulkSchedulerContent() {
       {/* STEP 2: Images / Videos jodo */}
       <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-2xs space-y-4">
         <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
-          <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
+          <span className="w-7 h-7 rounded-xl bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
             2
           </span>
           <h2 className="font-black text-sm sm:text-base text-slate-900">
@@ -635,15 +891,15 @@ function BulkSchedulerContent() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+            className="px-5 py-3 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
           >
-            <Upload className="w-4 h-4 stroke-[2.4]" />
+            <UploadCloud className="w-4 h-4" />
             <span>Computer se upload (multiple)</span>
           </button>
 
           <Link
             href="/library"
-            className="px-4 py-3 rounded-2xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors flex items-center gap-2 shadow-2xs"
+            className="px-4 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors flex items-center gap-2 shadow-2xs"
           >
             <Layers className="w-4 h-4 text-slate-500" />
             <span>Media Library se select</span>
@@ -652,7 +908,7 @@ function BulkSchedulerContent() {
           <button
             type="button"
             onClick={handleAddTextPost}
-            className="px-4 py-3 rounded-2xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors flex items-center gap-2 shadow-2xs cursor-pointer"
+            className="px-4 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors flex items-center gap-2 shadow-2xs cursor-pointer"
           >
             <FileText className="w-4 h-4 text-slate-500" />
             <span>Sirf text post</span>
@@ -667,7 +923,7 @@ function BulkSchedulerContent() {
       {/* STEP 3: Titles / captions */}
       <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-2xs space-y-4">
         <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
-          <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
+          <span className="w-7 h-7 rounded-xl bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
             3
           </span>
           <h2 className="font-black text-sm sm:text-base text-slate-900">
@@ -690,7 +946,7 @@ function BulkSchedulerContent() {
             <button
               type="button"
               onClick={handleApplyPastedTitles}
-              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+              className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
             >
               <span>Titles lagao (order me)</span>
             </button>
@@ -700,7 +956,7 @@ function BulkSchedulerContent() {
                 type="checkbox"
                 checked={onlyEmptyCards}
                 onChange={(e) => setOnlyEmptyCards(e.target.checked)}
-                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                className="w-4 h-4 rounded text-slate-900 focus:ring-slate-900 border-slate-300"
               />
               <span>Sirf khaali wale cards me</span>
             </label>
@@ -708,7 +964,7 @@ function BulkSchedulerContent() {
             <button
               type="button"
               onClick={handleFillTitlesFromFileName}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-colors cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] hover:bg-slate-200/70 text-slate-800 font-bold text-xs transition-colors cursor-pointer"
             >
               File ke naam se title bharo
             </button>
@@ -720,7 +976,7 @@ function BulkSchedulerContent() {
       <div className="space-y-4">
         {bulkItems.length === 0 ? (
           /* Empty state matching the screenshot */
-          <div className="py-14 px-4 rounded-3xl border-2 border-dashed border-[#E2E8F0] bg-white text-center space-y-3">
+          <div className="py-14 px-4 rounded-3xl border-2 border-dashed border-[#E2E8F0] bg-white text-center space-y-3 shadow-2xs">
             <p className="text-xs sm:text-sm font-semibold text-slate-500">
               Abhi koi post nahi. Upar se images/videos jodo.
             </p>
@@ -757,7 +1013,7 @@ function BulkSchedulerContent() {
                 <button
                   type="button"
                   onClick={handleRecalculateTimes}
-                  className="px-3 py-1.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 shadow-2xs"
+                  className="px-3 py-1.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <RotateCw className="w-3.5 h-3.5 text-slate-500" />
                   <span>Re-Calculate Times</span>
@@ -766,7 +1022,7 @@ function BulkSchedulerContent() {
                 <button
                   type="button"
                   onClick={handleClearAll}
-                  className="px-3 py-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 font-bold text-xs transition-colors"
+                  className="px-3 py-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Clear All
                 </button>
@@ -889,7 +1145,7 @@ function BulkSchedulerContent() {
               type="button"
               disabled={isSchedulingAll || selectedPageIds.length === 0}
               onClick={handleScheduleAll}
-              className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs transition-all shadow-md flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+              className="px-6 py-3 rounded-xl bg-white hover:bg-slate-100 text-slate-950 disabled:opacity-50 font-black text-xs transition-all shadow-md flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
             >
               {isSchedulingAll ? (
                 <>
