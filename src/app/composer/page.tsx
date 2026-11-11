@@ -25,6 +25,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { findSensitiveWords, sanitizeText } from '@/lib/utils/sensitive-words';
+import { SocialIcon } from '@/components/ui/SocialIcon';
 
 export default function ComposerPage() {
   return (
@@ -234,9 +235,7 @@ function ComposerContent() {
                       >
                         {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                       </div>
-                      <span className="text-base shrink-0">
-                        {platformIcons[page.platform] || '📢'}
-                      </span>
+                      <SocialIcon platform={page.platform} className="w-4 h-4 rounded-xs shrink-0" />
                       <span className="truncate">{page.name}</span>
                     </div>
                   </div>

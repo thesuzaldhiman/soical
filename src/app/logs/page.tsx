@@ -18,6 +18,7 @@ import {
   Share2,
   Info,
 } from 'lucide-react';
+import { SocialIcon } from '@/components/ui/SocialIcon';
 
 export default function LogsPage() {
   return (
@@ -254,7 +255,7 @@ function LogsContent() {
 
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <span className="text-base">{platformIcons[log.platform] || '🌐'}</span>
+                            <SocialIcon platform={log.platform} className="w-4 h-4 rounded-xs shrink-0" />
                             <div>
                               <div className="font-bold text-slate-800">{log.pageName}</div>
                               <div className="text-[10px] text-slate-400 capitalize">{log.platform} Channel</div>

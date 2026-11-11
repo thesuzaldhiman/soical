@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Play,
 } from 'lucide-react';
+import { SocialIcon } from '@/components/ui/SocialIcon';
 
 export default function LibraryPage() {
   return (
@@ -270,7 +271,7 @@ function LibraryContent() {
                             : 'bg-slate-50 border-slate-200 text-slate-700'
                         }`}
                       >
-                        <span>{platformIcons[page?.platform || 'facebook'] || '📢'}</span>
+                        <SocialIcon platform={page?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs shrink-0" />
                         <span>{page?.name || 'Target Page'}</span>
                         {result?.status === 'success' && (
                           <CheckCircle2 className="w-3 h-3 text-emerald-600 ml-0.5" />

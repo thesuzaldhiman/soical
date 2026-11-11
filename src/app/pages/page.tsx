@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
+import { SocialIcon } from '@/components/ui/SocialIcon';
 import {
   Layers,
   Search,
@@ -14,6 +15,7 @@ import {
   ExternalLink,
   ShieldCheck,
   ChevronRight,
+  Filter,
 } from 'lucide-react';
 
 export default function PagesManagementPage() {
@@ -37,30 +39,22 @@ function PagesContent() {
     return matchesPlatform && matchesSearch;
   });
 
-  const platformIcons: Record<string, string> = {
-    facebook: '📘',
-    instagram: '📸',
-    threads: '🧵',
-    telegram: '✈️',
-    youtube: '▶️',
-  };
-
   return (
-    <div className="space-y-8 font-sans animate-fade-in">
-      {/* 1. Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#EEF1F6]">
+    <div className="space-y-7 font-sans animate-fade-in pb-10">
+      {/* 1. Header (Tasklify Clean Neutral Studio) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
             Pages & Channels
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Manage individual Facebook Pages, Instagram profiles, YouTube channels, and Telegram targets.
+            Manage individual Facebook Pages, Instagram profiles, YouTube channels, and Telegram target destinations.
           </p>
         </div>
 
         <Link
           href="/accounts"
-          className="inline-flex items-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] text-white text-xs font-bold transition-all shadow-[0_4px_14px_rgba(255,0,122,0.3)] hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto shrink-0"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto shrink-0"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>Connect New Platform</span>
@@ -68,7 +62,7 @@ function PagesContent() {
       </div>
 
       {/* 2. Search & Platform Filter Bar */}
-      <div className="bg-white rounded-2xl border border-[#EEF1F6] p-4 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Platform Filter Buttons */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           {(['all', 'facebook', 'instagram', 'youtube', 'threads', 'telegram'] as const).map((plat) => {
@@ -80,16 +74,21 @@ function PagesContent() {
                 key={plat}
                 type="button"
                 onClick={() => setPlatformFilter(plat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all shrink-0 flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all shrink-0 flex items-center gap-2 ${
                   platformFilter === plat
-                    ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-[#F8F9FD]'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-[#F8F9FA]'
                 }`}
               >
+                {plat !== 'all' && (
+                  <SocialIcon platform={plat} className="w-3.5 h-3.5 rounded-xs" />
+                )}
                 <span>{plat}</span>
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                    platformFilter === plat ? 'bg-white/20 text-white' : 'bg-[#F2F2EE] text-slate-600'
+                    platformFilter === plat
+                      ? 'bg-white/20 text-white'
+                      : 'bg-[#F8F9FA] text-slate-600 border border-[#E2E8F0]'
                   }`}
                 >
                   {count}
@@ -107,16 +106,16 @@ function PagesContent() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search pages by name or ID..."
-            className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#E8E8E4] text-xs text-slate-800 bg-[#FAF9F6] focus:outline-none focus:ring-2 focus:ring-slate-900"
+            className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-400 transition-all"
           />
         </div>
       </div>
 
       {/* 3. Pages Table */}
-      <div className="bg-white rounded-2xl border border-[#E8E8E4] shadow-2xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-[#FAF9F6] text-slate-400 uppercase tracking-wider font-bold border-b border-[#E8E8E4]">
+            <thead className="bg-[#F8F9FA] text-slate-500 uppercase tracking-wider font-extrabold text-[10px] border-b border-[#E2E8F0]">
               <tr>
                 <th className="py-3 px-5">Page / Channel Name</th>
                 <th className="py-3 px-5">Platform</th>
@@ -126,16 +125,16 @@ function PagesContent() {
                 <th className="py-3 px-5 text-right">Status & Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#F2F2EE]">
+            <tbody className="divide-y divide-[#E2E8F0]">
               {filteredPages.map((page) => (
-                <tr key={page.id} className="hover:bg-[#FAF9F6] transition-colors">
+                <tr key={page.id} className="hover:bg-[#F8F9FA] transition-colors">
                   <td className="py-3.5 px-5">
                     <div className="flex items-center gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={page.avatarUrl}
                         alt={page.name}
-                        className="w-9 h-9 rounded-xl object-cover border border-[#E8E8E4] shrink-0"
+                        className="w-9 h-9 rounded-xl object-cover border border-[#E2E8F0] shrink-0"
                       />
                       <div>
                         <div className="font-bold text-slate-900 text-xs">{page.name}</div>
@@ -144,15 +143,15 @@ function PagesContent() {
                     </div>
                   </td>
                   <td className="py-3.5 px-5">
-                    <span className="capitalize font-semibold text-slate-700 flex items-center gap-1.5">
-                      <span>{platformIcons[page.platform] || '📢'}</span>
+                    <span className="capitalize font-semibold text-slate-800 flex items-center gap-2">
+                      <SocialIcon platform={page.platform} className="w-4 h-4 rounded-xs shadow-2xs" />
                       <span>{page.platform}</span>
                     </span>
                   </td>
-                  <td className="py-3.5 px-5 text-slate-500 font-medium">
+                  <td className="py-3.5 px-5 text-slate-600 font-medium">
                     {page.category || 'General News'}
                   </td>
-                  <td className="py-3.5 px-5 font-bold text-slate-800">
+                  <td className="py-3.5 px-5 font-bold text-slate-900">
                     {page.fanCount.toLocaleString()}
                   </td>
                   <td className="py-3.5 px-5">
@@ -160,7 +159,7 @@ function PagesContent() {
                       {(page.permissions || ['pages_manage_posts', 'pages_read_engagement']).map((p, i) => (
                         <span
                           key={i}
-                          className="px-1.5 py-0.5 rounded bg-[#F6F6F3] text-slate-600 font-mono text-[9px] border border-[#EEEEEC]"
+                          className="px-1.5 py-0.5 rounded bg-[#F8F9FA] text-slate-600 font-mono text-[9px] border border-[#E2E8F0]"
                         >
                           {p}
                         </span>
@@ -183,7 +182,7 @@ function PagesContent() {
                       <button
                         type="button"
                         onClick={() => disconnectPage(page.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                         title="Disconnect page"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

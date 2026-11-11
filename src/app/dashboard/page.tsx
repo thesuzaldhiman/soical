@@ -39,6 +39,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
+import { SocialIcon } from '@/components/ui/SocialIcon';
 
 export default function DashboardPage() {
   return (
@@ -496,8 +497,8 @@ function DashboardContent() {
                             <div className="text-xs font-bold text-slate-900 line-clamp-2">
                               {post.message}
                             </div>
-                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                              <span>{platformIcons[firstPage?.platform || 'facebook']}</span>
+                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5">
+                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
                               <span className="truncate">{firstPage?.name || 'All Pages'}</span>
                             </div>
                           </div>
@@ -581,8 +582,8 @@ function DashboardContent() {
                           <div className="text-xs font-bold text-slate-900 line-clamp-2">
                             {post.message}
                           </div>
-                          <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <span>{platformIcons[firstPage?.platform || 'facebook']}</span>
+                          <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                            <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
                             <span className="truncate">{firstPage?.name}</span>
                           </div>
                         </div>
@@ -657,8 +658,8 @@ function DashboardContent() {
                             <div className="text-xs font-bold text-slate-900 line-clamp-2">
                               {post.message}
                             </div>
-                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                              <span>{platformIcons[firstPage?.platform || 'facebook']}</span>
+                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5">
+                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
                               <span className="truncate">{firstPage?.name || 'All Pages'}</span>
                             </div>
                           </div>
@@ -738,8 +739,8 @@ function DashboardContent() {
                             <div className="text-xs font-bold text-slate-900 line-clamp-2">
                               {post.message}
                             </div>
-                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                              <span>{platformIcons[firstPage?.platform || 'facebook']}</span>
+                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5">
+                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
                               <span className="truncate">{firstPage?.name}</span>
                             </div>
                           </div>
@@ -828,9 +829,7 @@ function DashboardContent() {
                   <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all space-y-2">
                     <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
                       <div className="flex items-center gap-2">
-                        <span className="text-base">
-                          {platformIcons[firstPage?.platform || 'facebook']}
-                        </span>
+                        <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
                         <span className="font-bold text-slate-900">
                           {firstPage?.name || 'All Connected Channels'}
                         </span>
@@ -938,9 +937,7 @@ function DashboardContent() {
                         {post.message}
                       </td>
                       <td className="py-3 px-4">
-                        <span className="text-base">
-                          {platformIcons[firstPage?.platform || 'facebook']}
-                        </span>
+                        <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
                       </td>
                       <td className="py-3 px-4 text-slate-600 font-medium">
                         {firstPage?.name || 'Multiple Pages'}
@@ -1196,9 +1193,7 @@ function DashboardContent() {
                             />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-sm">
-                                  {platformIcons[firstPage?.platform || 'facebook']}
-                                </span>
+                                <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
                                 <span className="font-bold text-xs text-slate-900 truncate">
                                   {post.message}
                                 </span>
@@ -1348,9 +1343,7 @@ function DashboardContent() {
                             className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] flex items-center justify-between gap-3 text-xs"
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="text-base">
-                                {platformIcons[firstPage?.platform || 'facebook']}
-                              </span>
+                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
                               <div className="min-w-0">
                                 <span className="font-bold text-slate-900 truncate block">
                                   {post.message}
@@ -1501,48 +1494,48 @@ function DashboardContent() {
 
             {/* Connected Platform List with Page Counts */}
             <div className="space-y-2 text-xs font-semibold text-slate-700">
-              <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">📘</span>
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
+                <div className="flex items-center gap-2.5">
+                  <SocialIcon platform="facebook" className="w-6 h-6 rounded-md shadow-2xs" />
                   <div>
                     <div className="font-bold text-slate-900 leading-tight">Facebook</div>
                     <span className="text-[10px] text-slate-400">Pages & Groups</span>
                   </div>
                 </div>
-                <span className="text-[11px] font-bold text-slate-900">4 Pages</span>
+                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">4 Pages</span>
               </div>
 
-              <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">📸</span>
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
+                <div className="flex items-center gap-2.5">
+                  <SocialIcon platform="instagram" className="w-6 h-6 rounded-md shadow-2xs" />
                   <div>
                     <div className="font-bold text-slate-900 leading-tight">Instagram</div>
                     <span className="text-[10px] text-slate-400">Creator & Business</span>
                   </div>
                 </div>
-                <span className="text-[11px] font-bold text-slate-900">1 Account</span>
+                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">1 Account</span>
               </div>
 
-              <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">▶️</span>
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
+                <div className="flex items-center gap-2.5">
+                  <SocialIcon platform="youtube" className="w-6 h-6 rounded-md shadow-2xs" />
                   <div>
                     <div className="font-bold text-slate-900 leading-tight">YouTube</div>
                     <span className="text-[10px] text-slate-400">Shorts & Videos</span>
                   </div>
                 </div>
-                <span className="text-[11px] font-bold text-slate-900">1 Channel</span>
+                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">1 Channel</span>
               </div>
 
-              <div className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">✈️</span>
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
+                <div className="flex items-center gap-2.5">
+                  <SocialIcon platform="telegram" className="w-6 h-6 rounded-md shadow-2xs" />
                   <div>
                     <div className="font-bold text-slate-900 leading-tight">Telegram</div>
                     <span className="text-[10px] text-slate-400">Broadcast Channel</span>
                   </div>
                 </div>
-                <span className="text-[11px] font-bold text-slate-900">1 Channel</span>
+                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">1 Channel</span>
               </div>
             </div>
           </div>
@@ -1659,8 +1652,8 @@ function DashboardContent() {
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     ) : (
-                      <div className="w-full h-full bg-gradient-to-tr from-slate-900 to-slate-800 flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-1">
-                        <span className="text-2xl">{platformIcons[firstPage?.platform || 'facebook']}</span>
+                      <div className="w-full h-full bg-[#0F172A] flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-2">
+                        <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-10 h-10 rounded-xl shadow-xs" />
                         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
                           {post.postType} Post
                         </span>
@@ -1747,9 +1740,7 @@ function DashboardContent() {
                     <div className="space-y-2">
                       {/* Platform & Target Page Name */}
                       <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
-                        <span className="text-base shrink-0">
-                          {platformIcons[firstPage?.platform || 'facebook']}
-                        </span>
+                        <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
                         <span className="font-bold text-slate-800 truncate">
                           {firstPage?.name || 'Multiple Destinations'}
                         </span>
@@ -1922,9 +1913,7 @@ function DashboardContent() {
                       className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] flex items-center justify-between text-xs font-medium"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-base shrink-0">
-                          {platformIcons[pg?.platform || 'facebook']}
-                        </span>
+                        <SocialIcon platform={pg?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
                         <div className="min-w-0">
                           <div className="font-bold text-slate-800 truncate">
                             {pg?.name || pgId}
