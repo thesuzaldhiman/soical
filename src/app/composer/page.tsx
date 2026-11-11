@@ -97,7 +97,6 @@ function ComposerContent() {
   // Right Sidebar Filters & Preview
   const [pageSearch, setPageSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState<Platform | 'all'>('all');
-  const [previewIndex, setPreviewIndex] = useState(0);
   const [showPreview, setShowPreview] = useState(true);
 
   // Status & Submit
@@ -194,17 +193,15 @@ function ComposerContent() {
     return Object.entries(counts);
   }, [selectedPagesList]);
 
-  const previewPage =
-    selectedPagesList[previewIndex % Math.max(selectedPagesList.length, 1)] ||
-    pages[0];
-
   const [previewPlatform, setPreviewPlatform] = useState<Platform>('facebook');
 
-  useEffect(() => {
-    if (previewPage?.platform) {
-      setPreviewPlatform(previewPage.platform);
-    }
-  }, [previewPage?.platform]);
+  const previewPage = useMemo(() => {
+    const matchSelected = selectedPagesList.find((p) => p.platform === previewPlatform);
+    if (matchSelected) return matchSelected;
+    const matchConnected = pages.find((p) => p.platform === previewPlatform);
+    if (matchConnected) return matchConnected;
+    return selectedPagesList[0] || pages[0];
+  }, [selectedPagesList, pages, previewPlatform]);
 
   const allSelected = pages.length > 0 && pages.every((p) => selectedPageIds.includes(p.id));
 
@@ -988,58 +985,41 @@ function ComposerContent() {
           {/* Card 1: Live Social Preview (Placed at the top for immediate visual feedback) */}
           {showPreview && (
             <div className="bg-white rounded-3xl border border-[#E2E8F0] p-5 shadow-2xs space-y-4 animate-fade-in">
-              {/* Header with Platform Selector & Page Navigator */}
-              <div className="flex flex-col gap-3 pb-2 border-b border-[#E2E8F0]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    <Eye className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Live Preview</span>
-                  </div>
-
-                  {selectedPagesList.length > 1 && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPreviewIndex((i) => (i - 1 + selectedPagesList.length) % selectedPagesList.length)
-                        }
-                        className="p-1 rounded-lg border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-600"
-                        aria-label="Previous selected page"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="text-[10px] font-bold text-slate-500 px-1">
-                        {(previewIndex % selectedPagesList.length) + 1}/{selectedPagesList.length}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewIndex((i) => (i + 1) % selectedPagesList.length)}
-                        className="p-1 rounded-lg border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-600"
-                        aria-label="Next selected page"
-                      >
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+              {/* Header with Live Preview Title & Platform Switcher Tabs */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <span className="text-xs font-black tracking-wider text-slate-900 uppercase">
+                    Live Preview
+                  </span>
                 </div>
 
-                {/* Platform Toggle Bar */}
-                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                  {(['facebook', 'telegram', 'instagram'] as Platform[]).map((plat) => (
-                    <button
-                      key={plat}
-                      type="button"
-                      onClick={() => setPreviewPlatform(plat)}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold capitalize flex items-center justify-center gap-1.5 transition-all ${
-                        previewPlatform === plat
-                          ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      <SocialIcon platform={plat} className="w-3.5 h-3.5 rounded-xs" />
-                      <span>{plat}</span>
-                    </button>
-                  ))}
+                {/* Platform Toggle Tabs with Official Logos */}
+                <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F1F5F9] border border-[#E2E8F0]">
+                  {(
+                    [
+                      { id: 'facebook', label: 'Facebook' },
+                      { id: 'telegram', label: 'Telegram' },
+                      { id: 'instagram', label: 'Instagram' },
+                    ] as const
+                  ).map((plat) => {
+                    const isActive = previewPlatform === plat.id;
+                    return (
+                      <button
+                        key={plat.id}
+                        type="button"
+                        onClick={() => setPreviewPlatform(plat.id as Platform)}
+                        className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          isActive
+                            ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                      >
+                        <SocialIcon platform={plat.id} className="w-4 h-4 rounded-xs shrink-0" />
+                        <span>{plat.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
