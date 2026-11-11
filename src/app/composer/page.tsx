@@ -34,10 +34,12 @@ import {
   ChevronRight,
   Eraser,
   ThumbsUp,
+  ThumbsDown,
   Heart,
   Share2,
   MoreHorizontal,
   Bookmark,
+  Repeat,
   Key,
 } from 'lucide-react';
 
@@ -994,13 +996,15 @@ function ComposerContent() {
                   </span>
                 </div>
 
-                {/* Platform Toggle Tabs with Official Logos */}
+                {/* Platform Toggle Tabs with Official Logos Only (No Names) */}
                 <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F1F5F9] border border-[#E2E8F0]">
                   {(
                     [
                       { id: 'facebook', label: 'Facebook' },
-                      { id: 'telegram', label: 'Telegram' },
+                      { id: 'youtube', label: 'YouTube' },
                       { id: 'instagram', label: 'Instagram' },
+                      { id: 'telegram', label: 'Telegram' },
+                      { id: 'threads', label: 'Threads' },
                     ] as const
                   ).map((plat) => {
                     const isActive = previewPlatform === plat.id;
@@ -1009,14 +1013,15 @@ function ComposerContent() {
                         key={plat.id}
                         type="button"
                         onClick={() => setPreviewPlatform(plat.id as Platform)}
-                        className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        title={plat.label}
+                        aria-label={plat.label}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
-                            : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
+                            ? 'bg-white shadow-xs border border-[#CBD5E1] scale-105'
+                            : 'hover:bg-white/70 border border-transparent opacity-60 hover:opacity-100'
                         }`}
                       >
-                        <SocialIcon platform={plat.id} className="w-4 h-4 rounded-xs shrink-0" />
-                        <span>{plat.label}</span>
+                        <SocialIcon platform={plat.id} className="w-5 h-5 rounded-xs shrink-0" />
                       </button>
                     );
                   })}
@@ -1146,6 +1151,122 @@ function ComposerContent() {
                 </div>
               )}
 
+              {previewPlatform === 'youtube' && (
+                <div className="bg-[#0f0f0f] text-white rounded-2xl border border-slate-800 overflow-hidden shadow-xs space-y-3 p-4">
+                  {/* Channel Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {previewPage?.avatarUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={previewPage.avatarUrl}
+                          alt={previewPage.name}
+                          className="w-10 h-10 rounded-full object-cover ring-2 ring-red-600/40"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center text-sm font-bold shadow-xs">
+                          {previewPage?.name?.charAt(0) || 'Y'}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-white truncate">
+                            {previewPage?.name || 'YouTube Channel'}
+                          </span>
+                          <span className="w-3.5 h-3.5 rounded-full bg-slate-700 text-white text-[9px] flex items-center justify-center font-bold">
+                            ✓
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate">
+                          @{previewPage?.name?.toLowerCase().replace(/\s+/g, '') || 'channel'} • YouTube
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-full bg-[#cc0000] hover:bg-red-600 text-white text-xs font-bold tracking-wide transition-colors shrink-0"
+                    >
+                      Subscribe
+                    </button>
+                  </div>
+
+                  {/* Video / Media Player Container */}
+                  <div className="relative rounded-xl overflow-hidden bg-black flex items-center justify-center min-h-[220px] border border-white/10">
+                    {(postType === 'video' || postType === 'image') && mediaUrl ? (
+                      postType === 'video' ? (
+                        <video
+                          src={mediaUrl}
+                          controls
+                          className="max-h-[380px] w-auto max-w-full rounded-lg object-contain"
+                        />
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={mediaUrl}
+                          alt="YouTube video thumbnail"
+                          className="max-h-[380px] w-auto max-w-full rounded-lg object-contain"
+                        />
+                      )
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-10 px-4 text-center space-y-2">
+                        <div className="w-12 h-12 rounded-full bg-red-600/20 text-red-500 flex items-center justify-center">
+                          <Play className="w-6 h-6 fill-red-500" />
+                        </div>
+                        <p className="text-xs text-slate-300 font-medium">Video / Short Preview</p>
+                        <p className="text-[11px] text-slate-500 max-w-xs">
+                          Upload an MP4 or image to preview as a YouTube Short / Video
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Video Title & Details */}
+                  <div className="space-y-1.5 pt-1">
+                    <h3 className="text-sm font-bold text-white leading-snug line-clamp-2">
+                      {message?.split('\n')[0] || 'Your YouTube Video Title / Description'}
+                    </h3>
+                    <p className="text-xs text-slate-400 whitespace-pre-line leading-relaxed line-clamp-3 font-normal">
+                      {message || 'Description, tags, and links will be visible in the YouTube video description box.'}
+                    </p>
+                  </div>
+
+                  {/* YouTube Action Buttons */}
+                  <div className="flex items-center justify-between pt-1 pb-1 border-t border-b border-white/10 text-xs text-slate-300">
+                    <div className="flex items-center gap-1 bg-white/10 rounded-full px-3 py-1.5">
+                      <button type="button" className="flex items-center gap-1.5 hover:text-white font-semibold pr-2 border-r border-white/20">
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                        <span>1.2K</span>
+                      </button>
+                      <button type="button" className="pl-1 hover:text-white">
+                        <ThumbsDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <button type="button" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 rounded-full px-3 py-1.5 font-semibold">
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Share</span>
+                    </button>
+
+                    <button type="button" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 rounded-full px-3 py-1.5 font-semibold">
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Comments</span>
+                    </button>
+                  </div>
+
+                  {/* Pinned Auto-Comment */}
+                  {firstComment.trim() && (
+                    <div className="bg-white/5 rounded-xl p-3 border border-white/10 space-y-1 text-xs">
+                      <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
+                        <span>📌</span>
+                        <span className="font-semibold text-slate-300">Pinned by {previewPage?.name || 'Creator'}</span>
+                      </div>
+                      <p className="text-slate-200 whitespace-pre-line pl-4">{firstComment}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {previewPlatform === 'telegram' && (
                 <div className="bg-[#0e1621] text-white rounded-2xl p-4 shadow-xs space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-700">
@@ -1265,6 +1386,91 @@ function ComposerContent() {
                       </p>
                     )}
                   </div>
+                </div>
+              )}
+
+              {previewPlatform === 'threads' && (
+                <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-xs p-4 space-y-3">
+                  {/* Threads Author Bar */}
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative">
+                        {previewPage?.avatarUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={previewPage.avatarUrl}
+                            alt={previewPage.name}
+                            className="w-10 h-10 rounded-full object-cover border border-[#E2E8F0]"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm font-bold">
+                            {previewPage?.name?.charAt(0) || 'T'}
+                          </div>
+                        )}
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-black text-white flex items-center justify-center text-[9px] border border-white font-bold">
+                          @
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-slate-900 truncate">
+                            {previewPage?.name?.toLowerCase().replace(/\s+/g, '_') || 'threads_user'}
+                          </span>
+                          <span className="text-[11px] text-slate-400">• Just now</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">Threads</div>
+                      </div>
+                    </div>
+                    <MoreHorizontal className="w-4 h-4 text-slate-400" />
+                  </div>
+
+                  {/* Caption / Thread Text */}
+                  <p className="text-[13px] text-slate-900 leading-relaxed whitespace-pre-line font-normal break-words">
+                    {message || 'What’s new? Start your thread here in real-time...'}
+                  </p>
+
+                  {/* Media */}
+                  {(postType === 'image' || postType === 'video') && mediaUrl && (
+                    <div className="rounded-2xl overflow-hidden border border-[#E2E8F0] bg-slate-950/5 flex items-center justify-center p-1">
+                      {postType === 'video' ? (
+                        <video src={mediaUrl} controls className="max-h-[380px] w-auto max-w-full rounded-xl object-contain" />
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={mediaUrl}
+                          alt="Threads preview"
+                          className="max-h-[380px] w-auto max-w-full rounded-xl object-contain shadow-xs"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Threads Action Icons */}
+                  <div className="flex items-center gap-4 text-slate-800 pt-1">
+                    <Heart className="w-4.5 h-4.5 cursor-pointer hover:text-rose-500 transition-colors" />
+                    <MessageSquare className="w-4.5 h-4.5 cursor-pointer hover:text-slate-900 transition-colors" />
+                    <Repeat className="w-4.5 h-4.5 cursor-pointer hover:text-emerald-600 transition-colors" />
+                    <Share2 className="w-4.5 h-4.5 cursor-pointer hover:text-slate-900 transition-colors" />
+                  </div>
+
+                  {/* Threads Stats */}
+                  <div className="text-[11px] text-slate-400 pt-1">
+                    <span>14 replies</span>
+                    <span className="mx-1.5">•</span>
+                    <span>128 likes</span>
+                  </div>
+
+                  {/* Thread Reply / First Comment */}
+                  {firstComment.trim() && (
+                    <div className="relative pl-6 pt-2 border-t border-slate-100 space-y-1">
+                      <div className="absolute left-2.5 top-0 bottom-4 w-0.5 bg-slate-200" />
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-800">
+                        <span>@{previewPage?.name?.toLowerCase().replace(/\s+/g, '_') || 'threads_user'}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">reply</span>
+                      </div>
+                      <p className="text-xs text-slate-700 whitespace-pre-line">{firstComment}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

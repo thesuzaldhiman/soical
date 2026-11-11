@@ -20,6 +20,7 @@ import {
 } from '@/types';
 import {
   INITIAL_USER,
+  INITIAL_ALL_USERS,
   INITIAL_WORKSPACE,
   INITIAL_ACCOUNTS,
   INITIAL_PAGES,
@@ -101,6 +102,26 @@ interface AppContextType {
   logout: () => void;
   clearAllData: () => void;
   loadDemoData: () => void;
+
+  // Multi-Tenant SaaS Admin & User Management
+  allUsers: User[];
+  approveUser: (
+    userId: string,
+    tier?: any,
+    durationDays?: number,
+    maxPages?: number,
+    maxPosts?: number
+  ) => void;
+  rejectUser: (userId: string, reason?: string) => void;
+  updateUserSubscription: (userId: string, sub: any) => void;
+  toggleUserSuspension: (userId: string, reason?: string) => void;
+  deleteUser: (userId: string) => void;
+  registerUser: (
+    name: string,
+    email: string,
+    tierPreference?: any
+  ) => { success: boolean; user: User; message: string };
+  switchActiveUser: (userId: string) => void;
 
   // Facebook Analytics & Monetization Actions
   syncPageLiveFollowers: (pageId?: string) => Promise<void> | void;
@@ -187,6 +208,14 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   logout: noop,
   clearAllData: noop,
   loadDemoData: noop,
+  allUsers: INITIAL_ALL_USERS,
+  approveUser: noop,
+  rejectUser: noop,
+  updateUserSubscription: noop,
+  toggleUserSuspension: noop,
+  deleteUser: noop,
+  registerUser: () => ({ success: false, user: GUEST_USER, message: '' }),
+  switchActiveUser: noop,
   syncPageLiveFollowers: noopAsync,
   syncPostInsights: noopAsync,
   replyToComment: noop,
@@ -220,6 +249,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>(INITIAL_ALL_USERS);
+
+  // Sync registered users to localStorage
+  useEffect(() => {
+    if (!isHydrated) return;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('sap_all_registered_users', JSON.stringify(allUsers));
+      }
+    } catch (e) {
+      console.error('Failed to save allUsers:', e);
+    }
+  }, [allUsers, isHydrated]);
 
   // Helper to load user-isolated data
   const loadUserDataForEmail = (email: string, name?: string) => {
@@ -308,6 +350,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       let loggedInUser: User | null = null;
+      let currentUsers = INITIAL_ALL_USERS;
+
+      // 0. Load registered users directory
+      if (typeof localStorage !== 'undefined') {
+        const storedUsers = localStorage.getItem('sap_all_registered_users');
+        if (storedUsers) {
+          try {
+            const parsed = JSON.parse(storedUsers);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              currentUsers = parsed;
+              setAllUsers(parsed);
+            }
+          } catch {}
+        }
+      }
 
       // 1. Check for Google Session cookie
       if (typeof document !== 'undefined') {
@@ -345,6 +402,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (loggedInUser && loggedInUser.email) {
+        const clean = loggedInUser.email.toLowerCase().trim();
+        const existing = currentUsers.find((u) => u.email.toLowerCase() === clean);
+        if (existing) {
+          loggedInUser = {
+            ...existing,
+            name: loggedInUser.name || existing.name,
+            avatar: loggedInUser.avatar || existing.avatar,
+            lastLoginAt: new Date().toISOString(),
+          };
+        } else {
+          const isOwner =
+            clean.includes('suzal') || clean.includes('khabarmonkey') || clean.startsWith('admin');
+          loggedInUser = {
+            ...loggedInUser,
+            role: isOwner ? 'owner' : 'member',
+            approvalStatus: isOwner ? 'approved' : 'pending',
+            createdAt: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+            subscription: isOwner
+              ? {
+                  tier: 'agency',
+                  status: 'active',
+                  expiresAt: null,
+                  maxConnectedPages: 50,
+                  maxDailyPosts: 500,
+                  features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: true, canUseAnalytics: true },
+                }
+              : {
+                  tier: 'starter',
+                  status: 'trial',
+                  expiresAt: null,
+                  maxConnectedPages: 5,
+                  maxDailyPosts: 30,
+                  features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: false, canUseAnalytics: true },
+                },
+          };
+          setAllUsers((prev) => [loggedInUser!, ...prev.filter((u) => u.email !== clean)]);
+        }
+
         setUser(loggedInUser);
         setIsAuthenticated(true);
         loadUserDataForEmail(loggedInUser.email, loggedInUser.name);
@@ -708,14 +804,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Real & Live Utilities
   const loginWithGoogle = (profile: { id?: string; name: string; email: string; avatar?: string }) => {
     const cleanEmail = profile.email.toLowerCase().trim();
-    const googleUser: User = {
-      id: profile.id || `google_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
-      name: profile.name || cleanEmail.split('@')[0],
-      email: cleanEmail,
-      avatar: profile.avatar || '/icons/social/google.png',
-      role: 'owner',
-      provider: 'google',
-    };
+    const isOwner =
+      cleanEmail.includes('suzal') ||
+      cleanEmail.includes('khabarmonkey') ||
+      cleanEmail.startsWith('admin');
+
+    const existing = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    let googleUser: User;
+
+    if (existing) {
+      googleUser = {
+        ...existing,
+        name: profile.name || existing.name,
+        avatar: profile.avatar || existing.avatar,
+        lastLoginAt: new Date().toISOString(),
+      };
+      setAllUsers((prev) => prev.map((u) => (u.id === googleUser.id ? googleUser : u)));
+    } else {
+      googleUser = {
+        id: profile.id || `google_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+        name: profile.name || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        avatar: profile.avatar || '/icons/social/google.png',
+        role: isOwner ? 'owner' : 'member',
+        provider: 'google',
+        approvalStatus: isOwner ? 'approved' : 'pending',
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+        subscription: isOwner
+          ? {
+              tier: 'agency',
+              status: 'active',
+              expiresAt: null,
+              maxConnectedPages: 50,
+              maxDailyPosts: 500,
+              features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: true, canUseAnalytics: true },
+            }
+          : {
+              tier: 'starter',
+              status: 'trial',
+              expiresAt: null,
+              maxConnectedPages: 5,
+              maxDailyPosts: 30,
+              features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: false, canUseAnalytics: true },
+            },
+      };
+      setAllUsers((prev) => [googleUser, ...prev]);
+    }
+
     setUser(googleUser);
     setIsAuthenticated(true);
     if (typeof document !== 'undefined') {
@@ -729,6 +865,255 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
     }
     loadUserDataForEmail(cleanEmail, googleUser.name);
+  };
+
+  const registerUser = (
+    name: string,
+    email: string,
+    tierPreference: any = 'starter'
+  ) => {
+    const cleanEmail = email.toLowerCase().trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, user: GUEST_USER, message: 'Please provide a valid email address.' };
+    }
+
+    const existing = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      return { success: false, user: existing, message: 'This email is already registered. Please sign in.' };
+    }
+
+    const isOwner =
+      cleanEmail.includes('suzal') ||
+      cleanEmail.includes('khabarmonkey') ||
+      cleanEmail.startsWith('admin');
+
+    const newUser: User = {
+      id: `usr_${Date.now()}`,
+      name: name.trim() || cleanEmail.split('@')[0],
+      email: cleanEmail,
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+      role: isOwner ? 'owner' : 'member',
+      provider: 'email',
+      approvalStatus: isOwner ? 'approved' : 'pending',
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+      subscription: isOwner
+        ? {
+            tier: 'agency',
+            status: 'active',
+            expiresAt: null,
+            maxConnectedPages: 50,
+            maxDailyPosts: 500,
+            features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: true, canUseAnalytics: true },
+          }
+        : {
+            tier: tierPreference,
+            status: 'trial',
+            expiresAt: null,
+            maxConnectedPages: tierPreference === 'pro' ? 15 : tierPreference === 'agency' ? 50 : 5,
+            maxDailyPosts: tierPreference === 'pro' ? 100 : tierPreference === 'agency' ? 500 : 30,
+            features: {
+              canUseAI: true,
+              canUseBulkScheduler: tierPreference !== 'free',
+              canUseAutomationFeed: tierPreference === 'agency',
+              canUseAnalytics: true,
+            },
+          },
+    };
+
+    setAllUsers((prev) => [newUser, ...prev]);
+    setUser(newUser);
+    setIsAuthenticated(true);
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('sap_current_user_email', cleanEmail);
+      localStorage.setItem(
+        `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+        JSON.stringify(newUser)
+      );
+    }
+
+    return {
+      success: true,
+      user: newUser,
+      message: isOwner ? 'Welcome Admin!' : 'Signup successful! Account is awaiting admin approval.',
+    };
+  };
+
+  const approveUser = (
+    userId: string,
+    tier: any = 'pro',
+    durationDays: number = 30,
+    maxPages?: number,
+    maxPosts?: number
+  ) => {
+    const expiresAt =
+      durationDays > 0 ? new Date(Date.now() + durationDays * 86400000).toISOString() : null;
+
+    setAllUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== userId) return u;
+        const currentSub = u.subscription;
+        const updated: User = {
+          ...u,
+          approvalStatus: 'approved',
+          rejectionReason: undefined,
+          subscription: {
+            tier,
+            status: 'active',
+            expiresAt,
+            maxConnectedPages:
+              maxPages !== undefined
+                ? maxPages
+                : tier === 'agency'
+                ? 50
+                : tier === 'pro'
+                ? 15
+                : tier === 'starter'
+                ? 5
+                : 2,
+            maxDailyPosts:
+              maxPosts !== undefined
+                ? maxPosts
+                : tier === 'agency'
+                ? 500
+                : tier === 'pro'
+                ? 100
+                : tier === 'starter'
+                ? 30
+                : 10,
+            features: {
+              canUseAI: true,
+              canUseBulkScheduler: tier !== 'free',
+              canUseAutomationFeed: tier === 'agency',
+              canUseAnalytics: true,
+              ...currentSub?.features,
+            },
+          },
+        };
+        return updated;
+      })
+    );
+
+    if (user.id === userId) {
+      setUser((prev) => ({
+        ...prev,
+        approvalStatus: 'approved',
+        rejectionReason: undefined,
+        subscription: {
+          tier,
+          status: 'active',
+          expiresAt,
+          maxConnectedPages: maxPages || 15,
+          maxDailyPosts: maxPosts || 100,
+          features: {
+            canUseAI: true,
+            canUseBulkScheduler: tier !== 'free',
+            canUseAutomationFeed: tier === 'agency',
+            canUseAnalytics: true,
+          },
+        },
+      }));
+    }
+  };
+
+  const rejectUser = (userId: string, reason?: string) => {
+    const finalReason = reason || 'Application rejected by system administrator.';
+    setAllUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, approvalStatus: 'rejected', rejectionReason: finalReason } : u))
+    );
+    if (user.id === userId) {
+      setUser((prev) => ({ ...prev, approvalStatus: 'rejected', rejectionReason: finalReason }));
+    }
+  };
+
+  const toggleUserSuspension = (userId: string, reason?: string) => {
+    setAllUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== userId) return u;
+        const willSuspend = u.approvalStatus !== 'suspended';
+        return {
+          ...u,
+          approvalStatus: willSuspend ? 'suspended' : 'approved',
+          rejectionReason: willSuspend ? reason || 'Account suspended by administrator' : undefined,
+        };
+      })
+    );
+    if (user.id === userId) {
+      setUser((prev) => {
+        const willSuspend = prev.approvalStatus !== 'suspended';
+        return {
+          ...prev,
+          approvalStatus: willSuspend ? 'suspended' : 'approved',
+          rejectionReason: willSuspend ? reason || 'Account suspended by administrator' : undefined,
+        };
+      });
+    }
+  };
+
+  const updateUserSubscription = (userId: string, sub: any) => {
+    setAllUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== userId) return u;
+        return {
+          ...u,
+          subscription: {
+            tier: 'pro',
+            status: 'active',
+            expiresAt: null,
+            maxConnectedPages: 15,
+            maxDailyPosts: 100,
+            features: {
+              canUseAI: true,
+              canUseBulkScheduler: true,
+              canUseAutomationFeed: true,
+              canUseAnalytics: true,
+            },
+            ...u.subscription,
+            ...sub,
+          },
+        };
+      })
+    );
+    if (user.id === userId) {
+      setUser((prev) => ({
+        ...prev,
+        subscription: {
+          tier: 'pro',
+          status: 'active',
+          expiresAt: null,
+          maxConnectedPages: 15,
+          maxDailyPosts: 100,
+          features: {
+            canUseAI: true,
+            canUseBulkScheduler: true,
+            canUseAutomationFeed: true,
+            canUseAnalytics: true,
+          },
+          ...prev.subscription,
+          ...sub,
+        },
+      }));
+    }
+  };
+
+  const deleteUser = (userId: string) => {
+    setAllUsers((prev) => prev.filter((u) => u.id !== userId));
+  };
+
+  const switchActiveUser = (userId: string) => {
+    const target = allUsers.find((u) => u.id === userId);
+    if (!target) return;
+    setUser(target);
+    setIsAuthenticated(true);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('sap_current_user_email', target.email);
+      localStorage.setItem(
+        `sap_user_profile_${target.email.replace(/[^a-z0-9_]/g, '_')}`,
+        JSON.stringify(target)
+      );
+    }
+    loadUserDataForEmail(target.email, target.name);
   };
 
   const logout = () => {
@@ -974,6 +1359,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         logout,
         clearAllData,
         loadDemoData,
+        allUsers,
+        approveUser,
+        rejectUser,
+        updateUserSubscription,
+        toggleUserSuspension,
+        deleteUser,
+        registerUser,
+        switchActiveUser,
         syncPageLiveFollowers,
         syncPostInsights,
         replyToComment,

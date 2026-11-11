@@ -19,6 +19,7 @@ import {
   FileText,
   Settings,
   Bug,
+  ShieldCheck,
   ChevronDown,
   ChevronRight,
   Search,
@@ -46,10 +47,13 @@ interface NavGroup {
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const { user, workspace, pages } = useApp();
+  const { user, workspace, pages, allUsers } = useApp();
   const integrityAlertCount = pages.filter(
     (p) => p.platform === 'facebook' && p.integrityStatus && p.integrityStatus !== 'ok'
   ).length;
+
+  const pendingApprovalsCount = allUsers.filter((u) => u.approvalStatus === 'pending').length;
+  const isElevated = user?.role === 'owner' || user?.role === 'admin';
 
   const navGroups: NavGroup[] = [
     {
@@ -116,6 +120,25 @@ export function AppSidebar() {
         { href: '/debug', label: 'Debug', icon: Bug },
       ],
     },
+    ...(isElevated
+      ? [
+          {
+            id: 'admin',
+            title: 'ADMINISTRATION',
+            items: [
+              {
+                href: '/admin',
+                label: 'Admin Portal',
+                icon: ShieldCheck,
+                badge:
+                  pendingApprovalsCount > 0
+                    ? ({ text: `${pendingApprovalsCount} pending`, variant: 'pink' } as const)
+                    : undefined,
+              },
+            ],
+          },
+        ]
+      : []),
   ];
 
   // State to manage collapsed groups

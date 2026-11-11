@@ -4,13 +4,35 @@ export type PostType = 'text' | 'image' | 'video' | 'link';
 
 export type PostStatus = 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'partial';
 
+export type UserApprovalStatus = 'approved' | 'pending' | 'suspended' | 'rejected';
+export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'agency' | 'enterprise';
+
+export interface UserSubscription {
+  tier: SubscriptionTier;
+  status: 'active' | 'trial' | 'expired' | 'canceled';
+  expiresAt: string | null; // ISO date string or null for lifetime
+  maxConnectedPages: number;
+  maxDailyPosts: number;
+  features: {
+    canUseAI: boolean;
+    canUseBulkScheduler: boolean;
+    canUseAutomationFeed: boolean;
+    canUseAnalytics: boolean;
+  };
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   avatar: string;
-  role: 'owner' | 'admin' | 'editor';
+  role: 'owner' | 'admin' | 'editor' | 'member';
   provider?: 'google' | 'email' | 'demo';
+  approvalStatus?: UserApprovalStatus;
+  rejectionReason?: string;
+  subscription?: UserSubscription;
+  createdAt?: string;
+  lastLoginAt?: string;
 }
 
 export interface Workspace {
