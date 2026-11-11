@@ -180,8 +180,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         else setPostComments([]);
         if (parsed.automations) setAutomations(parsed.automations);
         else setAutomations([]);
-        if (parsed.settings) setSettings(parsed.settings);
-        else setSettings(INITIAL_SETTINGS);
+        if (parsed.settings) {
+          setSettings((prev) => ({ ...prev, ...parsed.settings }));
+        } else {
+          const globalRaw = localStorage.getItem('sap_app_settings');
+          if (globalRaw) {
+            try {
+              setSettings((prev) => ({ ...prev, ...JSON.parse(globalRaw) }));
+            } catch {}
+          }
+        }
         if (parsed.workspace) {
           setWorkspace(parsed.workspace);
         } else {
@@ -270,6 +278,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } else {
         setIsAuthenticated(false);
         setUser(GUEST_USER);
+      }
+
+      // Always load settings from sap_app_settings if present
+      if (typeof localStorage !== 'undefined') {
+        const storedSettings = localStorage.getItem('sap_app_settings');
+        if (storedSettings) {
+          try {
+            setSettings((prev) => ({ ...prev, ...JSON.parse(storedSettings) }));
+          } catch {}
+        }
       }
     } catch (e) {
       console.error('Failed to load state during hydration:', e);
@@ -497,7 +515,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    setSettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem('sap_app_settings', JSON.stringify(updated));
+          if (user?.email) {
+            const userKey = getStorageKeyForEmail(user.email);
+            const userStored = localStorage.getItem(userKey);
+            const userPayload = userStored ? JSON.parse(userStored) : {};
+            userPayload.settings = updated;
+            localStorage.setItem(userKey, JSON.stringify(userPayload));
+          }
+          const liveStored = localStorage.getItem(STORAGE_KEY);
+          if (liveStored) {
+            const liveParsed = JSON.parse(liveStored);
+            liveParsed.settings = updated;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(liveParsed));
+          }
+        } catch (e) {
+          console.error('Failed to sync settings:', e);
+        }
+      }
+      return updated;
+    });
   };
 
   const createAutomation = (feed: Omit<AutomationFeed, 'id' | 'itemsProcessed'>) => {

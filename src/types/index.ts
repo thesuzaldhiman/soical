@@ -270,6 +270,12 @@ export interface AppSettings {
   metaAppSecret: string;
   ytClientId: string;
   ytClientSecret: string;
+  ytAutoShort?: boolean;
+  ytDescriptionTemplate?: string;
+  alertEmail?: string;
+  autoRetryEnabled?: boolean;
+  autoRetryMax?: number;
+  autoRetryIntervalMin?: number;
   telegramBotToken: string;
   openaiApiKey: string;
   sensitiveWords: string[];

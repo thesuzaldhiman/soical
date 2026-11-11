@@ -662,11 +662,18 @@ export const DEMO_AUTOMATIONS: AutomationFeed[] = [
 ];
 
 export const INITIAL_SETTINGS: AppSettings = {
-  metaAppId: '109283746591029',
-  metaAppSecret: '••••••••••••••••••••••••••••••••',
-  ytClientId: '918237465019-v8f9as8d7f.apps.googleusercontent.com',
-  ytClientSecret: '••••••••••••••••••••••••',
-  telegramBotToken: '6892019485:AAEkL987_fA9sdf7s98f7asdf89as7d',
+  metaAppId: '',
+  metaAppSecret: '',
+  ytClientId: '',
+  ytClientSecret: '',
+  ytAutoShort: true,
+  ytDescriptionTemplate:
+    "{title}\n\n👉 ताज़ा और महत्वपूर्ण खबरों के लिए चैनल सब्सक्राइब करें!\n#Shorts #News #Viral",
+  alertEmail: '',
+  autoRetryEnabled: true,
+  autoRetryMax: 3,
+  autoRetryIntervalMin: 15,
+  telegramBotToken: '',
   openaiApiKey: '',
   sensitiveWords: DEFAULT_SENSITIVE_WORDS,
   cronSecretKey: 'sap_live_secret_k8f93a7d2b0e',

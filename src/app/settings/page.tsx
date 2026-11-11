@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { DEFAULT_SENSITIVE_WORDS, sanitizeText, findSensitiveWords } from '@/lib/utils/sensitive-words';
@@ -33,48 +33,87 @@ export default function SettingsPage() {
 }
 
 function SettingsContent() {
-  const { user, workspace, updateUser, updateWorkspace } = useApp();
+  const { user, workspace, settings, updateSettings, updateUser, updateWorkspace, isHydrated } = useApp();
 
   const [activeTab, setActiveTab] = useState<'facebook' | 'youtube' | 'retry' | 'words' | 'cron' | 'profile'>('facebook');
 
   // Facebook App
-  const [fbAppId, setFbAppId] = useState('109283746501928');
-  const [fbAppSecret, setFbAppSecret] = useState('k8f93a7d2b0e419287346102');
+  const [fbAppId, setFbAppId] = useState(settings?.metaAppId || '');
+  const [fbAppSecret, setFbAppSecret] = useState(settings?.metaAppSecret || '');
   const [showFbSecret, setShowFbSecret] = useState(false);
 
   // YouTube
-  const [ytClientId, setYtClientId] = useState('1092837465019-abc123xyz789.apps.googleusercontent.com');
-  const [ytClientSecret, setYtClientSecret] = useState('GOCSPX-928374619283746');
-  const [ytAutoShort, setYtAutoShort] = useState(true);
+  const [ytClientId, setYtClientId] = useState(settings?.ytClientId || '');
+  const [ytClientSecret, setYtClientSecret] = useState(settings?.ytClientSecret || '');
+  const [ytAutoShort, setYtAutoShort] = useState(settings?.ytAutoShort ?? true);
   const [ytDescriptionTemplate, setYtDescriptionTemplate] = useState(
-    "{title}\n\n👉 ताज़ा और महत्वपूर्ण खबरों के लिए चैनल सब्सक्राइब करें!\n#Shorts #News #Viral"
+    settings?.ytDescriptionTemplate ||
+      "{title}\n\n👉 ताज़ा और महत्वपूर्ण खबरों के लिए चैनल सब्सक्राइब करें!\n#Shorts #News #Viral"
   );
-  const [alertEmail, setAlertEmail] = useState('suzal@khabarmonkey.com');
+  const [alertEmail, setAlertEmail] = useState(settings?.alertEmail || user?.email || '');
 
   // Auto-Retry
-  const [autoRetryEnabled, setAutoRetryEnabled] = useState(true);
-  const [autoRetryMax, setAutoRetryMax] = useState(3);
-  const [autoRetryIntervalMin, setAutoRetryIntervalMin] = useState(15);
+  const [autoRetryEnabled, setAutoRetryEnabled] = useState(settings?.autoRetryEnabled ?? true);
+  const [autoRetryMax, setAutoRetryMax] = useState(settings?.autoRetryMax ?? 3);
+  const [autoRetryIntervalMin, setAutoRetryIntervalMin] = useState(settings?.autoRetryIntervalMin ?? 15);
 
   // Sensitive Words
-  const [sensitiveWordsRaw, setSensitiveWordsRaw] = useState(DEFAULT_SENSITIVE_WORDS.join(', '));
+  const [sensitiveWordsRaw, setSensitiveWordsRaw] = useState(
+    (settings?.sensitiveWords && settings.sensitiveWords.length > 0
+      ? settings.sensitiveWords
+      : DEFAULT_SENSITIVE_WORDS
+    ).join(', ')
+  );
   const [testHeadline, setTestHeadline] = useState('हिमाचल में दर्दनाक सड़क हादसा, 3 की मौत, 5 घायल');
   const [testResult, setTestResult] = useState('');
 
   // Cron
-  const [cronSecret, setCronSecret] = useState('sap_live_secret_k8f93a7d2b0e');
+  const [cronSecret, setCronSecret] = useState(settings?.cronSecretKey || 'sap_live_secret_k8f93a7d2b0e');
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Profile & Workspace
-  const [userName, setUserName] = useState(user.name);
-  const [userEmail, setUserEmail] = useState(user.email);
-  const [workspaceName, setWorkspaceName] = useState(workspace.name);
+  const [userName, setUserName] = useState(user?.name || '');
+  const [userEmail, setUserEmail] = useState(user?.email || '');
+  const [workspaceName, setWorkspaceName] = useState(workspace?.name || '');
 
   // Save notice
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const currentOrigin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://app.socialautoposter.pro';
+    typeof window !== 'undefined' ? window.location.origin : 'https://soical.vercel.app';
+
+  // Sync inputs when settings hydrate from localStorage
+  useEffect(() => {
+    if (isHydrated && settings) {
+      if (settings.metaAppId !== undefined) setFbAppId(settings.metaAppId);
+      if (settings.metaAppSecret !== undefined) setFbAppSecret(settings.metaAppSecret);
+      if (settings.ytClientId !== undefined) setYtClientId(settings.ytClientId);
+      if (settings.ytClientSecret !== undefined) setYtClientSecret(settings.ytClientSecret);
+      if (settings.ytAutoShort !== undefined) setYtAutoShort(settings.ytAutoShort);
+      if (settings.ytDescriptionTemplate !== undefined) setYtDescriptionTemplate(settings.ytDescriptionTemplate);
+      if (settings.alertEmail !== undefined) setAlertEmail(settings.alertEmail);
+      if (settings.autoRetryEnabled !== undefined) setAutoRetryEnabled(settings.autoRetryEnabled);
+      if (settings.autoRetryMax !== undefined) setAutoRetryMax(settings.autoRetryMax);
+      if (settings.autoRetryIntervalMin !== undefined) setAutoRetryIntervalMin(settings.autoRetryIntervalMin);
+      if (settings.sensitiveWords && settings.sensitiveWords.length > 0) {
+        setSensitiveWordsRaw(settings.sensitiveWords.join(', '));
+      }
+      if (settings.cronSecretKey !== undefined) setCronSecret(settings.cronSecretKey);
+    }
+  }, [isHydrated, settings]);
+
+  useEffect(() => {
+    if (isHydrated && user) {
+      if (user.name) setUserName(user.name);
+      if (user.email) setUserEmail(user.email);
+    }
+  }, [isHydrated, user]);
+
+  useEffect(() => {
+    if (isHydrated && workspace) {
+      if (workspace.name) setWorkspaceName(workspace.name);
+    }
+  }, [isHydrated, workspace]);
 
   const copyToClipboard = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -96,16 +135,40 @@ function SettingsContent() {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateUser({ name: userName, email: userEmail });
-    updateWorkspace({ name: workspaceName });
+
+    const wordsArray = sensitiveWordsRaw
+      .split(/[,;\n]+/)
+      .map((w) => w.trim())
+      .filter(Boolean);
+
+    // 1. Save settings to state and persistent storage
+    updateSettings({
+      metaAppId: fbAppId.trim(),
+      metaAppSecret: fbAppSecret.trim(),
+      ytClientId: ytClientId.trim(),
+      ytClientSecret: ytClientSecret.trim(),
+      ytAutoShort,
+      ytDescriptionTemplate,
+      alertEmail: alertEmail.trim(),
+      autoRetryEnabled,
+      autoRetryMax: Number(autoRetryMax) || 3,
+      autoRetryIntervalMin: Number(autoRetryIntervalMin) || 15,
+      sensitiveWords: wordsArray.length > 0 ? wordsArray : DEFAULT_SENSITIVE_WORDS,
+      cronSecretKey: cronSecret.trim(),
+    });
+
+    // 2. Update user profile and workspace
+    updateUser({ name: userName.trim(), email: userEmail.trim() });
+    updateWorkspace({ name: workspaceName.trim() });
+
     setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   return (
     <div className="space-y-6 font-sans max-w-5xl animate-fade-in pb-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#EEF1F6]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E2E8F0]">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
             Platform Settings & Anti-Ban Controls
@@ -116,7 +179,7 @@ function SettingsContent() {
         </div>
 
         {savedSuccess && (
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 animate-fade-in">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 animate-fade-in shadow-2xs">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span>Settings saved successfully</span>
           </div>
@@ -124,7 +187,7 @@ function SettingsContent() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white border border-[#EEF1F6] shadow-2xs overflow-x-auto">
+      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs overflow-x-auto">
         {[
           { id: 'facebook', label: '📘 Facebook App' },
           { id: 'youtube', label: '▶️ YouTube & Video' },
@@ -137,10 +200,10 @@ function SettingsContent() {
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               activeTab === tab.id
-                ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-[#F6F8FD]'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-[#F8F9FA]'
             }`}
           >
             {tab.label}
@@ -151,36 +214,37 @@ function SettingsContent() {
       <form onSubmit={handleSave} className="space-y-6">
         {/* TAB 1: FACEBOOK APP */}
         {activeTab === 'facebook' && (
-          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-6 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-5">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#F0F2F6]">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
               <span className="text-xl">📘</span>
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Own Facebook App Settings
-              </h3>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Own Facebook App Settings
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Connect via your own Meta Developers App. This ensures your posts carry your verified business branding.
+                </p>
+              </div>
             </div>
-
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Connect via your own Meta Developers App. This ensures your posts carry your verified business branding and avoid shared proxy restrictions.
-            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Facebook App ID <span className="text-[#FF007A]">*</span>
+                  Facebook App ID <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={fbAppId}
                   onChange={(e) => setFbAppId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-mono text-slate-900 focus:outline-none focus:border-[#FF007A]"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-500 transition-colors"
                   placeholder="e.g. 109283746501928"
                 />
               </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Facebook App Secret <span className="text-[#FF007A]">*</span>
+                  Facebook App Secret <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input
@@ -188,13 +252,13 @@ function SettingsContent() {
                     required
                     value={fbAppSecret}
                     onChange={(e) => setFbAppSecret(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-mono text-slate-900 focus:outline-none focus:border-[#FF007A]"
-                    placeholder="••••••••••••••••••••"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-500 transition-colors pr-14"
+                    placeholder="Enter Meta App Secret"
                   />
                   <button
                     type="button"
                     onClick={() => setShowFbSecret(!showFbSecret)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 hover:text-slate-700"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-800 transition-colors"
                   >
                     {showFbSecret ? 'Hide' : 'Show'}
                   </button>
@@ -211,7 +275,7 @@ function SettingsContent() {
                   type="text"
                   readOnly
                   value={`${currentOrigin}/api/auth/callback/facebook`}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-mono text-slate-600 select-all focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-xs font-mono text-slate-700 select-all focus:outline-none"
                 />
                 <button
                   type="button"
@@ -221,7 +285,7 @@ function SettingsContent() {
                       'fb_uri'
                     )
                   }
-                  className="px-3.5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 hover:bg-slate-800 transition-colors"
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 hover:bg-black transition-colors shadow-2xs"
                 >
                   {copiedField === 'fb_uri' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -231,7 +295,7 @@ function SettingsContent() {
                   <span>{copiedField === 'fb_uri' ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">
+              <p className="text-[11px] text-slate-400 mt-1.5">
                 Paste this into developers.facebook.com → Facebook Login → Settings → Valid OAuth Redirect URIs.
               </p>
             </div>
@@ -240,12 +304,17 @@ function SettingsContent() {
 
         {/* TAB 2: YOUTUBE & VIDEO */}
         {activeTab === 'youtube' && (
-          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-6 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-5">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#F0F2F6]">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
               <span className="text-xl">▶️</span>
-              <h3 className="font-extrabold text-sm text-slate-900">
-                YouTube Data API v3 & Shorts Settings
-              </h3>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  YouTube Data API v3 & Shorts Settings
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Configure Google Cloud API keys for publishing Hindi news video summaries as YouTube Shorts.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -257,7 +326,8 @@ function SettingsContent() {
                   type="text"
                   value={ytClientId}
                   onChange={(e) => setYtClientId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-mono text-slate-900 focus:outline-none focus:border-[#FF007A]"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-500"
+                  placeholder="e.g. 1092837465019-abc123xyz789.apps.googleusercontent.com"
                 />
               </div>
 
@@ -269,7 +339,8 @@ function SettingsContent() {
                   type="password"
                   value={ytClientSecret}
                   onChange={(e) => setYtClientSecret(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-mono text-slate-900 focus:outline-none focus:border-[#FF007A]"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-500"
+                  placeholder="GOCSPX-••••••••••••"
                 />
               </div>
             </div>
@@ -280,7 +351,7 @@ function SettingsContent() {
                   type="checkbox"
                   checked={ytAutoShort}
                   onChange={(e) => setYtAutoShort(e.target.checked)}
-                  className="w-4 h-4 rounded text-[#FF007A] focus:ring-[#FF007A]"
+                  className="w-4 h-4 rounded text-slate-900 focus:ring-slate-900"
                 />
                 <div>
                   <span className="text-xs font-bold text-slate-800">
@@ -301,7 +372,7 @@ function SettingsContent() {
                 rows={4}
                 value={ytDescriptionTemplate}
                 onChange={(e) => setYtDescriptionTemplate(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 focus:outline-none focus:border-[#FF007A]"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-sans"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Use <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-bold">&#123;title&#125;</code> to dynamically insert the post headline.
@@ -316,7 +387,8 @@ function SettingsContent() {
                 type="email"
                 value={alertEmail}
                 onChange={(e) => setAlertEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 focus:outline-none focus:border-[#FF007A]"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500"
+                placeholder="alerts@khabarmonkey.com"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Receive instant email if any social token expires or fails health check.
@@ -327,17 +399,18 @@ function SettingsContent() {
 
         {/* TAB 3: AUTO RETRY */}
         {activeTab === 'retry' && (
-          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-6 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-5">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#F0F2F6]">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
               <RotateCw className="w-5 h-5 text-amber-500" />
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Auto-Retry Failed Dispatches Engine
-              </h3>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Auto-Retry Failed Dispatches Engine
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  When temporary API rate-limits or network glitches occur, the auto-retry engine automatically recovers the post.
+                </p>
+              </div>
             </div>
-
-            <p className="text-xs text-slate-500 leading-relaxed">
-              When temporary API rate-limits or network glitches occur, the auto-retry engine automatically recovers the post without requiring manual intervention.
-            </p>
 
             <div className="space-y-4">
               <label className="flex items-center gap-2.5 cursor-pointer">
@@ -345,7 +418,7 @@ function SettingsContent() {
                   type="checkbox"
                   checked={autoRetryEnabled}
                   onChange={(e) => setAutoRetryEnabled(e.target.checked)}
-                  className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500"
+                  className="w-4 h-4 rounded text-slate-900 focus:ring-slate-900"
                 />
                 <div>
                   <span className="text-xs font-bold text-slate-800">
@@ -368,7 +441,7 @@ function SettingsContent() {
                     max={10}
                     value={autoRetryMax}
                     onChange={(e) => setAutoRetryMax(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-xs text-slate-900"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">Default: 3 attempts per post</p>
                 </div>
@@ -383,7 +456,7 @@ function SettingsContent() {
                     max={120}
                     value={autoRetryIntervalMin}
                     onChange={(e) => setAutoRetryIntervalMin(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-xs text-slate-900"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">Spacing between retry attempts</p>
                 </div>
@@ -394,17 +467,18 @@ function SettingsContent() {
 
         {/* TAB 4: SENSITIVE WORD FILTER */}
         {activeTab === 'words' && (
-          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-6 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-5">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#F0F2F6]">
-              <ShieldCheck className="w-5 h-5 text-emerald-500" />
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Anti-Ban Prohibited Word Obfuscator
-              </h3>
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Anti-Ban Prohibited Word Obfuscator
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Inserts zero-width spaces (\u200B) into sensitive terms (मौत, हत्या, हादसा) so human readers see clean text while Facebook bots skip penalties.
+                </p>
+              </div>
             </div>
-
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Facebook&apos;s AI scraper penalizes posts containing violent or sensitive terms (like मौत, आत्महत्या, हादसा, रेप). Our engine inserts zero-width spaces (\u200B) into these words so human readers see clean text while Facebook bots skip penalties.
-            </p>
 
             <div>
               <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -414,12 +488,12 @@ function SettingsContent() {
                 rows={5}
                 value={sensitiveWordsRaw}
                 onChange={(e) => setSensitiveWordsRaw(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 focus:outline-none focus:border-[#FF007A]"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-sans leading-relaxed"
               />
             </div>
 
             {/* Test Sandbox */}
-            <div className="p-4 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-3">
+            <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-3">
               <span className="text-xs font-bold text-slate-800 block">
                 🧪 Live Sanitizer Sandbox Test
               </span>
@@ -428,20 +502,20 @@ function SettingsContent() {
                   type="text"
                   value={testHeadline}
                   onChange={(e) => setTestHeadline(e.target.value)}
-                  className="flex-1 px-3 py-2 rounded-lg border border-[#EEF1F6] bg-white text-xs text-slate-900"
+                  className="flex-1 px-3.5 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs text-slate-900 focus:outline-none"
                   placeholder="Type a news headline with sensitive words..."
                 />
                 <button
                   type="button"
                   onClick={handleTestSanitize}
-                  className="px-3 py-2 rounded-lg bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition-colors shrink-0"
+                  className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-black transition-colors shrink-0 shadow-2xs"
                 >
                   Test Obfuscate
                 </button>
               </div>
 
               {testResult && (
-                <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium">
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium leading-relaxed">
                   {testResult}
                 </div>
               )}
@@ -451,17 +525,18 @@ function SettingsContent() {
 
         {/* TAB 5: CRON AUTOMATION */}
         {activeTab === 'cron' && (
-          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-6 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-5">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#F0F2F6]">
-              <Radio className="w-5 h-5 text-blue-500" />
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Cron Automation & Worker Webhook
-              </h3>
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
+              <Radio className="w-5 h-5 text-blue-600" />
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Cron Automation & Worker Webhook
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Use this webhook URL in your Linux crontab or cron-job.org to process posts exactly on schedule.
+                </p>
+              </div>
             </div>
-
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Use this webhook URL in your Linux crontab (e.g. <code>* * * * * curl -s &quot;URL&quot;</code>) or in an external monitoring service like cron-job.org to process posts exactly on schedule.
-            </p>
 
             <div>
               <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -472,7 +547,7 @@ function SettingsContent() {
                   type="text"
                   readOnly
                   value={`${currentOrigin}/api/cron/process-queue?secret=${cronSecret}`}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-mono text-slate-700 select-all focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-xs font-mono text-slate-700 select-all focus:outline-none"
                 />
                 <button
                   type="button"
@@ -482,7 +557,7 @@ function SettingsContent() {
                       'cron_url'
                     )
                   }
-                  className="px-3.5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs shrink-0 flex items-center gap-1.5"
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 hover:bg-black shadow-2xs transition-colors"
                 >
                   {copiedField === 'cron_url' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -498,10 +573,11 @@ function SettingsContent() {
               <button
                 type="button"
                 onClick={() => {
-                  setCronSecret('sap_live_secret_' + Math.random().toString(36).substring(2, 14));
-                  alert('New cron secret generated. Make sure to update your external cron jobs.');
+                  const newSec = 'sap_live_secret_' + Math.random().toString(36).substring(2, 14);
+                  setCronSecret(newSec);
+                  alert('New cron secret generated. Click "Save Settings" below to persist.');
                 }}
-                className="px-3 py-2 rounded-xl border border-[#EEF1F6] hover:bg-[#F6F8FD] text-xs font-bold text-slate-700 transition-colors"
+                className="px-3.5 py-2 rounded-xl border border-[#E2E8F0] hover:bg-[#F8F9FA] text-xs font-bold text-slate-700 transition-colors"
               >
                 Regenerate Cron Secret Key
               </button>
@@ -511,12 +587,17 @@ function SettingsContent() {
 
         {/* TAB 6: PROFILE & TEAM */}
         {activeTab === 'profile' && (
-          <div className="bg-white rounded-2xl border border-[#EEF1F6] p-6 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-5">
-            <div className="flex items-center gap-2 pb-3 border-b border-[#F0F2F6]">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
               <UserIcon className="w-5 h-5 text-slate-700" />
-              <h3 className="font-extrabold text-sm text-slate-900">
-                User Profile & Workspace
-              </h3>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  User Profile & Workspace
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Manage your display name, email, and workspace publishing limits.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -529,7 +610,7 @@ function SettingsContent() {
                   required
                   value={userName}
                   onChange={(e) => setUserName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900"
                 />
               </div>
 
@@ -542,7 +623,7 @@ function SettingsContent() {
                   required
                   value={userEmail}
                   onChange={(e) => setUserEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900"
                 />
               </div>
 
@@ -555,7 +636,7 @@ function SettingsContent() {
                   required
                   value={workspaceName}
                   onChange={(e) => setWorkspaceName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900"
                 />
               </div>
 
@@ -563,10 +644,10 @@ function SettingsContent() {
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Plan Tier
                 </label>
-                <div className="px-3.5 py-2.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-bold text-slate-800 flex items-center justify-between">
-                  <span className="uppercase">{workspace.plan} Plan</span>
+                <div className="px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-xs font-bold text-slate-800 flex items-center justify-between">
+                  <span className="uppercase">{workspace?.plan || 'PRO'} Plan</span>
                   <span className="text-[10px] text-slate-400">
-                    {workspace.monthlyPostsUsed} / {workspace.monthlyPostsLimit} posts used
+                    {workspace?.monthlyPostsUsed || 0} / {workspace?.monthlyPostsLimit || 1500} posts used
                   </span>
                 </div>
               </div>
@@ -575,10 +656,13 @@ function SettingsContent() {
         )}
 
         {/* Save Bar */}
-        <div className="flex items-center justify-end gap-3 pt-2">
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <div className="text-xs text-slate-400 font-medium">
+            <span>Changes are persisted to your local and user workspace storage immediately.</span>
+          </div>
           <button
             type="submit"
-            className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#FF007A] to-[#FF2E93] hover:from-[#E6006E] hover:to-[#E62080] text-white font-bold text-xs shadow-[0_4px_14px_rgba(255,0,122,0.3)] transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center gap-2"
+            className="px-6 py-3 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center gap-2"
           >
             <Save className="w-4 h-4" />
             <span>Save Settings</span>
