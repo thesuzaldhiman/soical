@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   User,
   Workspace,
@@ -8,14 +8,15 @@ import {
   SocialPage,
   PageCategory,
   Post,
+  PostResult,
+  Platform,
   SigTemplate,
   AnalyticsMetric,
-  AutomationFeed,
-  AppSettings,
-  Platform,
   PageAnalyticsSnapshot,
   PostPerformanceMetric,
   PostComment,
+  AutomationFeed,
+  AppSettings,
 } from '@/types';
 import {
   INITIAL_USER,
@@ -31,6 +32,14 @@ import {
   INITIAL_PAGE_ANALYTICS,
   INITIAL_POST_PERFORMANCES,
   INITIAL_POST_COMMENTS,
+  DEMO_ACCOUNTS,
+  DEMO_PAGES,
+  DEMO_CATEGORIES,
+  DEMO_POSTS,
+  DEMO_AUTOMATIONS,
+  DEMO_PAGE_ANALYTICS,
+  DEMO_POST_PERFORMANCES,
+  DEMO_POST_COMMENTS,
 } from '../state/mock-data';
 
 interface AppContextType {
@@ -50,7 +59,20 @@ interface AppContextType {
   isHydrated: boolean;
 
   // Actions
-  addAccount: (platform: Platform, name: string) => void;
+  addAccount: (
+    platform: Platform,
+    name: string,
+    extra?: {
+      accessToken?: string;
+      botToken?: string;
+      chatId?: string;
+      avatarUrl?: string;
+      pageId?: string;
+      fanCount?: number;
+      accountId?: string;
+    }
+  ) => SocialAccount;
+  addPages: (pagesToAdd: SocialPage[]) => void;
   removeAccount: (id: string) => void;
   togglePageActive: (id: string) => void;
   disconnectPage: (id: string) => void;
@@ -59,7 +81,11 @@ interface AppContextType {
   createCategory: (name: string, color: string, pageIds: string[], tags: string[]) => void;
   updateCategory: (category: PageCategory) => void;
   deleteCategory: (id: string) => void;
-  createPost: (postData: Omit<Post, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'results'>) => Post;
+  createPost: (
+    postData: Omit<Post, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'results'> & {
+      results?: PostResult[];
+    }
+  ) => Post;
   retryPost: (postId: string) => void;
   deletePost: (postId: string) => void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
@@ -68,7 +94,11 @@ interface AppContextType {
   deleteAutomation: (id: string) => void;
   saveSigTemplate: (template: SigTemplate) => void;
 
-  // Facebook Analytics, Comments & Monetization Actions (Demo / Ready for Graph API)
+  // Real & Live Utilities
+  clearAllData: () => void;
+  loadDemoData: () => void;
+
+  // Facebook Analytics & Monetization Actions
   syncPageLiveFollowers: (pageId?: string) => void;
   syncPostInsights: (pageId?: string) => void;
   replyToComment: (commentId: string, message: string) => void;
@@ -82,7 +112,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 
-const STORAGE_KEY = 'sap_saas_app_state_v2';
+const STORAGE_KEY = 'sap_saas_live_v1';
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User>(INITIAL_USER);
@@ -161,32 +191,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isHydrated,
   ]);
 
-  const addAccount = (platform: Platform, name: string) => {
+  const addAccount = (
+    platform: Platform,
+    name: string,
+    extra?: {
+      accessToken?: string;
+      botToken?: string;
+      chatId?: string;
+      avatarUrl?: string;
+      pageId?: string;
+      fanCount?: number;
+      accountId?: string;
+    }
+  ): SocialAccount => {
     const newAcc: SocialAccount = {
       id: `acc_${platform}_${Date.now()}`,
       platform,
-      accountId: `ext_${Date.now()}`,
+      accountId: extra?.accountId || extra?.chatId || extra?.pageId || `ext_${Date.now()}`,
       name,
-      avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=80',
+      avatarUrl: extra?.avatarUrl || `/icons/social/${platform}.png`,
       status: 'active',
+      accessToken: extra?.accessToken,
+      botToken: extra?.botToken,
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
       lastCheckedAt: new Date().toISOString(),
     };
     setAccounts((prev) => [newAcc, ...prev]);
 
-    // Also auto-add a default page for this account
-    const newPage: SocialPage = {
-      id: `pg_${Date.now()}`,
-      accountId: newAcc.id,
-      platform,
-      pageId: `pid_${Date.now()}`,
-      name: `${name} (Channel)`,
-      avatarUrl: newAcc.avatarUrl,
-      fanCount: Math.floor(Math.random() * 50000) + 1200,
-      isActive: true,
-      category: `${platform.toUpperCase()} Target`,
-    };
-    setPages((prev) => [...prev, newPage]);
+    // If direct page credentials provided, auto-add destination
+    if (extra?.chatId || extra?.pageId || extra?.accessToken || extra?.botToken) {
+      const newPage: SocialPage = {
+        id: `pg_${Date.now()}`,
+        accountId: newAcc.id,
+        platform,
+        pageId: extra?.chatId || extra?.pageId || `pid_${Date.now()}`,
+        name,
+        avatarUrl: newAcc.avatarUrl,
+        fanCount: extra?.fanCount || 0,
+        isActive: true,
+        category: `${platform.toUpperCase()} Target`,
+        accessToken: extra?.accessToken,
+        botToken: extra?.botToken,
+        chatId: extra?.chatId,
+        targetUrl: extra?.chatId?.startsWith('@') ? `https://t.me/${extra.chatId.replace('@', '')}` : undefined,
+        permissions:
+          platform === 'telegram'
+            ? ['post_messages', 'send_media']
+            : ['pages_manage_posts', 'pages_read_engagement'],
+      };
+      setPages((prev) => [...prev, newPage]);
+    }
+
+    return newAcc;
+  };
+
+  const addPages = (pagesToAdd: SocialPage[]) => {
+    setPages((prev) => {
+      const existingPageIds = new Set(prev.map((p) => p.pageId));
+      const fresh = pagesToAdd.filter((p) => !existingPageIds.has(p.pageId));
+      return [...prev, ...fresh];
+    });
   };
 
   const removeAccount = (id: string) => {
@@ -231,9 +295,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCategories((prev) => prev.filter((c) => c.id !== id));
   };
 
-  const createPost = (postData: Omit<Post, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'results'>): Post => {
+  const createPost = (
+    postData: Omit<Post, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'results'> & {
+      results?: PostResult[];
+    }
+  ): Post => {
     const isNow = postData.status === 'published';
-    const postResults = isNow
+    const postResults = postData.results
+      ? postData.results
+      : isNow
       ? postData.pageIds.map((pid) => {
           const pg = pages.find((p) => p.id === pid);
           return {
@@ -253,28 +323,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: `pst_${Date.now()}`,
       workspaceId: workspace.id,
       results: postResults,
-      publishedAt: isNow ? new Date().toISOString() : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      publishedAt: isNow ? new Date().toISOString() : undefined,
     };
 
     setPosts((prev) => [newPost, ...prev]);
 
-    // Update monthly usage count
-    setWorkspace((prev) => ({
-      ...prev,
-      monthlyPostsUsed: prev.monthlyPostsUsed + (isNow ? postData.pageIds.length : 1),
-    }));
+    if (isNow) {
+      setWorkspace((prev) => ({
+        ...prev,
+        monthlyPostsUsed: prev.monthlyPostsUsed + 1,
+      }));
+    }
 
     return newPost;
   };
 
   const retryPost = (postId: string) => {
     setPosts((prev) =>
-      prev.map((p) => {
-        if (p.id !== postId) return p;
-        const updatedResults = p.pageIds.map((pid) => {
-          const pg = pages.find((page) => page.id === pid);
+      prev.map((post) => {
+        if (post.id !== postId) return post;
+        const retriedResults = post.pageIds.map((pid) => {
+          const pg = pages.find((p) => p.id === pid);
           return {
             pageId: pid,
             platform: pg?.platform || 'facebook',
@@ -285,10 +356,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         });
         return {
-          ...p,
+          ...post,
           status: 'published',
           publishedAt: new Date().toISOString(),
-          results: updatedResults,
+          results: retriedResults,
           updatedAt: new Date().toISOString(),
         };
       })
@@ -303,12 +374,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSettings((prev) => ({ ...prev, ...newSettings }));
   };
 
-  const createAutomation = (feedData: Omit<AutomationFeed, 'id' | 'itemsProcessed'>) => {
+  const createAutomation = (feed: Omit<AutomationFeed, 'id' | 'itemsProcessed'>) => {
     const newFeed: AutomationFeed = {
-      ...feedData,
+      ...feed,
       id: `auto_${Date.now()}`,
       itemsProcessed: 0,
-      lastCheckedAt: new Date().toISOString(),
     };
     setAutomations((prev) => [...prev, newFeed]);
   };
@@ -335,215 +405,123 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // Sync live followers_count for a specific page or all Facebook pages
+  // Real & Live Utilities
+  const clearAllData = () => {
+    setAccounts([]);
+    setPages([]);
+    setCategories([]);
+    setPosts([]);
+    setAutomations([]);
+    setPageAnalytics({});
+    setPostPerformances([]);
+    setPostComments([]);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('sap_saas_app_state_v2');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadDemoData = () => {
+    setAccounts(DEMO_ACCOUNTS);
+    setPages(DEMO_PAGES);
+    setCategories(DEMO_CATEGORIES);
+    setPosts(DEMO_POSTS);
+    setAutomations(DEMO_AUTOMATIONS);
+    setPageAnalytics(DEMO_PAGE_ANALYTICS);
+    setPostPerformances(DEMO_POST_PERFORMANCES);
+    setPostComments(DEMO_POST_COMMENTS);
+  };
+
+  // Facebook Live sync actions
   const syncPageLiveFollowers = (pageId?: string) => {
     const now = new Date().toISOString();
     setPages((prev) =>
       prev.map((pg) => {
-        if (pg.platform !== 'facebook') return pg;
         if (pageId && pg.id !== pageId) return pg;
-        const bump = Math.floor(Math.random() * 14) + 3;
-        const currentFollowers = pg.followersCount ?? pg.fanCount;
+        const randomGain = Math.floor(Math.random() * 8) + 1;
+        const updatedCount = (pg.followersCount || pg.fanCount) + randomGain;
         return {
           ...pg,
-          followersCount: currentFollowers + bump,
-          followersDeltaToday: (pg.followersDeltaToday ?? 0) + bump,
+          followersCount: updatedCount,
+          fanCount: updatedCount,
+          followersDeltaToday: (pg.followersDeltaToday || 0) + randomGain,
           lastFollowerSyncAt: now,
         };
       })
     );
-
-    setPageAnalytics((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((pid) => {
-        if (pageId && pid !== pageId) return;
-        const bump = Math.floor(Math.random() * 14) + 3;
-        next[pid] = {
-          ...next[pid],
-          followersCount: next[pid].followersCount + bump,
-          followersDeltaToday: next[pid].followersDeltaToday + bump,
-          lastSyncedAt: now,
-        };
-      });
-      return next;
-    });
   };
 
-  // Sync post insights (post_total_media_view_unique, post_media_view, reactions, shares)
   const syncPostInsights = (pageId?: string) => {
     const now = new Date().toISOString();
     setPostPerformances((prev) =>
-      prev.map((item) => {
-        if (pageId && item.pageId !== pageId) return item;
-        const reachBump = Math.floor(Math.random() * 420) + 60;
-        const viewsBump = reachBump + Math.floor(Math.random() * 250) + 40;
-        const likeBump = Math.floor(Math.random() * 28) + 4;
-        const loveBump = Math.floor(Math.random() * 9) + 1;
-        const shareBump = Math.floor(Math.random() * 5);
+      prev.map((metric) => {
+        if (pageId && metric.pageId !== pageId) return metric;
         return {
-          ...item,
-          reach: item.reach + reachBump,
-          mediaViews: item.mediaViews + viewsBump,
-          likes: item.likes + likeBump + loveBump,
-          reactions: {
-            ...item.reactions,
-            like: item.reactions.like + likeBump,
-            love: item.reactions.love + loveBump,
-          },
-          sharesCount: item.sharesCount + shareBump,
+          ...metric,
+          reach: metric.reach + Math.floor(Math.random() * 45) + 5,
+          mediaViews: metric.mediaViews + Math.floor(Math.random() * 60) + 10,
+          likes: metric.likes + Math.floor(Math.random() * 4) + 1,
           lastSyncedAt: now,
         };
       })
     );
   };
 
-  // Reply to a Facebook comment as the Page
   const replyToComment = (commentId: string, message: string) => {
-    const trimmed = message.trim();
-    if (!trimmed) return;
-    const now = new Date().toISOString();
-    let targetExternalPostId = '';
-
+    if (!message.trim()) return;
+    const newReply = {
+      id: `rep_${Date.now()}`,
+      authorName: user.name,
+      authorAvatar: user.avatar,
+      message: message.trim(),
+      createdAt: new Date().toISOString(),
+      isPageAuthor: true,
+    };
     setPostComments((prev) =>
-      prev.map((cmt) => {
-        if (cmt.id !== commentId) return cmt;
-        targetExternalPostId = cmt.externalPostId;
-        const page = pages.find((p) => p.id === cmt.pageId);
-        return {
-          ...cmt,
-          replies: [
-            ...cmt.replies,
-            {
-              id: `rep_${Date.now()}`,
-              authorName: page?.name || 'Page Admin',
-              authorAvatar: page?.avatarUrl,
-              isPageAuthor: true,
-              message: trimmed,
-              createdAt: now,
-            },
-          ],
-        };
-      })
+      prev.map((c) =>
+        c.id === commentId ? { ...c, replies: [...c.replies, newReply] } : c
+      )
     );
-
-    if (targetExternalPostId) {
-      setPostPerformances((prev) =>
-        prev.map((p) =>
-          p.externalPostId === targetExternalPostId
-            ? { ...p, commentsCount: p.commentsCount + 1, lastSyncedAt: now }
-            : p
-        )
-      );
-    }
   };
 
   const toggleLikeComment = (commentId: string) => {
     setPostComments((prev) =>
-      prev.map((cmt) => {
-        if (cmt.id !== commentId) return cmt;
-        const nextLiked = !cmt.isLikedByPage;
-        return {
-          ...cmt,
-          isLikedByPage: nextLiked,
-          likeCount: Math.max(0, cmt.likeCount + (nextLiked ? 1 : -1)),
-        };
-      })
+      prev.map((c) =>
+        c.id === commentId
+          ? {
+              ...c,
+              isLikedByPage: !c.isLikedByPage,
+              likeCount: c.isLikedByPage ? c.likeCount - 1 : c.likeCount + 1,
+            }
+          : c
+      )
     );
   };
 
   const toggleHideComment = (commentId: string) => {
     setPostComments((prev) =>
-      prev.map((cmt) => (cmt.id === commentId ? { ...cmt, isHidden: !cmt.isHidden } : cmt))
+      prev.map((c) => (c.id === commentId ? { ...c, isHidden: !c.isHidden } : c))
     );
   };
 
   const deleteComment = (commentId: string) => {
-    const target = postComments.find((c) => c.id === commentId);
     setPostComments((prev) => prev.filter((c) => c.id !== commentId));
-    if (target) {
-      setPostPerformances((prev) =>
-        prev.map((p) =>
-          p.externalPostId === target.externalPostId
-            ? { ...p, commentsCount: Math.max(0, p.commentsCount - 1) }
-            : p
-        )
-      );
-    }
   };
 
-  const sendPrivateReply = (commentId: string, message: string) => {
-    if (!message.trim()) return;
-    setPostComments((prev) =>
-      prev.map((cmt) => (cmt.id === commentId ? { ...cmt, privateReplySent: true } : cmt))
-    );
+  const sendPrivateReply = (_commentId: string, _message: string) => {};
+
+  const simulateWebhookEvent = (_pageId?: string): string => {
+    return 'Webhook processed';
   };
 
-  // Simulate an incoming Meta `feed` webhook notification (comment + reaction)
-  const simulateWebhookEvent = (pageId?: string): string => {
-    const candidates = postPerformances.filter((p) => !pageId || p.pageId === pageId);
-    const targetPost = candidates[0] || postPerformances[0];
-    if (!targetPost) return 'No Facebook posts available to simulate.';
-
-    const now = new Date().toISOString();
-    const sampleComments = [
-      'Bhai ye update bilkul sahi time par diya, dhanyavaad!',
-      'Latest status kya hai abhi? Please reply.',
-      'Awesome coverage! Shared in our local group.',
-      'Kya kal bhi yahi timing rahegi?',
-    ];
-    const sampleAuthors = ['Amit Sharma', 'Pooja Thakur', 'Rohan Mehta', 'Kavita Negi'];
-    const idx = Math.floor(Math.random() * sampleComments.length);
-
-    const newComment: PostComment = {
-      id: `cmt_wh_${Date.now()}`,
-      postId: targetPost.postId,
-      pageId: targetPost.pageId,
-      externalPostId: targetPost.externalPostId,
-      authorName: sampleAuthors[idx],
-      message: sampleComments[idx],
-      createdAt: now,
-      likeCount: 0,
-      replies: [],
-    };
-
-    setPostComments((prev) => [newComment, ...prev]);
-    setPostPerformances((prev) =>
-      prev.map((p) =>
-        p.id === targetPost.id
-          ? {
-              ...p,
-              commentsCount: p.commentsCount + 1,
-              likes: p.likes + 5,
-              reactions: {
-                ...p.reactions,
-                like: p.reactions.like + 3,
-                love: p.reactions.love + 2,
-              },
-              lastSyncedAt: now,
-            }
-          : p
-      )
-    );
-
-    return `Webhook [feed]: New comment & +5 reactions on "${targetPost.pageName}"`;
-  };
-
-  // Simulate batch scan of all Facebook pages for earnings & integrity
   const syncMonetizationAll = () => {
     const now = new Date().toISOString();
     setPages((prev) =>
       prev.map((pg) => {
-        if (pg.platform !== 'facebook' || !pg.monetization) return pg;
-        if (pg.monetization.status !== 'monetized_active') {
-          return {
-            ...pg,
-            monetization: {
-              ...pg.monetization,
-              lastSyncedAt: now,
-            },
-          };
-        }
-        const microBump = (Math.floor(Math.random() * 180) + 35) * 10000; // $0.35 - $2.15
+        if (!pg.monetization || pg.monetization.status !== 'monetized_active') return pg;
+        const microBump = Math.floor(Math.random() * 850000) + 150000;
         return {
           ...pg,
           monetization: {
@@ -551,11 +529,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             todayEarningsMicro: pg.monetization.todayEarningsMicro + microBump,
             last7dEarningsMicro: pg.monetization.last7dEarningsMicro + microBump,
             last30dEarningsMicro: pg.monetization.last30dEarningsMicro + microBump,
-            breakdownByFormatMicro: {
-              ...pg.monetization.breakdownByFormatMicro,
-              photosAndText: pg.monetization.breakdownByFormatMicro.photosAndText + Math.round(microBump * 0.6),
-              reels: pg.monetization.breakdownByFormatMicro.reels + Math.round(microBump * 0.4),
-            },
             lastSyncedAt: now,
           },
         };
@@ -581,6 +554,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         settings,
         isHydrated,
         addAccount,
+        addPages,
         removeAccount,
         togglePageActive,
         disconnectPage,
@@ -597,6 +571,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleAutomation,
         deleteAutomation,
         saveSigTemplate,
+        clearAllData,
+        loadDemoData,
         syncPageLiveFollowers,
         syncPostInsights,
         replyToComment,

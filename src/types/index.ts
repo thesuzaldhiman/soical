@@ -29,6 +29,9 @@ export interface SocialAccount {
   name: string;
   avatarUrl: string;
   status: 'active' | 'expired' | 'error';
+  accessToken?: string;
+  refreshToken?: string;
+  botToken?: string;
   tokenExpiresAt?: string;
   lastCheckedAt: string;
   lastErrorMessage?: string;
@@ -84,6 +87,10 @@ export interface SocialPage {
   category?: string;
   isActive: boolean;
   permissions?: string[];
+  accessToken?: string;
+  botToken?: string;
+  chatId?: string;
+  targetUrl?: string;
   linkedInstagramId?: string;
   linkedInstagramName?: string;
 }

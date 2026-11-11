@@ -25,15 +25,17 @@ export const INITIAL_USER: User = {
 
 export const INITIAL_WORKSPACE: Workspace = {
   id: 'ws_01',
-  name: 'Khabar Monkey Media',
-  slug: 'khabar-monkey',
+  name: 'Social Auto Poster',
+  slug: 'workspace',
   plan: 'pro',
   monthlyPostsLimit: 1500,
-  monthlyPostsUsed: 428,
+  monthlyPostsUsed: 0,
   connectedChannelsLimit: 25,
 };
 
-export const INITIAL_ACCOUNTS: SocialAccount[] = [
+export const INITIAL_ACCOUNTS: SocialAccount[] = [];
+
+export const DEMO_ACCOUNTS: SocialAccount[] = [
   {
     id: 'acc_fb_1',
     platform: 'facebook',
@@ -82,7 +84,9 @@ export const INITIAL_ACCOUNTS: SocialAccount[] = [
   },
 ];
 
-export const INITIAL_PAGES: SocialPage[] = [
+export const INITIAL_PAGES: SocialPage[] = [];
+
+export const DEMO_PAGES: SocialPage[] = [
   {
     id: 'pg_1',
     accountId: 'acc_fb_1',
@@ -374,7 +378,9 @@ export const INITIAL_PAGES: SocialPage[] = [
   },
 ];
 
-export const INITIAL_CATEGORIES: PageCategory[] = [
+export const INITIAL_CATEGORIES: PageCategory[] = [];
+
+export const DEMO_CATEGORIES: PageCategory[] = [
   {
     id: 'cat_1',
     name: 'Breaking News & Alerts (ताज़ा खबरें)',
@@ -398,7 +404,9 @@ export const INITIAL_CATEGORIES: PageCategory[] = [
   },
 ];
 
-export const INITIAL_POSTS: Post[] = [
+export const INITIAL_POSTS: Post[] = [];
+
+export const DEMO_POSTS: Post[] = [
   {
     id: 'pst_101',
     workspaceId: 'ws_01',
@@ -622,7 +630,9 @@ export const INITIAL_ANALYTICS: AnalyticsMetric[] = [
   { date: 'Nov 10', likes: 5400, comments: 960, shares: 820, reach: 112000, views: 154000 },
 ];
 
-export const INITIAL_AUTOMATIONS: AutomationFeed[] = [
+export const INITIAL_AUTOMATIONS: AutomationFeed[] = [];
+
+export const DEMO_AUTOMATIONS: AutomationFeed[] = [
   {
     id: 'auto_1',
     name: 'Blogger → Social Image Card Auto-Poster',
@@ -663,7 +673,9 @@ export const INITIAL_SETTINGS: AppSettings = {
   webhookSecret: 'sap_whsec_908f0a9sdf8a0sd8f',
 };
 
-export const INITIAL_PAGE_ANALYTICS: Record<string, PageAnalyticsSnapshot> = {
+export const INITIAL_PAGE_ANALYTICS: Record<string, PageAnalyticsSnapshot> = {};
+
+export const DEMO_PAGE_ANALYTICS: Record<string, PageAnalyticsSnapshot> = {
   pg_1: {
     pageId: 'pg_1',
     followersCount: 148920,
@@ -789,7 +801,9 @@ export const INITIAL_PAGE_ANALYTICS: Record<string, PageAnalyticsSnapshot> = {
   },
 };
 
-export const INITIAL_POST_PERFORMANCES: PostPerformanceMetric[] = [
+export const INITIAL_POST_PERFORMANCES: PostPerformanceMetric[] = [];
+
+export const DEMO_POST_PERFORMANCES: PostPerformanceMetric[] = [
   {
     id: 'perf_101_pg1',
     postId: 'pst_101',
@@ -960,7 +974,9 @@ export const INITIAL_POST_PERFORMANCES: PostPerformanceMetric[] = [
   },
 ];
 
-export const INITIAL_POST_COMMENTS: PostComment[] = [
+export const INITIAL_POST_COMMENTS: PostComment[] = [];
+
+export const DEMO_POST_COMMENTS: PostComment[] = [
   {
     id: 'cmt_01',
     postId: 'pst_101',
