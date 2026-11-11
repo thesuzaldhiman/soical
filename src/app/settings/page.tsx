@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { DEFAULT_SENSITIVE_WORDS, sanitizeText, findSensitiveWords } from '@/lib/utils/sensitive-words';
+import { SocialIcon } from '@/components/ui/SocialIcon';
+import { SocialPage } from '@/types';
 import {
   Settings as SettingsIcon,
   User as UserIcon,
@@ -20,8 +23,14 @@ import {
   Copy,
   Check,
   AlertTriangle,
+  AlertCircle,
   Play,
   Terminal,
+  ExternalLink,
+  RefreshCw,
+  X,
+  Info,
+  Plus,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -33,7 +42,19 @@ export default function SettingsPage() {
 }
 
 function SettingsContent() {
-  const { user, workspace, settings, updateSettings, updateUser, updateWorkspace, isHydrated } = useApp();
+  const {
+    user,
+    workspace,
+    settings,
+    updateSettings,
+    updateUser,
+    updateWorkspace,
+    isHydrated,
+    accounts,
+    pages,
+    addAccount,
+    addPages,
+  } = useApp();
 
   const [activeTab, setActiveTab] = useState<'facebook' | 'youtube' | 'retry' | 'words' | 'cron' | 'profile'>('facebook');
 
@@ -41,6 +62,14 @@ function SettingsContent() {
   const [fbAppId, setFbAppId] = useState(settings?.metaAppId || '');
   const [fbAppSecret, setFbAppSecret] = useState(settings?.metaAppSecret || '');
   const [showFbSecret, setShowFbSecret] = useState(false);
+
+  // Direct Token Connect Modal (Settings)
+  const [showTokenConnectModal, setShowTokenConnectModal] = useState(false);
+  const [directToken, setDirectToken] = useState('');
+  const [directPageId, setDirectPageId] = useState('');
+  const [isConnectingToken, setIsConnectingToken] = useState(false);
+  const [tokenConnectError, setTokenConnectError] = useState<string | null>(null);
+  const [tokenConnectSuccess, setTokenConnectSuccess] = useState<string | null>(null);
 
   // YouTube
   const [ytClientId, setYtClientId] = useState(settings?.ytClientId || '');
@@ -131,6 +160,77 @@ function SettingsContent() {
     setTestResult(
       `Detected: [${found.join(', ')}] → Sanitized Headline: "${sanitized}" (Zero-width characters inserted to bypass Facebook flags)`
     );
+  };
+
+  const handleConnectDirectToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directToken.trim()) return;
+    setIsConnectingToken(true);
+    setTokenConnectError(null);
+    setTokenConnectSuccess(null);
+
+    try {
+      const res = await fetch('/api/connect/facebook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: directToken.trim(),
+          pageId: directPageId.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        setTokenConnectError(data.error || 'Failed to verify Facebook token.');
+        setIsConnectingToken(false);
+        return;
+      }
+
+      const verifiedPages = data.pages || [];
+      if (verifiedPages.length === 0) {
+        setTokenConnectError('No Facebook Pages were returned for this access token.');
+        setIsConnectingToken(false);
+        return;
+      }
+
+      // Create Parent Account
+      const primaryPage = verifiedPages[0];
+      const newAcc = addAccount('facebook', `${primaryPage.name} (Meta Account)`, {
+        accessToken: directToken.trim(),
+        avatarUrl: primaryPage.avatarUrl || '/icons/social/facebook.png',
+        fanCount: primaryPage.fanCount,
+      });
+
+      // Add all discovered pages
+      const pagesToAdd: SocialPage[] = verifiedPages.map((p: any, idx: number) => ({
+        id: `pg_fb_${Date.now()}_${idx}`,
+        accountId: newAcc.id,
+        platform: 'facebook',
+        pageId: p.id,
+        name: p.name,
+        avatarUrl: p.avatarUrl || '/icons/social/facebook.png',
+        fanCount: p.fanCount || 0,
+        isActive: true,
+        accessToken: p.accessToken || directToken.trim(),
+        targetUrl: `https://facebook.com/${p.id}`,
+        category: 'Facebook Page',
+        permissions: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list'],
+      }));
+
+      addPages(pagesToAdd);
+
+      setTokenConnectSuccess(`Successfully imported ${verifiedPages.length} Facebook Page(s) live!`);
+      setDirectToken('');
+      setDirectPageId('');
+      setTimeout(() => {
+        setShowTokenConnectModal(false);
+        setTokenConnectSuccess(null);
+      }, 1500);
+    } catch (err: unknown) {
+      setTokenConnectError(err instanceof Error ? err.message : 'Network error verifying Meta API.');
+    } finally {
+      setIsConnectingToken(false);
+    }
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -298,6 +398,113 @@ function SettingsContent() {
               <p className="text-[11px] text-slate-400 mt-1.5">
                 Paste this into developers.facebook.com → Facebook Login → Settings → Valid OAuth Redirect URIs.
               </p>
+            </div>
+
+            {/* Live Facebook Account Connection Card */}
+            <div className="pt-5 border-t border-[#E2E8F0] space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                    Connect & Authorize Facebook Account
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Choose OAuth Login to authenticate via your Meta Developer App, or paste a Page Token directly.
+                  </p>
+                </div>
+
+                {pages.filter((p) => p.platform === 'facebook').length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{pages.filter((p) => p.platform === 'facebook').length} Page(s) Connected</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Already Connected Pages summary */}
+              {pages.filter((p) => p.platform === 'facebook').length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Active Facebook Pages in Workspace:
+                    </span>
+                    <Link
+                      href="/pages"
+                      className="text-xs font-bold text-slate-900 hover:underline flex items-center gap-1"
+                    >
+                      <span>Manage All Pages</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {pages
+                      .filter((p) => p.platform === 'facebook')
+                      .map((pg) => (
+                        <div
+                          key={pg.id}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-semibold text-slate-800 shadow-2xs"
+                        >
+                          <SocialIcon platform="facebook" className="w-4 h-4 rounded-xs" />
+                          <span>{pg.name}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">({pg.pageId})</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Option 1: Official Facebook OAuth Login */}
+                <a
+                  href={`/api/auth/facebook?app_id=${encodeURIComponent(
+                    fbAppId.trim() || '109283746501928'
+                  )}&app_secret=${encodeURIComponent(fbAppSecret.trim())}`}
+                  className="p-3.5 rounded-2xl bg-[#1877F2] hover:bg-[#166FE5] text-white text-xs font-bold flex items-center justify-center gap-2.5 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <SocialIcon platform="facebook" className="w-4 h-4 rounded-xs" />
+                  <span>Log in with Facebook (OAuth)</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                </a>
+
+                {/* Option 2: Direct Page Token Connect Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTokenConnectError(null);
+                    setTokenConnectSuccess(null);
+                    setShowTokenConnectModal(true);
+                  }}
+                  className="p-3.5 rounded-2xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-800 text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs hover:scale-[1.01]"
+                >
+                  <KeyRound className="w-4 h-4 text-slate-600" />
+                  <span>Connect with Page Token (Instant)</span>
+                </button>
+              </div>
+
+              {/* Developer Helper Info */}
+              <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-200/80 text-[11px] text-blue-900 space-y-1.5 leading-relaxed">
+                <div className="font-bold flex items-center gap-1.5 text-blue-950">
+                  <Info className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                  <span>How to connect your Facebook account:</span>
+                </div>
+                <ul className="list-disc pl-4 space-y-1 text-blue-800">
+                  <li>
+                    <strong>Method 1 (OAuth)</strong>: Click &quot;Log in with Facebook (OAuth)&quot; above. Ensure <code>{currentOrigin}/api/auth/callback/facebook</code> is saved in your Meta Developer App &rarr; Facebook Login &rarr; Settings &rarr; Valid OAuth Redirect URIs.
+                  </li>
+                  <li>
+                    <strong>Method 2 (Instant Page Token)</strong>: If your Meta App is in Development mode, you can instantly connect by generating a Page Token from{' '}
+                    <a
+                      href="https://developers.facebook.com/tools/explorer/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline font-bold hover:text-blue-950 inline-flex items-center gap-0.5"
+                    >
+                      Meta Graph API Explorer <ExternalLink className="w-2.5 h-2.5" />
+                    </a>{' '}
+                    and pasting it via &quot;Connect with Page Token&quot;.
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
         )}
@@ -669,6 +876,100 @@ function SettingsContent() {
           </button>
         </div>
       </form>
+
+      {/* Direct Page Token Modal in Settings */}
+      {showTokenConnectModal && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2.5">
+                <SocialIcon platform="facebook" className="w-8 h-8 rounded-lg" />
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Connect Facebook Page Token</h3>
+                  <p className="text-[11px] text-slate-400">Instant direct connection via Page Access Token</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTokenConnectModal(false)}
+                className="w-7 h-7 rounded-xl bg-[#F8F9FA] text-slate-500 hover:text-slate-900 flex items-center justify-center"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {tokenConnectError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{tokenConnectError}</span>
+              </div>
+            )}
+
+            {tokenConnectSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{tokenConnectSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleConnectDirectToken} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                  Facebook Page Access Token <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={directToken}
+                  onChange={(e) => setDirectToken(e.target.value)}
+                  placeholder="EAAB... (Paste your Page Token here)"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                  Specific Page ID (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={directPageId}
+                  onChange={(e) => setDirectPageId(e.target.value)}
+                  placeholder="Leave empty to auto-import all pages"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E2E8F0]">
+                <button
+                  type="button"
+                  onClick={() => setShowTokenConnectModal(false)}
+                  className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isConnectingToken}
+                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-all disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {isConnectingToken ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verifying with Meta...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Verify & Connect Pages</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

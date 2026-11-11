@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
@@ -43,6 +43,7 @@ function AccountsContent() {
   const {
     accounts,
     pages,
+    settings,
     addAccount,
     addPages,
     removeAccount,
@@ -84,6 +85,48 @@ function AccountsContent() {
     youtube: `${currentOrigin}/api/auth/callback/youtube`,
     telegram: 'No redirect URI needed (Bot Token & Channel ID Direct)',
   };
+
+  // Check for pending imported pages from Facebook OAuth callback
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const match = document.cookie.match(new RegExp('(^| )sap_pending_fb_import=([^;]+)'));
+      if (match) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(match[2]));
+          if (parsed.pages && parsed.pages.length > 0) {
+            const firstPage = parsed.pages[0];
+            const newAcc = addAccount('facebook', `${firstPage.name} (Meta Account)`, {
+              accessToken: parsed.userToken,
+              avatarUrl: firstPage.avatarUrl || '/icons/social/facebook.png',
+              fanCount: firstPage.fanCount,
+            });
+
+            const pagesToAdd: SocialPage[] = parsed.pages.map((p: any, idx: number) => ({
+              id: `pg_fb_${Date.now()}_${idx}`,
+              accountId: newAcc.id,
+              platform: 'facebook',
+              pageId: p.id,
+              name: p.name,
+              avatarUrl: p.avatarUrl || '/icons/social/facebook.png',
+              fanCount: p.fanCount || 0,
+              isActive: true,
+              accessToken: p.accessToken || parsed.userToken,
+              targetUrl: `https://facebook.com/${p.id}`,
+              category: 'Facebook Page',
+              permissions: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list'],
+            }));
+
+            addPages(pagesToAdd);
+            setConnectSuccess(`Successfully imported ${parsed.pages.length} Facebook Page(s) live via OAuth!`);
+            // Clear the cookie
+            document.cookie = 'sap_pending_fb_import=; path=/; max-age=0; SameSite=Lax';
+          }
+        } catch (e) {
+          console.error('Failed importing pending Facebook pages:', e);
+        }
+      }
+    }
+  }, [addAccount, addPages]);
 
   const handleCopyUri = () => {
     navigator.clipboard.writeText(redirectUriMap[connectPlatformChoice]);
@@ -818,13 +861,16 @@ function AccountsContent() {
                     </div>
                   </form>
                 ) : (
-                  <div className="space-y-3.5 text-xs">
-                    <div className="p-3.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-slate-800 space-y-1.5">
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <Info className="w-4 h-4 text-slate-600 shrink-0" />
-                        <span>Vercel OAuth Redirect URI:</span>
+                  <div className="space-y-4 text-xs">
+                    <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-800">Target Facebook App:</span>
+                        <span className="font-mono text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-[#E2E8F0]">
+                          {settings?.metaAppId || '109283746501928'}
+                        </span>
                       </div>
-                      <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] font-mono text-[11px]">
+
+                      <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] font-mono text-[11px]">
                         <span className="truncate">{redirectUriMap.facebook}</span>
                         <button
                           type="button"
@@ -837,25 +883,33 @@ function AccountsContent() {
                       </div>
                     </div>
 
-                    <p className="text-[11px] text-slate-500">
-                      Configure this Redirect URI in your <strong>Meta App Settings &rarr; Facebook Login</strong>.
-                    </p>
+                    {/* Prominent Official OAuth Button */}
+                    <a
+                      href={`/api/auth/facebook?app_id=${encodeURIComponent(
+                        settings?.metaAppId || '109283746501928'
+                      )}&app_secret=${encodeURIComponent(settings?.metaAppSecret || '')}`}
+                      className="w-full py-3 px-4 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] text-white font-bold text-xs flex items-center justify-center gap-2.5 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
+                    >
+                      <SocialIcon platform="facebook" className="w-4 h-4 rounded-xs" />
+                      <span>Log In with Facebook & Select Pages</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                    </a>
 
-                    <div className="pt-2 flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                      <span>Uses Meta Graph API v19.0 Dialog</span>
+                      <Link href="/settings" className="font-bold text-slate-800 hover:underline">
+                        App Settings & Secret &rarr;
+                      </Link>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#E2E8F0]">
                       <button
                         type="button"
                         onClick={() => setConnectModalOpen(false)}
                         className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA]"
                       >
-                        Close
+                        Cancel
                       </button>
-                      <a
-                        href="/settings"
-                        className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold flex items-center gap-1"
-                      >
-                        <span>Configure App Keys in Settings</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
                     </div>
                   </div>
                 )}
