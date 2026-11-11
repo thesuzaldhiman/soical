@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #F8F9FD;
+  --background: #F8F9FA;
   --foreground: #0F172A;
   --sidebar-bg: #FFFFFF;
   --card-bg: #FFFFFF;
-  --card-border: #EEF1F6;
-  --primary-gradient: linear-gradient(135deg, #FF007A 0%, #FF4E98 100%);
-  --accent-gradient: linear-gradient(90deg, #FF007A 0%, #7928CA 50%, #00C2FF 100%);
+  --card-border: #E2E8F0;
+  --primary-gradient: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+  --accent-gradient: linear-gradient(90deg, #0F172A 0%, #334155 100%);
 }
 
 @theme inline {

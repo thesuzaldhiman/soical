@@ -19,10 +19,12 @@ import {
   FileText,
   Settings,
   Bug,
-  Crown,
   ChevronDown,
   ChevronRight,
-  ArrowRight,
+  Search,
+  Sparkles,
+  HelpCircle,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { useApp } from '@/lib/context/app-context';
 
@@ -127,19 +129,46 @@ export function AppSidebar() {
   };
 
   return (
-    <aside className="w-[260px] bg-white border-r border-[#EEF1F6] flex flex-col h-screen sticky top-0 select-none z-30 shrink-0 font-sans shadow-[2px_0_12px_rgba(0,0,0,0.015)]">
-      {/* 1. Brand Logo Header */}
-      <div className="p-5 pb-3">
-        <Link href="/dashboard" className="flex items-center gap-2.5 group">
-          {/* Glowing Gradient Logo 'C' */}
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF007A] via-[#8B5CF6] to-[#00C2FF] flex items-center justify-center text-white shadow-[0_4px_12px_rgba(255,0,122,0.35)] group-hover:scale-105 transition-transform">
-            <span className="font-black text-lg tracking-tighter">C</span>
+    <aside className="w-[260px] bg-white border-r border-[#E2E8F0] flex flex-col h-screen sticky top-0 select-none z-30 shrink-0 font-sans shadow-2xs">
+      {/* 1. Brand Logo Header (Tasklify Style Workspace Selector) */}
+      <div className="p-4 pb-3">
+        <Link
+          href="/dashboard"
+          className="flex items-center justify-between p-2 rounded-xl hover:bg-[#F8F9FA] transition-colors group"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-xs text-slate-900 truncate">
+                  AutoPoster
+                </span>
+                <span className="px-1.5 py-0.2 rounded-md bg-slate-100 text-[9px] font-bold text-slate-700 border border-[#E2E8F0]">
+                  Pro
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium truncate">
+                {workspace.name || 'landerstudio@gmail.com'}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center tracking-tight">
-            <span className="text-lg font-black text-slate-900">Creator</span>
-            <span className="text-lg font-bold text-[#FF007A]">Flow</span>
-          </div>
+          <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
         </Link>
+
+        {/* Tasklify Search Input */}
+        <div className="mt-2 relative">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search"
+            className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 focus:bg-white transition-all"
+          />
+          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono px-1 rounded bg-white border border-[#E2E8F0] text-slate-400">
+            /
+          </kbd>
+        </div>
       </div>
 
       {/* 2. Navigation Items (Grouped & Collapsible) */}
@@ -154,9 +183,9 @@ export function AppSidebar() {
               <button
                 type="button"
                 onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 hover:text-slate-600 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 hover:text-slate-600 transition-colors"
               >
-                <span className={hasActiveChild ? 'text-[#FF007A]' : ''}>
+                <span className={hasActiveChild ? 'text-slate-900 font-black' : ''}>
                   {group.title}
                 </span>
                 {isCollapsed ? (
@@ -177,10 +206,10 @@ export function AppSidebar() {
                       <Link
                         key={item.href}
                         href={item.href}
-                        className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-semibold transition-all group ${
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all group ${
                           isActive
-                            ? 'bg-gradient-to-r from-[#FF007A] to-[#FF4E98] text-white shadow-[0_4px_14px_rgba(255,0,122,0.32)] font-bold'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-[#F6F8FD]'
+                            ? 'bg-slate-900 text-white shadow-xs font-bold'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-[#F8F9FA]'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -188,7 +217,7 @@ export function AppSidebar() {
                             className={`w-4 h-4 shrink-0 transition-colors ${
                               isActive
                                 ? 'text-white stroke-[2.2]'
-                                : 'text-slate-400 group-hover:text-[#FF007A] stroke-[1.9]'
+                                : 'text-slate-400 group-hover:text-slate-900 stroke-[1.9]'
                             }`}
                           />
                           <span className="truncate">{item.label}</span>
@@ -198,10 +227,8 @@ export function AppSidebar() {
                           <span
                             className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
                               isActive
-                                ? 'bg-white/25 text-white'
-                                : item.badge.variant === 'pink'
-                                ? 'bg-pink-100 text-[#FF007A]'
-                                : 'bg-cyan-100 text-cyan-700'
+                                ? 'bg-white/20 text-white'
+                                : 'bg-slate-100 text-slate-700 border border-[#E2E8F0]'
                             }`}
                           >
                             {item.badge.text}
@@ -215,59 +242,50 @@ export function AppSidebar() {
             </div>
           );
         })}
-
-        {/* 3. Upgrade to Pro Card (Exact match to screenshot) */}
-        <div className="pt-2 pb-1">
-          <div className="relative overflow-hidden rounded-2xl p-3.5 bg-gradient-to-br from-[#7928CA] via-[#9B2CBE] to-[#FF0080] text-white shadow-[0_8px_20px_rgba(121,40,202,0.28)] space-y-2.5">
-            {/* Ambient blur glow */}
-            <div className="absolute -top-10 -right-10 w-24 h-24 bg-white/20 rounded-full blur-xl pointer-events-none" />
-
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-lg bg-white/20 flex items-center justify-center">
-                <Crown className="w-3 h-3 text-amber-300 fill-amber-300" />
-              </div>
-              <h4 className="font-extrabold text-xs tracking-tight">Upgrade to Pro</h4>
-            </div>
-
-            <p className="text-[10px] text-white/90 leading-relaxed font-medium">
-              Unlock advanced analytics, AI tools & unlimited scheduling.
-            </p>
-
-            <Link
-              href="/settings?tab=billing"
-              className="w-full py-1.5 px-3 rounded-xl bg-white hover:bg-slate-50 text-[#7928CA] font-extrabold text-xs transition-all shadow flex items-center justify-center gap-1.5 active:scale-[0.98]"
-            >
-              <span>Upgrade Now</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        </div>
       </div>
 
-      {/* 4. Bottom User Profile (Avatar, Name, Role, Dropdown) */}
-      <div className="p-3 border-t border-[#EEF1F6]">
+      {/* 3. Bottom Links & User Profile (Tasklify David Johnson Style) */}
+      <div className="p-3 border-t border-[#E2E8F0] space-y-2">
+        <Link
+          href="/debug"
+          className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-[#F8F9FA] transition-colors"
+        >
+          <HelpCircle className="w-4 h-4 text-slate-400" />
+          <span>Help Center</span>
+        </Link>
+
         <Link
           href="/settings"
-          className="flex items-center justify-between p-2 rounded-xl hover:bg-[#F6F8FD] transition-colors"
+          className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-[#F8F9FA] transition-colors"
         >
-          <div className="flex items-center gap-2.5 min-w-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
-              alt="Ava Morgan"
-              className="w-8 h-8 rounded-full object-cover ring-2 ring-pink-100 shrink-0"
-            />
-            <div className="min-w-0">
-              <div className="font-extrabold text-slate-900 text-xs truncate">
-                Ava Morgan
-              </div>
-              <div className="text-[10px] text-slate-400 font-medium truncate">
-                Creator
+          <Settings className="w-4 h-4 text-slate-400" />
+          <span>Settings</span>
+        </Link>
+
+        <div className="pt-2 border-t border-[#E2E8F0]">
+          <Link
+            href="/settings"
+            className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] hover:bg-slate-100 border border-[#E2E8F0] transition-colors"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+                alt={user.name}
+                className="w-8 h-8 rounded-lg object-cover ring-1 ring-slate-200 shrink-0"
+              />
+              <div className="min-w-0">
+                <div className="font-bold text-slate-900 text-xs truncate">
+                  {user.name}
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium truncate">
+                  {user.email}
+                </div>
               </div>
             </div>
-          </div>
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-        </Link>
+            <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          </Link>
+        </div>
       </div>
     </aside>
   );
