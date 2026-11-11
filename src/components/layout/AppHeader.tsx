@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   Search,
   Plus,
@@ -13,17 +14,43 @@ import { useApp } from '@/lib/context/app-context';
 
 export function AppHeader() {
   const { user, workspace } = useApp();
+  const pathname = usePathname();
+
+  // Dynamic route-aware breadcrumb mapping
+  const breadcrumbs: Record<string, { group: string; label: string; groupHref: string }> = {
+    '/dashboard': { group: 'Dashboard', label: 'Overview', groupHref: '/dashboard' },
+    '/accounts': { group: 'Social Accounts', label: 'Accounts', groupHref: '/accounts' },
+    '/pages': { group: 'Social Accounts', label: 'Pages & Channels', groupHref: '/pages' },
+    '/categories': { group: 'Social Accounts', label: 'Categories', groupHref: '/categories' },
+    '/composer': { group: 'Publishing', label: 'Create Post', groupHref: '/composer' },
+    '/bulk-scheduler': { group: 'Publishing', label: 'Bulk Scheduler', groupHref: '/bulk-scheduler' },
+    '/library': { group: 'Publishing', label: 'Post Library', groupHref: '/library' },
+    '/bulk-delete': { group: 'Publishing', label: 'Bulk Delete Posts', groupHref: '/bulk-delete' },
+    '/automations': { group: 'Automation & Tools', label: 'Blogger → FB', groupHref: '/automations' },
+    '/image-generator': { group: 'Automation & Tools', label: 'Image Generator', groupHref: '/image-generator' },
+    '/analytics': { group: 'Analytics', label: 'Analytics Overview', groupHref: '/analytics' },
+    '/monetization': { group: 'Analytics', label: 'Monetization & Integrity', groupHref: '/monetization' },
+    '/logs': { group: 'System', label: 'Logs', groupHref: '/logs' },
+    '/settings': { group: 'System', label: 'Settings', groupHref: '/settings' },
+    '/debug': { group: 'System', label: 'Debug & Status', groupHref: '/debug' },
+  };
+
+  const currentCrumb = breadcrumbs[pathname] || {
+    group: 'Dashboard',
+    label: pathname.replace('/', '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Overview',
+    groupHref: '/dashboard',
+  };
 
   return (
     <header className="h-16 border-b border-[#E2E8F0] bg-white px-6 sm:px-8 flex items-center justify-between sticky top-0 z-20 font-sans">
-      {/* Left: Tasklify Style Breadcrumb Path */}
+      {/* Left: Dynamic Tasklify Breadcrumb Path */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-          <Link href="/dashboard" className="hover:text-slate-900 transition-colors">
-            Dashboard
+          <Link href={currentCrumb.groupHref} className="hover:text-slate-900 transition-colors">
+            {currentCrumb.group}
           </Link>
           <span className="text-slate-300">/</span>
-          <span className="text-slate-900 font-bold">Overview</span>
+          <span className="text-slate-900 font-bold">{currentCrumb.label}</span>
         </div>
 
         {/* Search input in header */}
