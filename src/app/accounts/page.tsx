@@ -46,6 +46,7 @@ function AccountsContent() {
     settings,
     addAccount,
     addPages,
+    updatePage,
     removeAccount,
     togglePageActive,
     disconnectPage,
@@ -57,6 +58,13 @@ function AccountsContent() {
   const [selectedPlatformModal, setSelectedPlatformModal] = useState<Platform | null>(null);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [connectPlatformChoice, setConnectPlatformChoice] = useState<Platform>('telegram');
+
+  // Quick Token Renewal Modal State
+  const [renewTokenPage, setRenewTokenPage] = useState<SocialPage | null>(null);
+  const [newTokenInput, setNewTokenInput] = useState('');
+  const [isRenewing, setIsRenewing] = useState(false);
+  const [renewError, setRenewError] = useState<string | null>(null);
+  const [renewSuccess, setRenewSuccess] = useState<string | null>(null);
 
   // Connection form fields
   // Telegram
@@ -401,6 +409,48 @@ function AccountsContent() {
     return hasAccount || hasPages;
   }).length;
 
+  const handleRenewToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renewTokenPage || !newTokenInput.trim()) return;
+
+    setIsRenewing(true);
+    setRenewError(null);
+    setRenewSuccess(null);
+
+    try {
+      const res = await fetch('/api/connect/facebook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: newTokenInput.trim(),
+          pageId: renewTokenPage.pageId,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        setRenewError(data.error || 'Token verification failed with Meta API.');
+        setIsRenewing(false);
+        return;
+      }
+
+      updatePage(renewTokenPage.id, {
+        accessToken: newTokenInput.trim(),
+      });
+
+      setRenewSuccess(`✓ Facebook Access Token renewed & verified for "${renewTokenPage.name}"!`);
+      setTimeout(() => {
+        setRenewTokenPage(null);
+        setNewTokenInput('');
+        setRenewSuccess(null);
+      }, 1500);
+    } catch (err: unknown) {
+      setRenewError(err instanceof Error ? err.message : 'Network error verifying token.');
+    } finally {
+      setIsRenewing(false);
+    }
+  };
+
   return (
     <div className="space-y-7 font-sans animate-fade-in pb-10">
       {/* 1. Page Header (Tasklify Clean Neutral Studio) */}
@@ -706,6 +756,22 @@ function AccountsContent() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      {page.platform === 'facebook' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRenewTokenPage(page);
+                            setNewTokenInput('');
+                            setRenewError(null);
+                            setRenewSuccess(null);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition-all shadow-2xs"
+                          title="Renew Facebook Page Access Token"
+                        >
+                          <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Renew Token</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => togglePageActive(page.id)}
@@ -1235,6 +1301,116 @@ function AccountsContent() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Quick Renew Token Modal */}
+      {renewTokenPage && (
+        <div
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setRenewTokenPage(null)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-[#E2E8F0] max-w-lg w-full p-6 sm:p-7 shadow-2xl space-y-4 animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shadow-xs">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base leading-tight">
+                    Renew Facebook Access Token
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    For <span className="font-bold text-slate-800">{renewTokenPage.name}</span> (ID: {renewTokenPage.pageId})
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setRenewTokenPage(null)}
+                className="w-8 h-8 rounded-xl bg-[#F8F9FA] text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Helper explanation */}
+            <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-xs text-blue-900 space-y-1.5 leading-relaxed">
+              <div className="font-bold flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                <span>How to get a fresh Page Access Token:</span>
+              </div>
+              <p className="text-[11px] text-blue-800">
+                1. Open <strong>developers.facebook.com/tools/explorer</strong>.<br />
+                2. In &quot;User or Page&quot;, select <strong>{renewTokenPage.name}</strong>.<br />
+                3. Ensure <code>pages_manage_posts</code> is selected, click <strong>Generate Access Token</strong>, copy the token (<code>EAAB...</code>), and paste it below.
+              </p>
+            </div>
+
+            {/* Status Messages */}
+            {renewError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{renewError}</span>
+              </div>
+            )}
+
+            {renewSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{renewSuccess}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleRenewToken} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                  New Facebook Page Access Token
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={newTokenInput}
+                  onChange={(e) => setNewTokenInput(e.target.value)}
+                  placeholder="EAAB..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setRenewTokenPage(null)}
+                  className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRenewing || !newTokenInput.trim()}
+                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-all disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {isRenewing ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verifying with Meta API...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Verify &amp; Save Token</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

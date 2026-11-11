@@ -73,6 +73,7 @@ interface AppContextType {
     }
   ) => SocialAccount;
   addPages: (pagesToAdd: SocialPage[]) => void;
+  updatePage: (id: string, pageData: Partial<SocialPage>) => void;
   removeAccount: (id: string) => void;
   togglePageActive: (id: string) => void;
   disconnectPage: (id: string) => void;
@@ -157,6 +158,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
     lastCheckedAt: new Date().toISOString(),
   }),
   addPages: noop,
+  updatePage: noop,
   removeAccount: noop,
   togglePageActive: noop,
   disconnectPage: noop,
@@ -462,10 +464,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addPages = (pagesToAdd: SocialPage[]) => {
     setPages((prev) => {
-      const existingPageIds = new Set(prev.map((p) => p.pageId));
-      const fresh = pagesToAdd.filter((p) => !existingPageIds.has(p.pageId));
-      return [...prev, ...fresh];
+      const incomingMap = new Map<string, SocialPage>();
+      pagesToAdd.forEach((p) => incomingMap.set(p.pageId, p));
+
+      // 1. Update existing pages if re-imported with fresh token or updated metadata
+      const updatedPrev = prev.map((existing) => {
+        const incoming = incomingMap.get(existing.pageId);
+        if (incoming) {
+          incomingMap.delete(existing.pageId);
+          return {
+            ...existing,
+            accessToken: incoming.accessToken || existing.accessToken,
+            name: incoming.name || existing.name,
+            avatarUrl: incoming.avatarUrl || existing.avatarUrl,
+            fanCount: incoming.fanCount ?? existing.fanCount,
+            followersCount: incoming.followersCount ?? existing.followersCount,
+            lastCheckedAt: incoming.lastCheckedAt || new Date().toISOString(),
+          };
+        }
+        return existing;
+      });
+
+      // 2. Append newly added pages
+      const fresh = Array.from(incomingMap.values());
+      return [...updatedPrev, ...fresh];
     });
+  };
+
+  const updatePage = (id: string, pageData: Partial<SocialPage>) => {
+    setPages((prev) =>
+      prev.map((p) => {
+        if (p.id === id || p.pageId === id) {
+          return { ...p, ...pageData };
+        }
+        return p;
+      })
+    );
   };
 
   const removeAccount = (id: string) => {
@@ -918,6 +952,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isHydrated,
         addAccount,
         addPages,
+        updatePage,
         removeAccount,
         togglePageActive,
         disconnectPage,

@@ -38,6 +38,7 @@ import {
   Share2,
   MoreHorizontal,
   Bookmark,
+  Key,
 } from 'lucide-react';
 
 const POST_TYPES: { id: PostType; label: string; desc: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -415,11 +416,32 @@ function ComposerContent() {
         results: data.results,
       });
 
+      const hasFailed = data.results?.some((r: any) => r.status === 'failed');
+      const allFailed = data.results?.length > 0 && data.results?.every((r: any) => r.status === 'failed');
+
       setIsSubmitting(false);
       setPublishingMessage(null);
+
+      if (allFailed) {
+        setStatusBanner({
+          type: 'error',
+          text: data.results[0]?.error || 'Failed to publish to selected channels.',
+        });
+        return;
+      }
+
+      if (hasFailed) {
+        setStatusBanner({
+          type: 'error',
+          text: 'Published with warnings: Some destinations failed (e.g. token expired). Redirecting to Dashboard...',
+        });
+        setTimeout(() => router.push('/dashboard'), 2500);
+        return;
+      }
+
       setStatusBanner({
         type: 'success',
-        text: 'Post published across selected channels! Returning to Dashboard...',
+        text: 'Post published across all selected channels! Returning to Dashboard...',
         postUrl: data.results?.find((r: { postUrl?: string }) => r.postUrl)?.postUrl,
       });
 
@@ -501,17 +523,28 @@ function ComposerContent() {
             )}
             <span>{statusBanner.text}</span>
           </div>
-          {statusBanner.postUrl && (
-            <a
-              href={statusBanner.postUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 underline text-emerald-950 font-bold shrink-0"
-            >
-              <span>View Live Post</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {statusBanner.type === 'error' && (
+              <Link
+                href="/pages"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-300 hover:bg-rose-100 text-rose-900 font-bold text-xs transition-colors shadow-2xs"
+              >
+                <Key className="w-3.5 h-3.5 text-rose-700" />
+                <span>Renew Token in Pages</span>
+              </Link>
+            )}
+            {statusBanner.postUrl && (
+              <a
+                href={statusBanner.postUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 underline text-emerald-950 font-bold shrink-0"
+              >
+                <span>View Live Post</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
         </div>
       )}
 
