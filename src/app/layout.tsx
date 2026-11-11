@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans, Inter, Geist_Mono, Noto_Sans_Devanagari } from 'next/font/google';
 import './globals.css';
+import { AppProviders } from '@/components/providers/AppProviders';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: '--font-sans',
@@ -43,7 +44,7 @@ export default function RootLayout({
       className={`${plusJakartaSans.variable} ${inter.variable} ${geistMono.variable} ${notoDevanagari.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans selection:bg-slate-900 selection:text-white">
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

@@ -117,8 +117,22 @@ const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_KEY = 'sap_saas_live_v1';
 
+export const GUEST_USER: User = {
+  id: '',
+  name: '',
+  email: '',
+  avatar: '',
+  role: 'owner',
+};
+
+const getStorageKeyForEmail = (email?: string) => {
+  if (!email) return 'sap_saas_live_v1';
+  const safe = email.toLowerCase().trim().replace(/[^a-z0-9_]/g, '_');
+  return `sap_user_${safe}_v1`;
+};
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User>(INITIAL_USER);
+  const [user, setUser] = useState<User>(GUEST_USER);
   const [workspace, setWorkspace] = useState<Workspace>(INITIAL_WORKSPACE);
   const [accounts, setAccounts] = useState<SocialAccount[]>(INITIAL_ACCOUNTS);
   const [pages, setPages] = useState<SocialPage[]>(INITIAL_PAGES);
@@ -131,57 +145,144 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [postComments, setPostComments] = useState<PostComment[]>(INITIAL_POST_COMMENTS);
   const [automations, setAutomations] = useState<AutomationFeed[]>(INITIAL_AUTOMATIONS);
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  // Hydrate from localStorage on client mount
+  // Helper to load user-isolated data
+  const loadUserDataForEmail = (email: string, name?: string) => {
+    if (typeof localStorage === 'undefined') return;
+    const userKey = getStorageKeyForEmail(email);
+    let stored = localStorage.getItem(userKey);
+
+    // Backward compatibility: If no user key exists yet for Suzal, check previous storage keys
+    if (!stored && (email.includes('suzal') || email.includes('khabarmonkey'))) {
+      stored = localStorage.getItem('sap_saas_live_v1') || localStorage.getItem('sap_saas_app_state_v2');
+    }
+
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed.accounts) setAccounts(parsed.accounts);
+        else setAccounts([]);
+        if (parsed.pages) setPages(parsed.pages);
+        else setPages([]);
+        if (parsed.categories) setCategories(parsed.categories);
+        else setCategories(INITIAL_CATEGORIES);
+        if (parsed.posts) setPosts(parsed.posts);
+        else setPosts([]);
+        if (parsed.sigTemplates) setSigTemplates(parsed.sigTemplates);
+        else setSigTemplates(INITIAL_SIG_TEMPLATES);
+        if (parsed.pageAnalytics) setPageAnalytics(parsed.pageAnalytics);
+        else setPageAnalytics({});
+        if (parsed.postPerformances) setPostPerformances(parsed.postPerformances);
+        else setPostPerformances([]);
+        if (parsed.postComments) setPostComments(parsed.postComments);
+        else setPostComments([]);
+        if (parsed.automations) setAutomations(parsed.automations);
+        else setAutomations([]);
+        if (parsed.settings) setSettings(parsed.settings);
+        else setSettings(INITIAL_SETTINGS);
+        if (parsed.workspace) {
+          setWorkspace(parsed.workspace);
+        } else {
+          setWorkspace({
+            id: `ws_${email.replace(/[^a-z0-9_]/g, '_')}`,
+            name: `${name || email.split('@')[0]}'s Workspace`,
+            slug: 'workspace',
+            plan: 'pro',
+            monthlyPostsLimit: 1500,
+            monthlyPostsUsed: 0,
+            connectedChannelsLimit: 25,
+          });
+        }
+        return;
+      } catch (e) {
+        console.error('Failed to parse user state:', e);
+      }
+    }
+
+    // New user with no prior data -> Brand new isolated clean state!
+    setAccounts([]);
+    setPages([]);
+    setCategories(INITIAL_CATEGORIES);
+    setPosts([]);
+    setSigTemplates(INITIAL_SIG_TEMPLATES);
+    setPageAnalytics({});
+    setPostPerformances([]);
+    setPostComments([]);
+    setAutomations([]);
+    setSettings(INITIAL_SETTINGS);
+    setWorkspace({
+      id: `ws_${email.replace(/[^a-z0-9_]/g, '_')}`,
+      name: `${name || email.split('@')[0]}'s Workspace`,
+      slug: 'workspace',
+      plan: 'pro',
+      monthlyPostsLimit: 1500,
+      monthlyPostsUsed: 0,
+      connectedChannelsLimit: 25,
+    });
+  };
+
+  // Hydrate from localStorage / Cookies on client mount
   useEffect(() => {
     try {
-      // Check for Google Session cookie
+      let loggedInUser: User | null = null;
+
+      // 1. Check for Google Session cookie
       if (typeof document !== 'undefined') {
         const match = document.cookie.match(new RegExp('(^| )sap_google_user=([^;]+)'));
         if (match) {
-          const parsed = JSON.parse(decodeURIComponent(match[2]));
-          if (parsed && parsed.email) {
-            setUser((prev) => ({
-              ...prev,
-              id: parsed.id || prev.id,
-              name: parsed.name || prev.name,
-              email: parsed.email,
-              avatar: parsed.avatar || prev.avatar,
-              provider: 'google',
-            }));
-            setIsAuthenticated(true);
+          try {
+            const parsed = JSON.parse(decodeURIComponent(match[2]));
+            if (parsed && parsed.email) {
+              loggedInUser = {
+                id: parsed.id || `google_${Date.now()}`,
+                name: parsed.name || parsed.email.split('@')[0],
+                email: parsed.email.toLowerCase().trim(),
+                avatar: parsed.avatar || '/icons/social/google.png',
+                role: 'owner',
+                provider: 'google',
+              };
+            }
+          } catch (e) {
+            console.error('Failed parsing cookie:', e);
           }
         }
       }
 
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.accounts) setAccounts(parsed.accounts);
-        if (parsed.pages) setPages(parsed.pages);
-        if (parsed.categories) setCategories(parsed.categories);
-        if (parsed.posts) setPosts(parsed.posts);
-        if (parsed.sigTemplates) setSigTemplates(parsed.sigTemplates);
-        if (parsed.pageAnalytics) setPageAnalytics(parsed.pageAnalytics);
-        if (parsed.postPerformances) setPostPerformances(parsed.postPerformances);
-        if (parsed.postComments) setPostComments(parsed.postComments);
-        if (parsed.automations) setAutomations(parsed.automations);
-        if (parsed.settings) setSettings(parsed.settings);
-        if (parsed.workspace) setWorkspace(parsed.workspace);
+      // 2. Fallback to localStorage session
+      if (!loggedInUser && typeof localStorage !== 'undefined') {
+        const savedEmail = localStorage.getItem('sap_current_user_email');
+        if (savedEmail) {
+          const storedUserStr = localStorage.getItem(`sap_user_profile_${savedEmail.replace(/[^a-z0-9_]/g, '_')}`);
+          if (storedUserStr) {
+            try {
+              loggedInUser = JSON.parse(storedUserStr);
+            } catch {}
+          }
+        }
+      }
+
+      if (loggedInUser && loggedInUser.email) {
+        setUser(loggedInUser);
+        setIsAuthenticated(true);
+        loadUserDataForEmail(loggedInUser.email, loggedInUser.name);
+      } else {
+        setIsAuthenticated(false);
+        setUser(GUEST_USER);
       }
     } catch (e) {
-      console.error('Failed to load state from localStorage:', e);
+      console.error('Failed to load state during hydration:', e);
     } finally {
       setIsHydrated(true);
     }
   }, []);
 
-  // Save to localStorage on state changes
+  // Save to user-isolated localStorage on state changes
   useEffect(() => {
-    if (!isHydrated) return;
+    if (!isHydrated || !isAuthenticated || !user?.email) return;
     try {
+      const storageKey = getStorageKeyForEmail(user.email);
       const payload = {
         accounts,
         pages,
@@ -195,7 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         settings,
         workspace,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(storageKey, JSON.stringify(payload));
     } catch (e) {
       console.error('Failed to save state to localStorage:', e);
     }
@@ -212,6 +313,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     settings,
     workspace,
     isHydrated,
+    isAuthenticated,
+    user?.email,
   ]);
 
   const addAccount = (
@@ -430,10 +533,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Real & Live Utilities
   const loginWithGoogle = (profile: { id?: string; name: string; email: string; avatar?: string }) => {
+    const cleanEmail = profile.email.toLowerCase().trim();
     const googleUser: User = {
-      id: profile.id || `google_${Date.now()}`,
-      name: profile.name,
-      email: profile.email,
+      id: profile.id || `google_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+      name: profile.name || cleanEmail.split('@')[0],
+      email: cleanEmail,
       avatar: profile.avatar || '/icons/social/google.png',
       role: 'owner',
       provider: 'google',
@@ -443,13 +547,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (typeof document !== 'undefined') {
       document.cookie = `sap_google_user=${encodeURIComponent(JSON.stringify(googleUser))}; path=/; max-age=2592000; SameSite=Lax`;
     }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('sap_current_user_email', cleanEmail);
+      localStorage.setItem(
+        `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+        JSON.stringify(googleUser)
+      );
+    }
+    loadUserDataForEmail(cleanEmail, googleUser.name);
   };
 
   const logout = () => {
     if (typeof document !== 'undefined') {
       document.cookie = 'sap_google_user=; path=/; max-age=0; SameSite=Lax';
     }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('sap_current_user_email');
+    }
     setIsAuthenticated(false);
+    setUser(GUEST_USER);
+    setAccounts([]);
+    setPages([]);
+    setCategories(INITIAL_CATEGORIES);
+    setPosts([]);
+    setSigTemplates(INITIAL_SIG_TEMPLATES);
+    setPageAnalytics({});
+    setPostPerformances([]);
+    setPostComments([]);
+    setAutomations([]);
   };
 
   const clearAllData = () => {
@@ -462,6 +587,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPostPerformances([]);
     setPostComments([]);
     try {
+      if (user?.email) {
+        localStorage.removeItem(getStorageKeyForEmail(user.email));
+      }
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem('sap_saas_app_state_v2');
     } catch (e) {

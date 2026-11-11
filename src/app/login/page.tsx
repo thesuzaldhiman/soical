@@ -30,7 +30,7 @@ export default function LoginPage() {
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loginWithGoogle, isAuthenticated } = useApp();
+  const { user, loginWithGoogle, isAuthenticated, logout } = useApp();
 
   const [emailInput, setEmailInput] = useState('');
   const [googleNameInput, setGoogleNameInput] = useState('Suzal Dhiman');
@@ -102,104 +102,142 @@ function LoginContent() {
 
       {/* Main Login Card (Tasklify Clean Neutral Studio Aesthetic) */}
       <div className="max-w-md w-full mx-auto my-auto animate-fade-in">
-        <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6">
-          {/* Header */}
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto shadow-xs">
-              <GoogleGLogo className="w-6 h-6" />
+        {isAuthenticated && user?.email ? (
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6 text-center animate-fade-in">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900 border-2 border-white shadow-xs mx-auto overflow-hidden flex items-center justify-center text-white font-bold text-xl">
+              {user.avatar ? (
+                <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+              ) : (
+                <span>{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</span>
+              )}
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Sign in with Google
-            </h1>
-            <p className="text-xs text-slate-500 leading-relaxed font-medium">
-              Access your multi-platform broadcasting workspace, connected Facebook Pages, and Telegram channels.
-            </p>
-          </div>
 
-          {/* Missing Google Client ID Helper Banner */}
-          {isGoogleMissing && (
-            <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs space-y-2 text-left animate-fade-in">
-              <div className="flex items-center gap-2 font-bold text-amber-950">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>Google Client ID Setup Required</span>
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Active Google Session</span>
               </div>
-              <p className="text-[11px] leading-relaxed text-amber-900">
-                To enable live Google OAuth popup on Vercel, add <strong>GOOGLE_CLIENT_ID</strong> and <strong>GOOGLE_CLIENT_SECRET</strong> in your Vercel Environment Variables.
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">{user.name}</h2>
+              <p className="text-xs text-slate-500 font-medium">{user.email}</p>
+            </div>
+
+            <div className="space-y-2.5 pt-2">
+              <Link
+                href="/dashboard"
+                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs hover:scale-[1.01] active:scale-[0.99]"
+              >
+                <span>Continue to Dashboard</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="w-full py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 text-slate-600 font-semibold text-xs transition-colors"
+              >
+                Sign Out / Use Another Account
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6">
+            {/* Header */}
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto shadow-xs">
+                <GoogleGLogo className="w-6 h-6" />
+              </div>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                Sign in with Google
+              </h1>
+              <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                Access your multi-platform broadcasting workspace, connected Facebook Pages, and Telegram channels.
               </p>
-              <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-amber-200 font-mono text-[10px]">
-                <span className="truncate">{googleRedirectUri}</span>
-                <button
-                  type="button"
-                  onClick={handleCopyUri}
-                  className="ml-2 font-bold text-slate-900 hover:text-black flex items-center gap-1 shrink-0"
-                >
-                  <Copy className="w-3 h-3" />
-                  <span>{copiedRedirectUri ? 'Copied' : 'Copy'}</span>
-                </button>
+            </div>
+
+            {/* Missing Google Client ID Helper Banner */}
+            {isGoogleMissing && (
+              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs space-y-2 text-left animate-fade-in">
+                <div className="flex items-center gap-2 font-bold text-amber-950">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Google Client ID Setup Required</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-amber-900">
+                  To enable live Google OAuth popup on Vercel, add <strong>GOOGLE_CLIENT_ID</strong> and <strong>GOOGLE_CLIENT_SECRET</strong> in your Vercel Environment Variables.
+                </p>
+                <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-amber-200 font-mono text-[10px]">
+                  <span className="truncate">{googleRedirectUri}</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyUri}
+                    className="ml-2 font-bold text-slate-900 hover:text-black flex items-center gap-1 shrink-0"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedRedirectUri ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Primary Action: Official Google Login Button */}
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={handleLiveGoogleOAuth}
-              className="w-full py-3 px-4 rounded-xl border border-[#E2E8F0] hover:border-slate-400 bg-white hover:bg-[#F8F9FA] text-slate-800 font-bold text-xs flex items-center justify-center gap-3 transition-all shadow-2xs hover:scale-[1.01] active:scale-[0.99] group"
-            >
-              <GoogleGLogo className="w-4 h-4 shrink-0" />
-              <span>Continue with Google</span>
-            </button>
+            {/* Primary Action: Official Google Login Button */}
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={handleLiveGoogleOAuth}
+                className="w-full py-3 px-4 rounded-xl border border-[#E2E8F0] hover:border-slate-400 bg-white hover:bg-[#F8F9FA] text-slate-800 font-bold text-xs flex items-center justify-center gap-3 transition-all shadow-2xs hover:scale-[1.01] active:scale-[0.99] group"
+              >
+                <GoogleGLogo className="w-4 h-4 shrink-0" />
+                <span>Continue with Google</span>
+              </button>
 
-            {/* Direct Google Login Option for instant testing */}
-            <button
-              type="button"
-              onClick={() => setShowDirectGoogleModal(true)}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs hover:scale-[1.01] active:scale-[0.99]"
-            >
-              <span>Instant Google Sign-In (Direct)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Clean Divider */}
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-[#E2E8F0] w-full" />
-            <span className="bg-white px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider relative">
-              or with email
-            </span>
-          </div>
-
-          {/* Work Email Magic Link */}
-          <form onSubmit={handleEmailLogin} className="space-y-3">
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1 text-left">
-                Work Email Address
-              </label>
-              <input
-                type="email"
-                required
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="suzal@khabarmonkey.com"
-                className="w-full px-3 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
-              />
+              {/* Direct Google Login Option for instant testing */}
+              <button
+                type="button"
+                onClick={() => setShowDirectGoogleModal(true)}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs hover:scale-[1.01] active:scale-[0.99]"
+              >
+                <span>Instant Google Sign-In (Direct)</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
 
-            <button
-              type="submit"
-              className="w-full py-2.5 rounded-xl border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors"
-            >
-              Continue with Email
-            </button>
-          </form>
+            {/* Clean Divider */}
+            <div className="relative flex items-center justify-center">
+              <div className="border-t border-[#E2E8F0] w-full" />
+              <span className="bg-white px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider relative">
+                or with email
+              </span>
+            </div>
 
-          {/* Trust & Compliance Badge */}
-          <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-400">
-            <span>🔒 Encrypted TLS Session</span>
-            <span>Zero-Width Anti-Ban Active</span>
+            {/* Work Email Magic Link */}
+            <form onSubmit={handleEmailLogin} className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1 text-left">
+                  Work Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="suzal@khabarmonkey.com"
+                  className="w-full px-3 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl border border-[#E2E8F0] hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors"
+              >
+                Continue with Email
+              </button>
+            </form>
+
+            {/* Trust & Compliance Badge */}
+            <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-400">
+              <span>🔒 Encrypted TLS Session</span>
+              <span>Zero-Width Anti-Ban Active</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Direct Google Account Sign-In Modal */}
