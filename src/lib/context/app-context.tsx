@@ -72,6 +72,11 @@ interface AppContextType {
       pageId?: string;
       fanCount?: number;
       accountId?: string;
+      siteUrl?: string;
+      wpUsername?: string;
+      wpAppPassword?: string;
+      bridgeApiKey?: string;
+      bridgeType?: 'auto-engine' | 'rest-api';
     }
   ) => SocialAccount;
   addPages: (pagesToAdd: SocialPage[]) => void;
@@ -100,6 +105,10 @@ interface AppContextType {
   // Real & Live Utilities
   isAuthenticated: boolean;
   loginWithGoogle: (profile: { id?: string; name: string; email: string; avatar?: string }) => void;
+  loginWithEmail: (
+    email: string,
+    password: string
+  ) => { success: boolean; user?: User; message: string };
   logout: () => void;
   clearAllData: () => void;
   loadDemoData: () => void;
@@ -120,7 +129,8 @@ interface AppContextType {
   registerUser: (
     name: string,
     email: string,
-    tierPreference?: SubscriptionTier
+    tierPreference?: SubscriptionTier,
+    password?: string
   ) => { success: boolean; user: User; message: string };
   switchActiveUser: (userId: string) => void;
 
@@ -206,6 +216,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   saveSigTemplate: noop,
   isAuthenticated: false,
   loginWithGoogle: noop,
+  loginWithEmail: () => ({ success: false, message: '' }),
   logout: noop,
   clearAllData: noop,
   loadDemoData: noop,
@@ -526,6 +537,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pageId?: string;
       fanCount?: number;
       accountId?: string;
+      siteUrl?: string;
+      wpUsername?: string;
+      wpAppPassword?: string;
+      bridgeApiKey?: string;
+      bridgeType?: 'auto-engine' | 'rest-api';
     }
   ): SocialAccount => {
     const newAcc: SocialAccount = {
@@ -537,13 +553,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       status: 'active',
       accessToken: extra?.accessToken,
       botToken: extra?.botToken,
+      siteUrl: extra?.siteUrl,
+      wpUsername: extra?.wpUsername,
+      wpAppPassword: extra?.wpAppPassword,
+      bridgeApiKey: extra?.bridgeApiKey,
+      bridgeType: extra?.bridgeType,
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
       lastCheckedAt: new Date().toISOString(),
     };
     setAccounts((prev) => [newAcc, ...prev]);
 
     // If direct page credentials provided, auto-add destination
-    if (extra?.chatId || extra?.pageId || extra?.accessToken || extra?.botToken) {
+    if (extra?.chatId || extra?.pageId || extra?.accessToken || extra?.botToken || extra?.siteUrl) {
       const newPage: SocialPage = {
         id: `pg_${Date.now()}`,
         accountId: newAcc.id,
@@ -557,10 +578,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         accessToken: extra?.accessToken,
         botToken: extra?.botToken,
         chatId: extra?.chatId,
-        targetUrl: extra?.chatId?.startsWith('@') ? `https://t.me/${extra.chatId.replace('@', '')}` : undefined,
+        siteUrl: extra?.siteUrl,
+        wpUsername: extra?.wpUsername,
+        wpAppPassword: extra?.wpAppPassword,
+        bridgeApiKey: extra?.bridgeApiKey,
+        bridgeType: extra?.bridgeType,
+        targetUrl: extra?.siteUrl || (extra?.chatId?.startsWith('@') ? `https://t.me/${extra.chatId.replace('@', '')}` : undefined),
         permissions:
           platform === 'telegram'
             ? ['post_messages', 'send_media']
+            : platform === 'wordpress'
+            ? ['publish_posts', 'manage_categories']
             : ['pages_manage_posts', 'pages_read_engagement'],
       };
       setPages((prev) => [...prev, newPage]);
@@ -878,10 +906,70 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     loadUserDataForEmail(cleanEmail, googleUser.name);
   };
 
+  const loginWithEmail = (email: string, password: string) => {
+    const cleanEmail = email.toLowerCase().trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, message: 'Please enter a valid email address.' };
+    }
+    if (!password) {
+      return { success: false, message: 'Please enter your password.' };
+    }
+
+    const found = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!found) {
+      return {
+        success: false,
+        message: 'No account found with this email. Please sign up first.',
+      };
+    }
+
+    if (found.provider === 'google' && !found.password) {
+      return {
+        success: false,
+        message: 'This account uses Google Sign-In. Please click "Continue with Google".',
+      };
+    }
+
+    if (found.password && found.password !== password) {
+      return {
+        success: false,
+        message: 'Incorrect password. Please try again.',
+      };
+    }
+
+    const updatedUser: User = {
+      ...found,
+      lastLoginAt: new Date().toISOString(),
+    };
+
+    setAllUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+    setUser(updatedUser);
+    setIsAuthenticated(true);
+
+    if (typeof document !== 'undefined') {
+      document.cookie = 'sap_google_user=; path=/; max-age=0; SameSite=Lax';
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('sap_current_user_email', cleanEmail);
+      localStorage.setItem(
+        `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+        JSON.stringify(updatedUser)
+      );
+    }
+    loadUserDataForEmail(cleanEmail, updatedUser.name);
+
+    return {
+      success: true,
+      user: updatedUser,
+      message: 'Signed in successfully!',
+    };
+  };
+
   const registerUser = (
     name: string,
     email: string,
-    tierPreference: SubscriptionTier = 'starter'
+    tierPreference: SubscriptionTier = 'starter',
+    password?: string
   ) => {
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -905,6 +993,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
       role: isOwner ? 'owner' : 'member',
       provider: 'email',
+      password: password || undefined,
       approvalStatus: isOwner ? 'approved' : 'pending',
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
@@ -1367,6 +1456,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         saveSigTemplate,
         isAuthenticated,
         loginWithGoogle,
+        loginWithEmail,
         logout,
         clearAllData,
         loadDemoData,

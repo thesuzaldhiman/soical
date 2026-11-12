@@ -1,4 +1,4 @@
-export type Platform = 'facebook' | 'instagram' | 'threads' | 'telegram' | 'youtube';
+export type Platform = 'facebook' | 'instagram' | 'threads' | 'telegram' | 'youtube' | 'wordpress';
 
 export type PostType = 'text' | 'image' | 'video' | 'link';
 
@@ -28,6 +28,7 @@ export interface User {
   avatar: string;
   role: 'owner' | 'admin' | 'editor' | 'member';
   provider?: 'google' | 'email' | 'demo';
+  password?: string;
   approvalStatus?: UserApprovalStatus;
   rejectionReason?: string;
   subscription?: UserSubscription;
@@ -58,6 +59,11 @@ export interface SocialAccount {
   tokenExpiresAt?: string;
   lastCheckedAt: string;
   lastErrorMessage?: string;
+  siteUrl?: string;
+  wpUsername?: string;
+  wpAppPassword?: string;
+  bridgeApiKey?: string;
+  bridgeType?: 'auto-engine' | 'rest-api';
 }
 
 export type MonetizationProgramType =
@@ -117,6 +123,11 @@ export interface SocialPage {
   targetUrl?: string;
   linkedInstagramId?: string;
   linkedInstagramName?: string;
+  siteUrl?: string;
+  wpUsername?: string;
+  wpAppPassword?: string;
+  bridgeApiKey?: string;
+  bridgeType?: 'auto-engine' | 'rest-api';
 }
 
 export interface PageCategory {

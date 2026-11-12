@@ -2,7 +2,7 @@
 
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/lib/context/app-context';
 import {
   ShieldCheck,
@@ -11,20 +11,36 @@ import {
   CheckCircle2,
   Radio,
   Copy,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] text-xs font-semibold text-slate-400">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] text-xs font-semibold text-slate-400">
+          Loading...
+        </div>
+      }
+    >
       <LoginContent />
     </Suspense>
   );
 }
 
 function LoginContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, isAuthenticated, logout } = useApp();
+  const { user, isAuthenticated, loginWithEmail, logout } = useApp();
 
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [copiedRedirectUri, setCopiedRedirectUri] = useState(false);
 
   const errorParam = searchParams.get('error');
@@ -40,9 +56,27 @@ function LoginContent() {
     setTimeout(() => setCopiedRedirectUri(false), 2000);
   };
 
-  const handleLiveGoogleOAuth = () => {
-    // Redirect to the server-side Google OAuth initiator
-    window.location.href = '/api/auth/google';
+  const handleEmailLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!email.trim() || !email.includes('@')) {
+      setFormError('Please enter a valid email address.');
+      return;
+    }
+    if (!password) {
+      setFormError('Please enter your password.');
+      return;
+    }
+
+    setSubmitting(true);
+    const res = loginWithEmail(email, password);
+    if (res.success) {
+      router.push('/dashboard');
+    } else {
+      setFormError(res.message);
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -60,7 +94,7 @@ function LoginContent() {
 
         <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span>OAuth 2.0 Secure Session</span>
+          <span>Secure Workspace Session</span>
         </div>
       </div>
 
@@ -70,6 +104,7 @@ function LoginContent() {
           <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6 text-center animate-fade-in">
             <div className="w-16 h-16 rounded-2xl bg-slate-900 border-2 border-white shadow-xs mx-auto overflow-hidden flex items-center justify-center text-white font-bold text-xl">
               {user.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
               ) : (
                 <span>{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</span>
@@ -79,7 +114,9 @@ function LoginContent() {
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Active Google Session</span>
+                <span>
+                  {user.provider === 'email' ? 'Active Email Session' : 'Active Google Session'}
+                </span>
               </div>
               <h2 className="text-xl font-black text-slate-900 tracking-tight">{user.name}</h2>
               <p className="text-xs text-slate-500 font-medium">{user.email}</p>
@@ -96,28 +133,28 @@ function LoginContent() {
               <button
                 type="button"
                 onClick={() => logout()}
-                className="w-full py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 text-slate-600 font-semibold text-xs transition-colors"
+                className="w-full py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 text-slate-600 font-semibold text-xs transition-colors cursor-pointer"
               >
                 Sign Out / Use Another Account
               </button>
             </div>
           </div>
         ) : (
-          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-5">
             {/* Header */}
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto shadow-xs">
-                <GoogleGLogo className="w-6 h-6" />
+            <div className="text-center space-y-1.5">
+              <div className="w-11 h-11 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto shadow-xs">
+                <Radio className="w-5 h-5" />
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                Sign in with Google
+                Sign in to Workspace
               </h1>
               <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                Access your multi-platform broadcasting workspace, connected Facebook Pages, and Telegram channels.
+                Sign in with your approved email &amp; password or continue with Google.
               </p>
             </div>
 
-            {/* Google OAuth Error / Setup Helper Banner */}
+            {/* Google OAuth / Form Error Banner */}
             {isGoogleMissing ? (
               <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs space-y-2 text-left animate-fade-in">
                 <div className="flex items-center gap-2 font-bold text-amber-950">
@@ -139,30 +176,82 @@ function LoginContent() {
                   </button>
                 </div>
               </div>
-            ) : errorParam ? (
-              <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 text-rose-900 text-xs flex items-start gap-2 text-left animate-fade-in">
+            ) : errorParam || formError ? (
+              <div className="p-3 rounded-2xl bg-rose-50/80 border border-rose-200 text-rose-900 text-xs flex items-start gap-2 text-left animate-fade-in">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-rose-950">Google Sign-In Failed</div>
-                  <p className="text-[11px] text-rose-800 mt-0.5">{errorParam}</p>
+                  <div className="font-bold text-rose-950">Sign-In Failed</div>
+                  <p className="text-[11px] text-rose-800 mt-0.5">{formError || errorParam}</p>
                 </div>
               </div>
             ) : null}
 
-            {/* Primary Action: Official Google Login Button */}
-            <div className="space-y-3">
+            {/* Email & Password Login Form */}
+            <form onSubmit={handleEmailLogin} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Email Address</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-9 pr-9 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
               <button
-                type="button"
-                onClick={handleLiveGoogleOAuth}
-                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-3 transition-all shadow-xs hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                type="submit"
+                disabled={submitting}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-60"
               >
-                <span className="w-5 h-5 rounded-md bg-white flex items-center justify-center shrink-0">
-                  <GoogleGLogo className="w-3.5 h-3.5" />
-                </span>
-                <span>Continue with Google</span>
+                <span>{submitting ? 'Signing in...' : 'Sign In with Email'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
+            </form>
+
+            {/* Divider */}
+            <div className="relative flex items-center justify-center">
+              <div className="w-full border-t border-[#E2E8F0]" />
+              <span className="absolute bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Or
+              </span>
             </div>
+
+            {/* Official Google Login Link */}
+            <a
+              href="/api/auth/google"
+              className="w-full py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-slate-50 text-slate-800 font-bold text-xs flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
+            >
+              <GoogleGLogo className="w-4 h-4" />
+              <span>Continue with Google</span>
+            </a>
 
             {/* Link to Signup */}
             <div className="text-center text-xs text-slate-500 pt-1">
@@ -183,7 +272,7 @@ function LoginContent() {
 
       {/* Bottom Footer */}
       <div className="max-w-6xl w-full mx-auto text-center text-xs text-slate-400 py-2">
-        <span>© {new Date().getFullYear()} Social Auto Poster. All rights reserved.</span>
+        <span>© 2026 Social Auto Poster. All rights reserved.</span>
       </div>
     </div>
   );

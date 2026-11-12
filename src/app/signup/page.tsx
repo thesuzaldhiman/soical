@@ -47,7 +47,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const res = registerUser(name, email, selectedPlan);
+      const res = registerUser(name, email, selectedPlan, password);
       if (res.success) {
         // Redirect to dashboard where ApprovalGate handles the pending screen
         router.push('/dashboard');
