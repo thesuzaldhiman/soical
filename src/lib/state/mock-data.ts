@@ -799,6 +799,22 @@ export const INITIAL_AUTOMATIONS: AutomationFeed[] = [];
 
 export const DEMO_AUTOMATIONS: AutomationFeed[] = [
   {
+    id: 'auto_rss_1',
+    name: 'Himachal Breaking RSS → WP & Social Auto-Poster',
+    type: 'rss',
+    feedUrl: 'https://news.google.com/rss/search?q=Himachal+Pradesh+when:24h&hl=hi&gl=IN&ceid=IN:hi',
+    targetCategoryId: 'cat_1',
+    targetPageIds: ['pg_wp_1', 'pg_1', 'pg_2'],
+    isActive: true,
+    intervalMinutes: 15,
+    lastCheckedAt: '2026-11-12T07:00:00.000Z',
+    itemsProcessed: 28,
+    autoGenerateImage: true,
+    linkInComment: true,
+    postStatus: 'published',
+    lastDispatchedTitle: 'शिमला में मौसम का नया अलर्ट, ऊंचाई वाले इलाकों में बर्फबारी',
+  },
+  {
     id: 'auto_1',
     name: 'Blogger → Social Image Card Auto-Poster',
     type: 'blogger',

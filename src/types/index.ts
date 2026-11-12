@@ -291,12 +291,19 @@ export interface AutomationFeed {
   type: 'blogger' | 'rss' | 'wordpress';
   feedUrl: string;
   targetCategoryId: string;
+  targetPageIds?: string[]; // Specific targets (WordPress, Facebook, Telegram, etc.)
   isActive: boolean;
   intervalMinutes: number;
   lastCheckedAt?: string;
   itemsProcessed: number;
   autoGenerateImage: boolean;
   sigTemplateId?: string;
+  linkInComment?: boolean; // Put link in 1st comment to boost Facebook reach
+  customCaption?: string;
+  postStatus?: 'published' | 'draft';
+  processedGuids?: string[]; // Deduplication history
+  lastDispatchedTitle?: string;
+  maxItemsPerRun?: number;
 }
 
 export interface AppSettings {

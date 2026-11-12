@@ -98,6 +98,7 @@ interface AppContextType {
   deletePost: (postId: string) => void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   createAutomation: (feed: Omit<AutomationFeed, 'id' | 'itemsProcessed'>) => void;
+  updateAutomation: (id: string, partial: Partial<AutomationFeed>) => void;
   toggleAutomation: (id: string) => void;
   deleteAutomation: (id: string) => void;
   saveSigTemplate: (template: SigTemplate) => void;
@@ -211,6 +212,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   deletePost: noop,
   updateSettings: noop,
   createAutomation: noop,
+  updateAutomation: noop,
   toggleAutomation: noop,
   deleteAutomation: noop,
   saveSigTemplate: noop,
@@ -816,6 +818,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       itemsProcessed: 0,
     };
     setAutomations((prev) => [...prev, newFeed]);
+  };
+
+  const updateAutomation = (id: string, partial: Partial<AutomationFeed>) => {
+    setAutomations((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, ...partial } : a))
+    );
   };
 
   const toggleAutomation = (id: string) => {
@@ -1451,6 +1459,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deletePost,
         updateSettings,
         createAutomation,
+        updateAutomation,
         toggleAutomation,
         deleteAutomation,
         saveSigTemplate,

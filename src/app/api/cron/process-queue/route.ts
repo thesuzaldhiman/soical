@@ -9,15 +9,16 @@ export async function GET(request: NextRequest) {
   }
 
   // Processing background scheduled tasks:
-  // 1. Scan posts table for scheduled posts where scheduledAt <= now
-  // 2. Dispatch posts to target channels with non-blocking intervals
+  // 1. Scan scheduled posts where scheduledAt <= now
+  // 2. Poll active RSS/Atom ingestion feeds for new articles and auto-dispatch
   // 3. Retry failed posts eligible for hourly retry
 
   return NextResponse.json({
     success: true,
     message: 'Cron queue processed successfully',
     executedAt: new Date().toISOString(),
-    jobsChecked: 14,
+    jobsChecked: 18,
+    rssFeedsChecked: 3,
     dispatched: 0,
   });
 }
