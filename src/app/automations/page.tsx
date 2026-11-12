@@ -19,6 +19,7 @@ import {
   ArrowRight,
   Layers,
   Check,
+  Download,
 } from 'lucide-react';
 
 export default function AutomationsPage() {
@@ -160,6 +161,20 @@ function AutomationsContent() {
             {copiedWebhook ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{copiedWebhook ? 'Copied' : 'Copy Webhook'}</span>
           </button>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-[#F0F2F6]">
+          <p className="text-[11px] text-slate-500 font-medium">
+            WordPress par direct posting ke liye <strong>Auto Engine v7.5 Bridge</strong> plugin use karein.
+          </p>
+          <a
+            href="/downloads/auto-engine-v7.5-bridge.zip"
+            download="auto-engine-v7.5-bridge.zip"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 transition-colors self-start sm:self-auto shrink-0"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Download Auto Engine Bridge (ZIP)</span>
+          </a>
         </div>
       </div>
 

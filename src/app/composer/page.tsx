@@ -1005,6 +1005,7 @@ function ComposerContent() {
                       { id: 'instagram', label: 'Instagram' },
                       { id: 'telegram', label: 'Telegram' },
                       { id: 'threads', label: 'Threads' },
+                      { id: 'wordpress', label: 'WordPress' },
                     ] as const
                   ).map((plat) => {
                     const isActive = previewPlatform === plat.id;
@@ -1471,6 +1472,98 @@ function ComposerContent() {
                       <p className="text-xs text-slate-700 whitespace-pre-line">{firstComment}</p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* WordPress Blog Post Preview */}
+              {previewPlatform === 'wordpress' && (
+                <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-xs p-4 space-y-3.5">
+                  {/* Top WP Site Banner */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-[#E2E8F0]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-full bg-[#21759B] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                        W
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-slate-900 truncate flex items-center gap-1">
+                          <span>{previewPage?.name || 'WordPress Portal'}</span>
+                          <span className="text-[10px] text-emerald-600 font-bold">● Live</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono truncate">
+                          {previewPage?.siteUrl || 'https://himachalsamachar.com'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold shrink-0">
+                      <span>⚡ Auto Engine v7.5</span>
+                    </span>
+                  </div>
+
+                  {/* Category & Timestamp */}
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase tracking-wider">
+                      {previewPage?.category || 'News Update'}
+                    </span>
+                    <span className="text-[11px] text-slate-400">• Just now</span>
+                    <span className="text-[11px] text-slate-400">• 3 min read</span>
+                  </div>
+
+                  {/* Article Title */}
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 leading-snug break-words">
+                    {message?.split('\n')[0] || 'Your Article Headline Will Appear Here...'}
+                  </h3>
+
+                  {/* Author Byline */}
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <span className="font-semibold text-slate-700">By {previewPage?.name || 'Editorial Staff'}</span>
+                    <span>•</span>
+                    <span>Verified Publisher</span>
+                  </div>
+
+                  {/* Featured Image Container */}
+                  {(postType === 'image' || postType === 'video') && mediaUrl ? (
+                    <div className="relative rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-950/5 flex items-center justify-center p-1">
+                      {postType === 'video' ? (
+                        <video src={mediaUrl} controls className="max-h-[340px] w-auto max-w-full rounded-lg object-contain" />
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={mediaUrl}
+                          alt="WordPress featured image"
+                          className="max-h-[340px] w-auto max-w-full rounded-lg object-contain shadow-xs"
+                        />
+                      )}
+                      <div className="absolute bottom-2.5 right-2.5 bg-black/70 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span>💧 Watermark Active</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-[#F8F9FA] text-center text-xs text-slate-400">
+                      Optional: Add image to display as WordPress Featured Image
+                    </div>
+                  )}
+
+                  {/* Article Body Excerpt */}
+                  <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-line font-normal break-words space-y-1.5">
+                    <p>{message || 'Article content and paragraphs will be published directly to your WordPress posts table with automated SEO formatting and content cleaning.'}</p>
+                  </div>
+
+                  {/* Pinned Note / First Comment */}
+                  {firstComment.trim() && (
+                    <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 space-y-0.5">
+                      <span className="font-bold text-[10px] uppercase tracking-wider text-amber-800">📌 Editor Update / Note:</span>
+                      <p className="text-amber-950 whitespace-pre-line">{firstComment}</p>
+                    </div>
+                  )}
+
+                  {/* Footer Bar */}
+                  <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-slate-500">
+                    <span className="text-[11px] font-semibold text-[#21759B]">🔗 wp-admin/post.php</span>
+                    <button type="button" className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition-colors">
+                      Read Full Post ↗
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

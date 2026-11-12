@@ -283,7 +283,7 @@ function PagesContent() {
         {/* Tier 1: Platform Filter Badges (Full width, no horizontal crowding, ample space) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 flex-wrap">
-            {(['all', 'facebook', 'instagram', 'youtube', 'threads', 'telegram'] as const).map((plat) => {
+            {(['all', 'facebook', 'instagram', 'youtube', 'threads', 'telegram', 'wordpress'] as const).map((plat) => {
               const count =
                 plat === 'all' ? pages.length : pages.filter((p) => p.platform === plat).length;
 
@@ -697,6 +697,8 @@ function PagesContent() {
                     ? 'Subscribers'
                     : selectedPageForModal.platform === 'telegram'
                     ? 'Members'
+                    : selectedPageForModal.platform === 'wordpress'
+                    ? 'Monthly Readers'
                     : 'Followers'}
                 </span>
               </div>

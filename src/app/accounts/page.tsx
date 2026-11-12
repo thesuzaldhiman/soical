@@ -29,6 +29,7 @@ import {
   Sparkles,
   KeyRound,
   RotateCcw,
+  Download,
 } from 'lucide-react';
 
 export default function AccountsPage() {
@@ -81,6 +82,14 @@ function AccountsContent() {
   // Generic / Threads
   const [accountNameInput, setAccountNameInput] = useState('');
 
+  // WordPress Connect State
+  const [wpSiteUrl, setWpSiteUrl] = useState('');
+  const [wpConnectionMode, setWpConnectionMode] = useState<'auto-engine' | 'rest-api'>('auto-engine');
+  const [wpBridgeKey, setWpBridgeKey] = useState('');
+  const [wpUsername, setWpUsername] = useState('');
+  const [wpAppPassword, setWpAppPassword] = useState('');
+  const [wpSiteName, setWpSiteName] = useState('');
+
   // Status & loading
   const [isVerifying, setIsVerifying] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -96,6 +105,7 @@ function AccountsContent() {
     threads: `${currentOrigin}/api/auth/callback/threads`,
     youtube: `${currentOrigin}/api/auth/callback/youtube`,
     telegram: 'No redirect URI needed (Bot Token & Channel ID Direct)',
+    wordpress: 'No redirect URI needed (Auto Engine Bridge API & REST API)',
   };
 
   // Check for pending imported pages from Facebook OAuth callback
@@ -371,6 +381,69 @@ function AccountsContent() {
     setConnectModalOpen(false);
   };
 
+  // 5. WordPress Connect (Auto Engine Bridge API & Standard REST API)
+  const handleConnectWordPress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConnectError(null);
+    setConnectSuccess(null);
+    setIsVerifying(true);
+
+    try {
+      const res = await fetch('/api/connect/wordpress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteUrl: wpSiteUrl,
+          connectionMode: wpConnectionMode,
+          bridgeKey: wpBridgeKey,
+          username: wpUsername,
+          appPassword: wpAppPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.verified) {
+        setConnectError(data.error || 'Failed to verify WordPress site.');
+        setIsVerifying(false);
+        return;
+      }
+
+      const finalName = wpSiteName.trim() || data.siteName || 'WordPress Portal';
+      const cleanUrl = data.siteUrl || wpSiteUrl.trim().replace(/\/+$/, '');
+
+      // Add to context state
+      addAccount('wordpress', `${finalName} (WP)`, {
+        siteUrl: cleanUrl,
+        bridgeApiKey: wpBridgeKey,
+        wpUsername,
+        wpAppPassword,
+        bridgeType: wpConnectionMode,
+        avatarUrl: '/icons/social/wordpress.png',
+        fanCount: 25000,
+      });
+
+      setConnectSuccess(
+        `Successfully connected to WordPress site "${finalName}" via ${
+          wpConnectionMode === 'auto-engine' ? 'Auto Engine Bridge v7.5' : 'WordPress REST API'
+        }!`
+      );
+      setWpSiteUrl('');
+      setWpBridgeKey('');
+      setWpUsername('');
+      setWpAppPassword('');
+      setWpSiteName('');
+      setTimeout(() => {
+        setConnectModalOpen(false);
+        setConnectSuccess(null);
+      }, 1500);
+    } catch (err: unknown) {
+      setConnectError(err instanceof Error ? err.message : 'Network error connecting to WordPress.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const platformsConfig: {
     id: Platform;
     name: string;
@@ -400,6 +473,11 @@ function AccountsContent() {
       id: 'telegram',
       name: 'Telegram',
       description: 'High-speed Telegram Bot token connection for instant broadcasts and channel updates.',
+    },
+    {
+      id: 'wordpress',
+      name: 'WordPress',
+      description: 'Auto Engine Bridge & REST API for automated news articles, watermarked photos, and blogs.',
     },
   ];
 
@@ -1247,10 +1325,175 @@ function AccountsContent() {
               </div>
             )}
 
-            {/* 4. INSTAGRAM & THREADS (GENERIC) */}
+            {/* 4. WORDPRESS CONNECTION FORM */}
+            {connectPlatformChoice === 'wordpress' && (
+              <form onSubmit={handleConnectWordPress} className="space-y-4">
+                {/* Plugin Download & Instructions Banner */}
+                <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/80 text-xs text-sky-950 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="font-bold flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-[#21759B] text-white flex items-center justify-center text-xs">W</span>
+                      <span>Auto Engine v7.5 WordPress Bridge</span>
+                    </div>
+                    <a
+                      href="/downloads/auto-engine-v7.5-bridge.zip"
+                      download="auto-engine-v7.5-bridge.zip"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#21759B] hover:bg-[#1a5d7c] text-white text-[11px] font-bold shadow-2xs transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download Plugin (ZIP)</span>
+                    </a>
+                  </div>
+                  <p className="text-[11px] text-sky-800 leading-relaxed">
+                    Apni WordPress site par <strong>Auto Engine v7.5</strong> plugin install karein, phir <strong>Auto Engine &gt; Settings &gt; Social Auto Poster</strong> se Secret Key copy karke neeche paste karein.
+                  </p>
+                </div>
+
+                {/* Connection Mode Switcher */}
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
+                    Connection Mode
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setWpConnectionMode('auto-engine')}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
+                        wpConnectionMode === 'auto-engine'
+                          ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
+                          : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      ⚡ Auto Engine Bridge (Fast)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWpConnectionMode('rest-api')}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
+                        wpConnectionMode === 'rest-api'
+                          ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
+                          : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      🔑 Standard WP REST API
+                    </button>
+                  </div>
+                </div>
+
+                {/* Site URL */}
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                    WordPress Site URL
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    value={wpSiteUrl}
+                    onChange={(e) => setWpSiteUrl(e.target.value)}
+                    placeholder="https://himachalsamachar.com"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">Include https:// without trailing slash</span>
+                </div>
+
+                {/* Mode 1: Bridge Key */}
+                {wpConnectionMode === 'auto-engine' && (
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                      Bridge Secret Key
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={wpBridgeKey}
+                      onChange={(e) => setWpBridgeKey(e.target.value)}
+                      placeholder="e.g. 32-character secret key from Auto Engine settings"
+                      className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Found in WP Admin &gt; Auto Engine &gt; Settings &gt; Social Auto Poster Bridge</span>
+                  </div>
+                )}
+
+                {/* Mode 2: Username & Application Password */}
+                {wpConnectionMode === 'rest-api' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        WP Admin Username
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={wpUsername}
+                        onChange={(e) => setWpUsername(e.target.value)}
+                        placeholder="admin"
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        Application Password
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={wpAppPassword}
+                        onChange={(e) => setWpAppPassword(e.target.value)}
+                        placeholder="xxxx xxxx xxxx xxxx"
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Optional Site Nickname */}
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                    Display Label / Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={wpSiteName}
+                    onChange={(e) => setWpSiteName(e.target.value)}
+                    placeholder="e.g. Himachal Samachar Portal"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-medium"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E2E8F0]">
+                  <button
+                    type="button"
+                    onClick={() => setConnectModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA] cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isVerifying}
+                    className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isVerifying ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Verifying Site...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Connect WordPress Site</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* 5. INSTAGRAM & THREADS (GENERIC) */}
             {connectPlatformChoice !== 'telegram' &&
               connectPlatformChoice !== 'facebook' &&
-              connectPlatformChoice !== 'youtube' && (
+              connectPlatformChoice !== 'youtube' &&
+              connectPlatformChoice !== 'wordpress' && (
               <form onSubmit={handleGenericConnect} className="space-y-4">
                 <div className="p-3.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs text-slate-800 space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold">

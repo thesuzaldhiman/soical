@@ -221,6 +221,17 @@ export const DEMO_ACCOUNTS: SocialAccount[] = [
     status: 'active',
     lastCheckedAt: '2026-11-10T12:00:00.000Z',
   },
+  {
+    id: 'acc_wp_1',
+    platform: 'wordpress',
+    accountId: 'wp_himachal_site',
+    name: 'Himachal Samachar Portal (WordPress)',
+    avatarUrl: '/icons/social/wordpress.png',
+    status: 'active',
+    siteUrl: 'https://himachalsamachar.com',
+    bridgeType: 'auto-engine',
+    lastCheckedAt: '2026-11-12T12:00:00.000Z',
+  },
 ];
 
 export const INITIAL_PAGES: SocialPage[] = [];
@@ -514,6 +525,21 @@ export const DEMO_PAGES: SocialPage[] = [
     category: 'Threads Profile',
     isActive: true,
     permissions: ['threads_basic', 'threads_content_publish'],
+  },
+  {
+    id: 'pg_wp_1',
+    accountId: 'acc_wp_1',
+    platform: 'wordpress',
+    pageId: 'wp_himachal_site',
+    name: 'Himachal Samachar (WP Portal)',
+    avatarUrl: '/icons/social/wordpress.png',
+    fanCount: 52400,
+    followersCount: 52400,
+    followersDeltaToday: 180,
+    siteUrl: 'https://himachalsamachar.com',
+    bridgeType: 'auto-engine',
+    category: 'Breaking News',
+    isActive: true,
   },
 ];
 

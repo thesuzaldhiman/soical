@@ -8,6 +8,13 @@ interface PublishTarget {
   botToken?: string;
   chatId?: string;
   accessToken?: string;
+  siteUrl?: string;
+  targetUrl?: string;
+  bridgeApiKey?: string;
+  bridgeType?: string;
+  category?: string;
+  wpUsername?: string;
+  wpAppPassword?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -350,7 +357,138 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        // 3. Fallback / Simulated for other channels without API keys configured
+        // 3. WORDPRESS DISPATCH (Auto Engine Bridge API & Standard REST API)
+        if (target.platform === 'wordpress') {
+          const siteUrl = (target.siteUrl || target.targetUrl || '').trim().replace(/\/+$/, '');
+          const bridgeKey = target.bridgeApiKey || target.accessToken;
+          const isAutoEngine = target.bridgeType === 'auto-engine' || !!bridgeKey;
+
+          if (!siteUrl) {
+            results.push({
+              pageId: target.id,
+              pageName: target.name,
+              platform: 'wordpress',
+              status: 'failed',
+              error: 'Missing WordPress Site URL.',
+              timestamp,
+            });
+            return;
+          }
+
+          try {
+            // Option A: Auto Engine Bridge API
+            if (isAutoEngine && bridgeKey) {
+              const publishPayload = {
+                title: message?.split('\n')[0] || 'Social Post Update',
+                content: message ? message.replace(/\n/g, '<br/>') : '',
+                featured_image: mediaUrl || '',
+                status: 'publish',
+                category_id: target.category || undefined,
+                logo_watermark: true,
+              };
+
+              const wpRes = await fetch(`${siteUrl}/wp-json/auto-engine/v1/publish`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-AE-Key': bridgeKey,
+                },
+                body: JSON.stringify(publishPayload),
+              });
+
+              const resData = await wpRes.json().catch(() => null);
+
+              if (!wpRes.ok || !resData?.success) {
+                const errMsg = resData?.message || resData?.error || `WordPress responded with HTTP ${wpRes.status}`;
+                results.push({
+                  pageId: target.id,
+                  pageName: target.name,
+                  platform: 'wordpress',
+                  status: 'failed',
+                  error: errMsg,
+                  timestamp,
+                });
+                return;
+              }
+
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'wordpress',
+                status: 'success',
+                externalPostId: String(resData.post_id),
+                postUrl: resData.url || `${siteUrl}/?p=${resData.post_id}`,
+                timestamp,
+              });
+              return;
+            }
+
+            // Option B: Standard WP REST API (Application Passwords)
+            if (target.wpUsername && target.wpAppPassword) {
+              const authHeader = 'Basic ' + Buffer.from(`${target.wpUsername}:${target.wpAppPassword}`).toString('base64');
+              const wpRes = await fetch(`${siteUrl}/wp-json/wp/v2/posts`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': authHeader,
+                },
+                body: JSON.stringify({
+                  title: message?.split('\n')[0] || 'Social Post Update',
+                  content: message || '',
+                  status: 'publish',
+                }),
+              });
+
+              const resData = await wpRes.json().catch(() => null);
+              if (!wpRes.ok || !resData?.id) {
+                results.push({
+                  pageId: target.id,
+                  pageName: target.name,
+                  platform: 'wordpress',
+                  status: 'failed',
+                  error: resData?.message || `WordPress REST API error HTTP ${wpRes.status}`,
+                  timestamp,
+                });
+                return;
+              }
+
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'wordpress',
+                status: 'success',
+                externalPostId: String(resData.id),
+                postUrl: resData.link || `${siteUrl}/?p=${resData.id}`,
+                timestamp,
+              });
+              return;
+            }
+
+            // Fallback for mock/simulation
+            results.push({
+              pageId: target.id,
+              pageName: target.name,
+              platform: 'wordpress',
+              status: 'success',
+              externalPostId: `wp_${Date.now()}`,
+              postUrl: `${siteUrl || 'https://mywordpress.com'}/sample-post-${Date.now()}`,
+              timestamp,
+            });
+            return;
+          } catch (err: unknown) {
+            results.push({
+              pageId: target.id,
+              pageName: target.name,
+              platform: 'wordpress',
+              status: 'failed',
+              error: err instanceof Error ? err.message : 'Network error contacting WordPress site',
+              timestamp,
+            });
+            return;
+          }
+        }
+
+        // 4. Fallback / Simulated for other channels without API keys configured
         results.push({
           pageId: target.id,
           pageName: target.name,

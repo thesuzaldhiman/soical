@@ -24,6 +24,8 @@ export function SocialIcon({ platform, className = 'w-5 h-5', size }: SocialIcon
     threads: '/icons/social/threads.png',
     telegram: '/icons/social/telegram.png',
     tg: '/icons/social/telegram.png',
+    wordpress: '/icons/social/wordpress.png',
+    wp: '/icons/social/wordpress.png',
   };
 
   const matchedKey = Object.keys(imageMap).find((k) => norm.includes(k));
@@ -36,6 +38,27 @@ export function SocialIcon({ platform, className = 'w-5 h-5', size }: SocialIcon
         className={`object-contain shrink-0 select-none ${className}`}
         {...dimensionProps}
       />
+    );
+  }
+
+  // 1.5 WordPress Official SVG Badge
+  if (norm.includes('wordpress') || norm === 'wp') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={`shrink-0 ${className}`}
+        {...dimensionProps}
+      >
+        <circle cx="12" cy="12" r="12" fill="#21759B" />
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M12 2C6.486 2 2 6.486 2 12c0 5.515 4.486 10 10 10s10-4.485 10-10c0-5.514-4.486-10-10-10zm-1.077 15.63l-2.883-7.986c.451-.02.879-.068.879-.068.411-.049.362-.638-.049-.638 0 0-1.246.1-2.052.1-.219 0-.683-.024-1.194-.051C7.26 6.079 9.479 4.2 12 4.2c2.148 0 4.072 1.258 5.437 3.097-.044-.002-.089-.007-.132-.007-.805 0-1.378.699-1.378 1.45 0 .674.39 1.245.803 1.916.316.541.685 1.218.685 2.203 0 .707-.22 1.62-.634 2.766l-2.607 7.781c-.04.103-.078.204-.117.304C13.344 19.866 12.69 20 12 20c-.394 0-.776-.044-1.147-.116.027-.084.05-.17.07-.254zm7.42-7.534c0-.498-.179-.844-.333-1.118-.244-.41-.475-.75-.475-1.155 0-.451.342-.873.824-.873.04 0 .076.005.114.009C19.26 8.528 19.8 10.198 19.8 12c0 2.279-.884 4.354-2.327 5.903l-1.13-3.807zm-7.614 7.647L7.388 9.94c.389-.02.755-.068.755-.068.411-.049.363-.638-.048-.638 0 0-1.247.1-2.054.1-.113 0-.315-.008-.54-.021C6.98 7.377 9.324 6.2 12 6.2c.875 0 1.716.126 2.51.357-.024.162-.038.332-.038.513 0 .674.391 1.245.804 1.916.315.541.684 1.218.684 2.203 0 .759-.253 1.761-.716 3.007L13.729 20c-.496.088-1.006.136-1.529.136-.547 0-1.079-.052-1.594-.148.04-.08.082-.161.123-.245z"
+          fill="#FFFFFF"
+        />
+      </svg>
     );
   }
 
