@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
       linkUrl = '',
       commentText = '',
       contentHtml = '',
+      isAiGenerated = false,
       targets = [],
     } = body;
 
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
       linkUrl,
       commentText,
       contentHtml,
+      isAiGenerated: Boolean(isAiGenerated),
       targets: targets as PublishTarget[],
     });
 

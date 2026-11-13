@@ -91,6 +91,7 @@ function ComposerContent() {
   const [mediaMode, setMediaMode] = useState<'upload' | 'url'>('upload');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaFileName, setMediaFileName] = useState<string | null>(null);
+  const [isAiGenerated, setIsAiGenerated] = useState(false);
 
   // Scheduling
   const [isScheduleMode, setIsScheduleMode] = useState(false);
@@ -288,6 +289,7 @@ function ComposerContent() {
     setMessage('');
     setLinkUrl('');
     setFirstComment('');
+    setIsAiGenerated(false);
     removeMedia();
     setScheduledDateTime('');
     setIsScheduleMode(false);
@@ -385,6 +387,7 @@ function ComposerContent() {
           mediaUrl: activeMediaUrl || undefined,
           linkUrl: activeLinkUrl || undefined,
           commentText: firstComment.trim() || undefined,
+          isAiGenerated,
           targets: targetPages.map((p) => {
             const acc = accounts.find((a) => a.id === p.accountId);
             return {
@@ -859,6 +862,44 @@ function ComposerContent() {
             />
           </div>
 
+          {/* AI Content Label Toggle (Meta AI Transparency) */}
+          <div className="pt-3 border-t border-[#E2E8F0] space-y-2">
+            <div className="p-4 rounded-2xl border border-[#E2E8F0] bg-[#F8F9FD] flex items-center justify-between gap-3 transition-colors">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  <span className="text-xs font-bold text-slate-900">
+                    AI Content Label (Meta AI Transparency)
+                  </span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                      isAiGenerated
+                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    {isAiGenerated ? 'Marked as AI' : 'Original Content'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {isAiGenerated
+                    ? 'Meta/Facebook par "AI Info" label lagega. AI Transparency disclosures include honge.'
+                    : 'Standard Post: AI label nahi lagega. Post pure authentic original image ki tarah jayegi.'}
+                </p>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={isAiGenerated}
+                  onChange={(e) => setIsAiGenerated(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+          </div>
+
           {/* 4. When to Publish + Anti-Ban Interval */}
           <div className="space-y-5 pt-4 border-t border-[#E2E8F0]">
             <div className="space-y-3">
@@ -1087,7 +1128,13 @@ function ComposerContent() {
 
                   {/* Media (Uncropped full aspect container) */}
                   {(postType === 'image' || postType === 'video') && mediaUrl && (
-                    <div className="rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-950/5 flex items-center justify-center p-1">
+                    <div className="relative rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-950/5 flex items-center justify-center p-1">
+                      {isAiGenerated && (
+                        <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-black/80 backdrop-blur-xs text-[10px] font-bold text-white flex items-center gap-1 shadow-md z-10">
+                          <Sparkles className="w-2.5 h-2.5 text-purple-400" />
+                          <span>AI info</span>
+                        </div>
+                      )}
                       {postType === 'video' ? (
                         <video src={mediaUrl} controls className="max-h-[380px] w-auto max-w-full rounded-lg object-contain" />
                       ) : (

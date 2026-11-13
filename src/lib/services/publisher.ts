@@ -23,6 +23,7 @@ export interface DispatchOptions {
   linkUrl?: string;
   commentText?: string;
   contentHtml?: string;
+  isAiGenerated?: boolean;
   targets: PublishTarget[];
 }
 
@@ -255,6 +256,9 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                   form.append('source', blob, `photo_${Date.now()}.${ext}`);
                   if (message) form.append('caption', message);
                   form.append('access_token', accessToken);
+                  if (options.isAiGenerated) {
+                    form.append('is_ai_generated', 'true');
+                  }
 
                   const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
                     method: 'POST',
@@ -267,6 +271,9 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 formData.append('url', mediaUrl);
                 if (message) formData.append('caption', message);
                 formData.append('access_token', accessToken);
+                if (options.isAiGenerated) {
+                  formData.append('is_ai_generated', 'true');
+                }
 
                 const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
                   method: 'POST',
