@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/utils/url';
 
 export async function GET(request: NextRequest) {
-  const host = request.headers.get('host') || 'localhost:3000';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const currentOrigin = `${protocol}://${host}`;
+  const baseUrl = getBaseUrl(request);
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
@@ -16,13 +15,13 @@ export async function GET(request: NextRequest) {
         `/accounts?error=${encodeURIComponent(
           errorDescription || error || 'Facebook authentication was cancelled'
         )}`,
-        request.url
+        baseUrl
       )
     );
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL('/accounts?error=no_auth_code_received', request.url));
+    return NextResponse.redirect(new URL('/accounts?error=no_auth_code_received', baseUrl));
   }
 
   // Check for app credentials in cookies or env
@@ -38,7 +37,7 @@ export async function GET(request: NextRequest) {
     } catch {}
   }
 
-  const redirectUri = `${currentOrigin}/api/auth/callback/facebook`;
+  const redirectUri = `${baseUrl}/api/auth/callback/facebook`;
 
   if (appId && appSecret) {
     try {
@@ -53,51 +52,58 @@ export async function GET(request: NextRequest) {
       const tokenData = await tokenRes.json();
 
       if (tokenData.access_token) {
-        const userToken = tokenData.access_token;
+        // 2. Fetch User Profile & Pages
+        const pagesUrl = `https://graph.facebook.com/v19.0/me/accounts?access_token=${encodeURIComponent(
+          tokenData.access_token
+        )}&fields=id,name,access_token,category,tasks,picture{url}`;
+        const pagesRes = await fetch(pagesUrl);
+        const pagesData = await pagesRes.json();
 
-        // 2. Fetch User's Pages via /me/accounts
-        const accountsRes = await fetch(
-          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,fan_count,picture.type(large),access_token,tasks&access_token=${userToken}`
-        );
-        const accountsData = await accountsRes.json();
-        const pages = accountsData.data || [];
+        const userUrl = `https://graph.facebook.com/v19.0/me?access_token=${encodeURIComponent(
+          tokenData.access_token
+        )}&fields=id,name,picture{url}`;
+        const userRes = await fetch(userUrl);
+        const userData = await userRes.json();
+
+        // 3. Set Cookie with payload and redirect to /accounts
+        const payload = {
+          user: userData,
+          userAccessToken: tokenData.access_token,
+          pages: pagesData.data || [],
+        };
 
         const redirectResponse = NextResponse.redirect(
-          new URL(
-            `/accounts?auth=facebook_success&pages_found=${pages.length}`,
-            request.url
-          )
+          new URL('/accounts?auth=facebook_success', baseUrl)
         );
 
-        // Put pages in cookie so client can hydrate them into state
         redirectResponse.cookies.set(
           'sap_pending_fb_import',
-          JSON.stringify({
-            userToken,
-            pages: pages.map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              fanCount: p.fan_count || 0,
-              avatarUrl: p.picture?.data?.url || '',
-              accessToken: p.access_token,
-            })),
-          }),
+          JSON.stringify(payload),
           {
             path: '/',
             maxAge: 3600,
             httpOnly: false,
+            sameSite: 'lax',
           }
         );
 
         return redirectResponse;
+      } else {
+        const errorMsg = tokenData.error?.message || 'Token exchange failed';
+        return NextResponse.redirect(
+          new URL(`/accounts?error=${encodeURIComponent(errorMsg)}`, baseUrl)
+        );
       }
-    } catch (e) {
-      console.error('Error exchanging Facebook OAuth token:', e);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown OAuth error';
+      return NextResponse.redirect(
+        new URL(`/accounts?error=${encodeURIComponent(message)}`, baseUrl)
+      );
     }
   }
 
-  // Fallback: redirect to accounts with the code so client can complete
+  // Fallback if client-side exchange is preferred
   return NextResponse.redirect(
-    new URL(`/accounts?auth=facebook_code_received&code=${encodeURIComponent(code)}`, request.url)
+    new URL(`/accounts?auth=facebook_code_received&code=${encodeURIComponent(code)}`, baseUrl)
   );
 }

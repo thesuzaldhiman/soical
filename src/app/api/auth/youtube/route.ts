@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/utils/url';
 
 export async function GET(request: NextRequest) {
-  const host = request.headers.get('host') || 'localhost:3000';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const currentOrigin = `${protocol}://${host}`;
+  const baseUrl = getBaseUrl(request);
 
   const searchParams = request.nextUrl.searchParams;
   const clientId =
@@ -18,11 +17,11 @@ export async function GET(request: NextRequest) {
 
   if (!clientId || !clientId.trim()) {
     return NextResponse.redirect(
-      new URL('/settings?error=youtube_client_id_missing', request.url)
+      new URL('/settings?error=youtube_client_id_missing', baseUrl)
     );
   }
 
-  const redirectUri = `${currentOrigin}/api/auth/callback/youtube`;
+  const redirectUri = `${baseUrl}/api/auth/callback/youtube`;
   const scopes = [
     'https://www.googleapis.com/auth/youtube.upload',
     'https://www.googleapis.com/auth/youtube.readonly',

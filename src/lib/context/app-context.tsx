@@ -395,7 +395,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const match = document.cookie.match(new RegExp('(^| )sap_google_user=([^;]+)'));
         if (match) {
           try {
-            const parsed = JSON.parse(decodeURIComponent(match[2]));
+            let cookieStr = match[2];
+            try {
+              cookieStr = decodeURIComponent(cookieStr);
+            } catch {}
+            const parsed = JSON.parse(cookieStr);
             if (parsed && parsed.email) {
               loggedInUser = {
                 id: parsed.id || `google_${Date.now()}`,

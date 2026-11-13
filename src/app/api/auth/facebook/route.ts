@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/utils/url';
 
 export async function GET(request: NextRequest) {
-  const host = request.headers.get('host') || 'localhost:3000';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const currentOrigin = `${protocol}://${host}`;
+  const baseUrl = getBaseUrl(request);
 
   const searchParams = request.nextUrl.searchParams;
   const appId =
@@ -16,11 +15,11 @@ export async function GET(request: NextRequest) {
 
   if (!appId || !appId.trim()) {
     return NextResponse.redirect(
-      new URL('/settings?error=facebook_app_id_missing', request.url)
+      new URL('/settings?error=facebook_app_id_missing', baseUrl)
     );
   }
 
-  const redirectUri = `${currentOrigin}/api/auth/callback/facebook`;
+  const redirectUri = `${baseUrl}/api/auth/callback/facebook`;
   const scope = [
     'public_profile',
     'pages_manage_posts',

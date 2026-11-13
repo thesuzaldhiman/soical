@@ -136,7 +136,9 @@ function SettingsContent() {
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const currentOrigin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://soical.vercel.app';
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_APP_URL || 'https://game.khabarmonkey.com';
 
   // Sync inputs when settings hydrate from localStorage
   useEffect(() => {

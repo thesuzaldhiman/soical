@@ -47,7 +47,9 @@ function LoginContent() {
   const isGoogleMissing = errorParam === 'google_client_id_missing';
 
   const currentOrigin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://soical.vercel.app';
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_APP_URL || 'https://game.khabarmonkey.com';
   const googleRedirectUri = `${currentOrigin}/api/auth/callback/google`;
 
   const handleCopyUri = () => {

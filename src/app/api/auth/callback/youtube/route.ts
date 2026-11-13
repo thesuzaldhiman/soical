@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/utils/url';
 
 export async function GET(request: NextRequest) {
-  const host = request.headers.get('host') || 'localhost:3000';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const currentOrigin = `${protocol}://${host}`;
+  const baseUrl = getBaseUrl(request);
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
@@ -11,12 +10,12 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     return NextResponse.redirect(
-      new URL(`/accounts?error=${encodeURIComponent(error || 'YouTube OAuth was cancelled')}`, request.url)
+      new URL(`/accounts?error=${encodeURIComponent(error || 'YouTube OAuth was cancelled')}`, baseUrl)
     );
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL('/accounts?error=no_auth_code_received', request.url));
+    return NextResponse.redirect(new URL('/accounts?error=no_auth_code_received', baseUrl));
   }
 
   let clientId =
@@ -36,12 +35,12 @@ export async function GET(request: NextRequest) {
     } catch {}
   }
 
-  const redirectUri = `${currentOrigin}/api/auth/callback/youtube`;
+  const redirectUri = `${baseUrl}/api/auth/callback/youtube`;
 
   if (!clientId || !clientSecret) {
     // If no credentials available to exchange token on server, return code
     return NextResponse.redirect(
-      new URL(`/accounts?auth=youtube_code_received&code=${encodeURIComponent(code)}`, request.url)
+      new URL(`/accounts?auth=youtube_code_received&code=${encodeURIComponent(code)}`, baseUrl)
     );
   }
 
@@ -65,37 +64,44 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(
         new URL(
           `/accounts?error=${encodeURIComponent(tokenData.error_description || tokenData.error)}`,
-          request.url
+          baseUrl
         )
       );
     }
 
     const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token;
+    const refreshToken = tokenData.refresh_token || '';
 
-    // 2. Fetch authenticated YouTube Channel via YouTube Data API v3
-    let channelInfo = null;
+    // 2. Fetch the YouTube Channel details
+    let channelInfo: {
+      id: string;
+      name: string;
+      description?: string;
+      customUrl?: string;
+      avatarUrl?: string;
+      subscriberCount?: number;
+      videoCount?: number;
+    } | null = null;
 
     try {
-      const ytRes = await fetch(
+      const channelRes = await fetch(
         'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
         {
           headers: { Authorization: `Bearer ${accessToken}` },
         }
       );
-      const ytData = await ytRes.json();
+      const channelData = await channelRes.json();
 
-      if (ytData.items && ytData.items.length > 0) {
-        const item = ytData.items[0];
+      if (channelData.items && channelData.items.length > 0) {
+        const item = channelData.items[0];
         channelInfo = {
           id: item.id,
           name: item.snippet?.title || 'YouTube Channel',
           description: item.snippet?.description || '',
           customUrl: item.snippet?.customUrl || '',
           avatarUrl:
-            item.snippet?.thumbnails?.high?.url ||
-            item.snippet?.thumbnails?.medium?.url ||
             item.snippet?.thumbnails?.default?.url ||
+            item.snippet?.thumbnails?.high?.url ||
             '/icons/social/youtube.png',
           subscriberCount: parseInt(item.statistics?.subscriberCount || '0', 10),
           videoCount: parseInt(item.statistics?.videoCount || '0', 10),
@@ -138,7 +144,7 @@ export async function GET(request: NextRequest) {
     const redirectResponse = NextResponse.redirect(
       new URL(
         `/accounts?auth=youtube_success&channel_name=${encodeURIComponent(channelInfo.name)}`,
-        request.url
+        baseUrl
       )
     );
 
@@ -161,7 +167,7 @@ export async function GET(request: NextRequest) {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed token exchange';
     return NextResponse.redirect(
-      new URL(`/accounts?error=${encodeURIComponent(msg)}`, request.url)
+      new URL(`/accounts?error=${encodeURIComponent(msg)}`, baseUrl)
     );
   }
 }

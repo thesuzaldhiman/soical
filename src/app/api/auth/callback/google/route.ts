@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/utils/url';
 
 export async function GET(request: NextRequest) {
-  const host = request.headers.get('host') || 'localhost:3000';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const currentOrigin = `${protocol}://${host}`;
+  const baseUrl = getBaseUrl(request);
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
@@ -11,13 +10,13 @@ export async function GET(request: NextRequest) {
 
   if (error || !code) {
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(error || 'no_code')}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(error || 'no_code')}`, baseUrl)
     );
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = `${currentOrigin}/api/auth/callback/google`;
+  const redirectUri = `${baseUrl}/api/auth/callback/google`;
 
   try {
     // 1. Exchange authorization code for tokens
@@ -39,7 +38,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(
         new URL(
           `/login?error=${encodeURIComponent(tokenData.error_description || tokenData.error)}`,
-          request.url
+          baseUrl
         )
       );
     }
@@ -60,12 +59,13 @@ export async function GET(request: NextRequest) {
       provider: 'google',
     };
 
-    // 3. Set Session Cookie & Redirect to Dashboard
+    // 3. Set Session Cookie & Redirect to Dashboard using public baseUrl
     const response = NextResponse.redirect(
-      new URL('/dashboard?auth=google_success', request.url)
+      new URL('/dashboard?auth=google_success', baseUrl)
     );
 
-    response.cookies.set('sap_google_user', JSON.stringify(userProfile), {
+    // Save as URL-encoded JSON string so client cookie parser reads it cleanly
+    response.cookies.set('sap_google_user', encodeURIComponent(JSON.stringify(userProfile)), {
       path: '/',
       maxAge: 60 * 60 * 24 * 30, // 30 days
       httpOnly: false, // Accessible to client-side hydration
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Token exchange error';
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(message)}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(message)}`, baseUrl)
     );
   }
 }
