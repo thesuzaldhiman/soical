@@ -9,8 +9,8 @@ export interface ComposeCardOptions {
 }
 
 /**
- * Composite a complete branded News Card onto an HTML Canvas
- * Matches Social Image Generator (SIG) functionality from user plugin.
+ * Composite a complete branded News Card onto an HTML Canvas.
+ * Supports Layer 1: Photo, Layer 2: Transparent PNG Frame Overlay, Layer 3: Title & Text on top.
  */
 export async function renderTemplateToCanvas(
   canvas: HTMLCanvasElement,
@@ -26,20 +26,12 @@ export async function renderTemplateToCanvas(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not get 2D canvas context');
 
-  // 1. Draw Template Background PNG
-  if (template.templateImageUrl) {
-    try {
-      const bgImg = await loadImageAsync(template.templateImageUrl);
-      ctx.drawImage(bgImg, 0, 0, width, height);
-    } catch {
-      // Fallback dark gradient background
-      drawFallbackBackground(ctx, width, height);
-    }
-  } else {
-    drawFallbackBackground(ctx, width, height);
-  }
+  // Layer mode: 'overlay' is default & recommended for PNG frames with transparent cutouts
+  const isOverlayMode = template.layerMode !== 'background';
 
-  // 2. Draw Featured Image in Featured Image Box
+  // 1. Draw base fallback background
+  drawFallbackBackground(ctx, width, height);
+
   const fBox = template.featuredImageBox || {
     x: 0,
     y: 0,
@@ -47,7 +39,9 @@ export async function renderTemplateToCanvas(
     height: Math.round(height * 0.65),
   };
 
-  if (featuredImageUrl) {
+  // Helper to draw featured photo
+  const drawFeaturedImage = async () => {
+    if (!featuredImageUrl) return;
     try {
       const fImg = await loadImageAsync(featuredImageUrl);
       ctx.save();
@@ -78,9 +72,32 @@ export async function renderTemplateToCanvas(
       ctx.fillText('🖼️ News Photo', fBox.x + fBox.width / 2, fBox.y + fBox.height / 2);
       ctx.restore();
     }
+  };
+
+  // Helper to draw template image
+  const drawTemplateImage = async () => {
+    if (!template.templateImageUrl) return;
+    try {
+      const bgImg = await loadImageAsync(template.templateImageUrl);
+      ctx.drawImage(bgImg, 0, 0, width, height);
+    } catch {
+      // Non-blocking
+    }
+  };
+
+  if (isOverlayMode) {
+    // LAYER 1 (Bottom): Featured Photo
+    await drawFeaturedImage();
+
+    // LAYER 2 (Middle): PNG Template Frame Overlay on top of Photo
+    await drawTemplateImage();
+  } else {
+    // Background mode: Template on bottom, Photo on top
+    await drawTemplateImage();
+    await drawFeaturedImage();
   }
 
-  // 3. Draw Title & Headline in Title Box
+  // LAYER 3 (Top): Draw Title & Headline on top of everything
   const tBox = template.titleBox || {
     x: 40,
     y: Math.round(height * 0.68),
@@ -96,14 +113,14 @@ export async function renderTemplateToCanvas(
 
   renderHeadlineInsideBox(ctx, headline, highlightPhrase, tBox);
 
-  return canvas.toDataURL('image/jpeg', 0.92);
+  return canvas.toDataURL('image/png');
 }
 
 function drawFallbackBackground(ctx: CanvasRenderingContext2D, width: number, height: number) {
   const grad = ctx.createLinearGradient(0, 0, 0, height);
-  grad.addColorStop(0, '#0F172A');
-  grad.addColorStop(0.7, '#1E293B');
-  grad.addColorStop(1, '#020617');
+  grad.addColorStop(0, '#0B0F19');
+  grad.addColorStop(0.65, '#111827');
+  grad.addColorStop(1, '#030712');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 }
@@ -151,7 +168,7 @@ function drawImageCover(
 }
 
 /**
- * Wraps and draws headline text inside the title box with dual-color highlight support
+ * Wraps and draws headline text inside the title box with dual-color highlight support and drop shadow
  */
 function renderHeadlineInsideBox(
   ctx: CanvasRenderingContext2D,
@@ -179,7 +196,11 @@ function renderHeadlineInsideBox(
   const alignment = box.alignment || 'left';
 
   ctx.save();
-  ctx.font = `bold ${fontSize}px "${fontFamily}", "Poppins", sans-serif`;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+  ctx.shadowBlur = Math.max(4, Math.round(fontSize * 0.12));
+  ctx.shadowOffsetX = 1;
+  ctx.shadowOffsetY = 2;
+  ctx.font = `bold ${fontSize}px "${fontFamily}", "Noto Sans Devanagari", "Poppins", sans-serif`;
 
   // Split text into words for wrapping
   const words = text.trim().split(/\s+/);

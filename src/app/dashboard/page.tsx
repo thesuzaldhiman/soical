@@ -38,6 +38,7 @@ import {
   Users,
   ShieldCheck,
   Sparkles,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 
@@ -60,7 +61,58 @@ function DashboardContent() {
 
   // Calendar View State
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
-  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(0); // Default Mon Nov 10
+  const [weekOffset, setWeekOffset] = useState<number>(0);
+
+  // Helper to format Date to YYYY-MM-DD
+  const getIsoDateStr = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper to get matching ISO date key from a Post
+  const getPostIsoDate = (p: Post) => {
+    const dateStr = p.scheduledAt || p.publishedAt || p.createdAt;
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return getIsoDateStr(d);
+  };
+
+  // Calendar Days Definition (Dynamic 7 days of current week, aligned Monday -> Sunday)
+  const calendarDays = useMemo(() => {
+    const baseDate = new Date();
+    baseDate.setDate(baseDate.getDate() + weekOffset * 7);
+
+    // Find Monday of this week (0 is Sunday, 1 is Monday)
+    const dayOfWeek = baseDate.getDay();
+    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(baseDate);
+    monday.setDate(baseDate.getDate() + diffToMon);
+
+    const todayIso = getIsoDateStr(new Date());
+
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const isoDate = getIsoDateStr(d);
+      return {
+        day: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        date: d.getDate().toString(),
+        isoDate,
+        full: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        isToday: isoDate === todayIso,
+      };
+    });
+  }, [weekOffset]);
+
+  // Default selected day index to Today if in current week, else 0
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    return dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  });
 
   // Recent Posts Grid Filters
   const [gridFilter, setGridFilter] = useState<'all' | 'published' | 'scheduled' | 'failed'>('all');
@@ -91,28 +143,12 @@ function DashboardContent() {
     youtube: '#FF0000',
   };
 
-  // Calendar Days Definition (7 days of current week, Nov 10 - Nov 16)
-  const calendarDays = useMemo(
-    () => [
-      { day: 'Mon', date: '10', full: 'Nov 10, 2026' },
-      { day: 'Tue', date: '11', full: 'Nov 11, 2026' },
-      { day: 'Wed', date: '12', full: 'Nov 12, 2026' },
-      { day: 'Thu', date: '13', full: 'Nov 13, 2026' },
-      { day: 'Fri', date: '14', full: 'Nov 14, 2026' },
-      { day: 'Sat', date: '15', full: 'Nov 15, 2026' },
-      { day: 'Sun', date: '16', full: 'Nov 16, 2026' },
-    ],
-    []
-  );
-
-  // Map real posts to calendar days
+  // Map real posts to dynamic calendar days
   const daysWithPosts = useMemo(() => {
     return calendarDays.map((d) => {
       const dayPosts = posts.filter((p) => {
-        const dateStr = p.scheduledAt || p.publishedAt || p.createdAt;
-        if (!dateStr) return false;
-        const dObj = new Date(dateStr);
-        return dObj.getDate().toString() === d.date;
+        const postIso = getPostIsoDate(p);
+        return postIso === d.isoDate;
       });
       return {
         ...d,
@@ -138,8 +174,8 @@ function DashboardContent() {
     };
   }, [activeDay]);
 
-  // Selected date for month view
-  const [selectedMonthDate, setSelectedMonthDate] = useState<string>('10');
+  // Selected date for month view (defaults to today's date)
+  const [selectedMonthDate, setSelectedMonthDate] = useState<string>(() => new Date().getDate().toString());
 
   // Month view selected date posts
   const monthSelectedPosts = useMemo(() => {
@@ -147,27 +183,93 @@ function DashboardContent() {
       const dateStr = p.scheduledAt || p.publishedAt || p.createdAt;
       if (!dateStr) return false;
       const dObj = new Date(dateStr);
+      if (isNaN(dObj.getTime())) return false;
       return dObj.getDate().toString() === selectedMonthDate;
     });
   }, [posts, selectedMonthDate]);
 
   // Month days for month view (November 2026)
   const monthDays = useMemo(() => {
+    const todayNum = new Date().getDate().toString();
     return Array.from({ length: 30 }, (_, i) => {
       const dateNum = (i + 1).toString();
       const dayPosts = posts.filter((p) => {
         const dateStr = p.scheduledAt || p.publishedAt || p.createdAt;
         if (!dateStr) return false;
         const dObj = new Date(dateStr);
+        if (isNaN(dObj.getTime())) return false;
         return dObj.getDate().toString() === dateNum;
       });
       return {
         dateNum,
+        isToday: dateNum === todayNum,
         hasPosts: dayPosts.length > 0,
         count: dayPosts.length,
       };
     });
   }, [posts]);
+
+  // Day Dispatch Queue Filter in Calendar Inspector
+  const [dayQueueFilter, setDayQueueFilter] = useState<'all' | 'scheduled' | 'published' | 'failed'>('all');
+
+  const filteredDayQueuePosts = useMemo(() => {
+    const dayPosts = activeDay?.posts || [];
+    return dayPosts.filter((p) => {
+      if (dayQueueFilter === 'all') return true;
+      if (dayQueueFilter === 'failed') return p.status === 'failed' || p.status === 'partial';
+      return p.status === dayQueueFilter;
+    });
+  }, [activeDay, dayQueueFilter]);
+
+  // Timeline Filter & Search State
+  const [timelineFilter, setTimelineFilter] = useState<'all' | 'published' | 'scheduled' | 'failed'>('all');
+  const [timelineSearch, setTimelineSearch] = useState<string>('');
+
+  const filteredTimelinePosts = useMemo(() => {
+    return posts.filter((p) => {
+      if (timelineFilter !== 'all') {
+        if (timelineFilter === 'failed') {
+          if (p.status !== 'failed' && p.status !== 'partial') return false;
+        } else if (p.status !== timelineFilter) {
+          return false;
+        }
+      }
+      if (timelineSearch.trim()) {
+        const q = timelineSearch.toLowerCase();
+        const firstPage = pages.find((page) => p.pageIds.includes(page.id));
+        const matchMsg = p.message?.toLowerCase().includes(q);
+        const matchPage = firstPage?.name?.toLowerCase().includes(q);
+        const matchId = p.id.toLowerCase().includes(q);
+        if (!matchMsg && !matchPage && !matchId) return false;
+      }
+      return true;
+    });
+  }, [posts, pages, timelineFilter, timelineSearch]);
+
+  // Spreadsheet Filter & Search State
+  const [spreadsheetFilter, setSpreadsheetFilter] = useState<'all' | 'published' | 'scheduled' | 'failed'>('all');
+  const [spreadsheetSearch, setSpreadsheetSearch] = useState<string>('');
+
+  const filteredSpreadsheetPosts = useMemo(() => {
+    return posts.filter((p) => {
+      if (spreadsheetFilter !== 'all') {
+        if (spreadsheetFilter === 'failed') {
+          if (p.status !== 'failed' && p.status !== 'partial') return false;
+        } else if (p.status !== spreadsheetFilter) {
+          return false;
+        }
+      }
+      if (spreadsheetSearch.trim()) {
+        const q = spreadsheetSearch.toLowerCase();
+        const firstPage = pages.find((page) => p.pageIds.includes(page.id));
+        const matchMsg = p.message?.toLowerCase().includes(q);
+        const matchPage = firstPage?.name?.toLowerCase().includes(q);
+        const matchId = p.id.toLowerCase().includes(q);
+        if (!matchMsg && !matchPage && !matchId) return false;
+      }
+      return true;
+    });
+  }, [posts, pages, spreadsheetFilter, spreadsheetSearch]);
 
   // Filtered posts for Recent Posts Grid
   const filteredGridPosts = useMemo(() => {
@@ -788,69 +890,102 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Timeline View */}
+      {/* Timeline View (Minimal & Scalable Feed) */}
       {activeViewMode === 'timeline' && (
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-2xs space-y-5 animate-fade-in">
-          <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-6 shadow-2xs space-y-4 animate-fade-in">
+          {/* Header & Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
             <div>
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Dispatch Queue Timeline
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Real-time chronological log of past dispatches and future scheduled items.
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Dispatch Queue Timeline
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  {filteredTimelinePosts.length} {filteredTimelinePosts.length === 1 ? 'dispatch' : 'dispatches'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                Minimal real-time chronological log of queued and published items.
               </p>
             </div>
-            <Link
-              href="/composer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Schedule Next</span>
-            </Link>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              {/* Search input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={timelineSearch}
+                  onChange={(e) => setTimelineSearch(e.target.value)}
+                  placeholder="Filter timeline..."
+                  className="pl-8 pr-3 py-1 text-xs rounded-xl border border-[#CBD5E1] bg-[#F8F9FA] focus:bg-white focus:border-slate-900 focus:outline-hidden w-36 sm:w-44 font-medium"
+                />
+                {timelineSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setTimelineSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Status filter chips */}
+              <div className="flex items-center p-0.5 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] text-[10px] font-bold">
+                {(['all', 'scheduled', 'published', 'failed'] as const).map((filterKey) => (
+                  <button
+                    key={filterKey}
+                    type="button"
+                    onClick={() => setTimelineFilter(filterKey)}
+                    className={`px-2 py-1 rounded-lg capitalize transition-all ${
+                      timelineFilter === filterKey
+                        ? 'bg-slate-900 text-white shadow-2xs font-extrabold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {filterKey}
+                  </button>
+                ))}
+              </div>
+
+              <Link
+                href="/composer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ New</span>
+              </Link>
+            </div>
           </div>
 
-          <div className="relative pl-6 space-y-6 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#E2E8F0]">
-            {posts.map((post) => {
-              const firstPage = pages.find((p) => post.pageIds.includes(p.id));
-              const dateVal = post.publishedAt || post.scheduledAt || post.createdAt;
-              return (
-                <div key={post.id} className="relative group">
-                  {/* Status Indicator Dot */}
-                  <div
-                    className={`absolute -left-6 top-1.5 w-3.5 h-3.5 rounded-full ring-4 ring-white ${
-                      post.status === 'published'
-                        ? 'bg-emerald-500'
-                        : post.status === 'scheduled'
-                        ? 'bg-blue-500'
-                        : 'bg-rose-500'
-                    }`}
-                  />
+          {/* Minimal Timeline List */}
+          <div className="relative pl-6 space-y-3 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#E2E8F0]">
+            {filteredTimelinePosts.length > 0 ? (
+              filteredTimelinePosts.map((post) => {
+                const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                const dateVal = post.publishedAt || post.scheduledAt || post.createdAt;
+                return (
+                  <div key={post.id} className="relative group">
+                    {/* Status Indicator Dot on Rail */}
+                    <div
+                      className={`absolute -left-6 top-3 w-3 h-3 rounded-full ring-4 ring-white ${
+                        post.status === 'published'
+                          ? 'bg-emerald-500'
+                          : post.status === 'scheduled'
+                          ? 'bg-blue-500'
+                          : 'bg-rose-500'
+                      }`}
+                    />
 
-                  <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all space-y-2">
-                    <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-                      <div className="flex items-center gap-2">
-                        <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
-                        <span className="font-bold text-slate-900">
-                          {firstPage?.name || 'All Connected Channels'}
-                        </span>
-                        <span className="text-slate-400 font-mono text-[10px]">
-                          #{post.id.slice(-6).toUpperCase()}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize border ${
-                            post.status === 'published'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : post.status === 'scheduled'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}
-                        >
-                          {post.status}
-                        </span>
-                        <span className="text-[11px] text-slate-500 font-medium">
+                    {/* Compact Minimal Row */}
+                    <div
+                      onClick={() => setSelectedPostForModal(post)}
+                      className="p-2.5 sm:p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer group shadow-2xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Time Stamp */}
+                        <span className="w-24 sm:w-28 shrink-0 text-[10px] font-mono font-bold text-slate-500">
                           {new Date(dateVal).toLocaleString([], {
                             month: 'short',
                             day: 'numeric',
@@ -858,100 +993,44 @@ function DashboardContent() {
                             minute: '2-digit',
                           })}
                         </span>
+
+                        {/* Thumbnail / Type Icon */}
+                        {post.mediaUrl ? (
+                          <img
+                            src={post.mediaUrl}
+                            alt="thumb"
+                            className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0] bg-slate-100 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-slate-200/70 border border-[#E2E8F0] shrink-0 flex items-center justify-center text-slate-400">
+                            <ImageIcon className="w-4 h-4" />
+                          </div>
+                        )}
+
+                        {/* Message Preview (clamped to 1 line for clean minimal view) */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-[#E2E8F0] text-[10px] font-bold text-slate-700">
+                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3 h-3 rounded-xs" />
+                              <span className="truncate max-w-[120px]">{firstPage?.name || 'All Pages'}</span>
+                            </div>
+                            <span className="text-[9px] uppercase font-bold text-slate-400 font-mono">
+                              #{post.id.slice(-6).toUpperCase()}
+                            </span>
+                          </div>
+
+                          <p className="text-xs font-semibold text-slate-800 truncate mt-1 line-clamp-1 group-hover:text-slate-900">
+                            {post.message}
+                          </p>
+                        </div>
                       </div>
-                    </div>
 
-                    <p className="text-xs text-slate-800 leading-relaxed font-medium">
-                      {post.message}
-                    </p>
+                      {/* Right: Format + Status + Actions */}
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                        <span className="text-[9px] uppercase font-bold text-slate-400 font-mono px-1.5 py-0.5 rounded bg-slate-100">
+                          {post.postType}
+                        </span>
 
-                    <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px]">
-                      <span className="uppercase font-bold text-slate-400 text-[10px]">
-                        {post.postType} Post
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPostForModal(post)}
-                        className="font-bold text-slate-900 hover:text-black hover:underline"
-                      >
-                        Inspect Details →
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Spreadsheet View */}
-      {activeViewMode === 'spreadsheet' && (
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-2xs space-y-4 animate-fade-in">
-          <div className="p-4 sm:p-5 pb-0 flex items-center justify-between">
-            <div>
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Data Grid & Dispatches Table
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Structured spreadsheet view of all post campaigns, platforms, and delivery status.
-              </p>
-            </div>
-            <Link
-              href="/composer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Record</span>
-            </Link>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-y border-[#E2E8F0] bg-[#F8F9FA] text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                  <th className="py-2.5 px-4">Post ID</th>
-                  <th className="py-2.5 px-4">Message / Caption</th>
-                  <th className="py-2.5 px-4">Platform</th>
-                  <th className="py-2.5 px-4">Destination Page</th>
-                  <th className="py-2.5 px-4">Schedule / Date</th>
-                  <th className="py-2.5 px-4">Format</th>
-                  <th className="py-2.5 px-4">Status</th>
-                  <th className="py-2.5 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
-                {posts.map((post) => {
-                  const firstPage = pages.find((p) => post.pageIds.includes(p.id));
-                  const dateVal = post.publishedAt || post.scheduledAt || post.createdAt;
-                  return (
-                    <tr
-                      key={post.id}
-                      onClick={() => setSelectedPostForModal(post)}
-                      className="hover:bg-[#F8F9FA] transition-colors cursor-pointer group"
-                    >
-                      <td className="py-3 px-4 font-mono font-bold text-slate-600">
-                        #{post.id.slice(-6).toUpperCase()}
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-900 max-w-xs truncate">
-                        {post.message}
-                      </td>
-                      <td className="py-3 px-4">
-                        <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 font-medium">
-                        {firstPage?.name || 'Multiple Pages'}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 font-medium whitespace-nowrap">
-                        {new Date(dateVal).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </td>
-                      <td className="py-3 px-4 uppercase text-[10px] font-bold text-slate-500">
-                        {post.postType}
-                      </td>
-                      <td className="py-3 px-4">
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize border ${
                             post.status === 'published'
@@ -963,24 +1042,261 @@ function DashboardContent() {
                         >
                           {post.status}
                         </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
+
+                        {post.status === 'failed' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              retryPost(post.id);
+                            }}
+                            className="px-2 py-1 rounded-md text-[10px] font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 flex items-center gap-1"
+                          >
+                            <RotateCw className="w-2.5 h-2.5" />
+                            <span>Retry</span>
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedPostForModal(post);
                           }}
-                          className="font-bold text-slate-700 hover:text-black hover:underline"
+                          className="px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 hover:text-black hover:bg-slate-100 transition-colors"
                         >
-                          Details
+                          Details →
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="py-10 text-center text-xs text-slate-400 space-y-2 bg-[#F8F9FA] rounded-xl border border-dashed border-[#CBD5E1]">
+                <Clock className="w-6 h-6 text-slate-300 mx-auto" />
+                <p className="font-bold text-slate-700">No dispatches match the selected filter</p>
+                <p className="text-[11px] text-slate-400">Try changing status or clearing the search query.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Spreadsheet View (Enhanced Data Grid & Table) */}
+      {activeViewMode === 'spreadsheet' && (
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-2xs space-y-4 animate-fade-in">
+          {/* Header & Controls */}
+          <div className="p-4 sm:p-5 pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Data Grid & Dispatches Table
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  {filteredSpreadsheetPosts.length} of {posts.length} Posts
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                Structured spreadsheet view of all post campaigns, platforms, media, and delivery status.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              {/* Search input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={spreadsheetSearch}
+                  onChange={(e) => setSpreadsheetSearch(e.target.value)}
+                  placeholder="Search table..."
+                  className="pl-8 pr-3 py-1 text-xs rounded-xl border border-[#CBD5E1] bg-[#F8F9FA] focus:bg-white focus:border-slate-900 focus:outline-hidden w-36 sm:w-48 font-medium"
+                />
+                {spreadsheetSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setSpreadsheetSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Status filter chips */}
+              <div className="flex items-center p-0.5 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] text-[10px] font-bold">
+                {(['all', 'scheduled', 'published', 'failed'] as const).map((filterKey) => (
+                  <button
+                    key={filterKey}
+                    type="button"
+                    onClick={() => setSpreadsheetFilter(filterKey)}
+                    className={`px-2 py-1 rounded-lg capitalize transition-all ${
+                      spreadsheetFilter === filterKey
+                        ? 'bg-slate-900 text-white shadow-2xs font-extrabold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {filterKey}
+                  </button>
+                ))}
+              </div>
+
+              <Link
+                href="/composer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Add Record</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Table Container */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-y border-[#E2E8F0] bg-[#F8F9FA] text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                  <th className="py-2.5 px-4 w-12 text-center">Media</th>
+                  <th className="py-2.5 px-4">Post ID</th>
+                  <th className="py-2.5 px-4 min-w-[200px]">Message / Caption</th>
+                  <th className="py-2.5 px-4">Platform</th>
+                  <th className="py-2.5 px-4">Destination Page</th>
+                  <th className="py-2.5 px-4">Date & Time</th>
+                  <th className="py-2.5 px-4">Format</th>
+                  <th className="py-2.5 px-4">Status</th>
+                  <th className="py-2.5 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {filteredSpreadsheetPosts.length > 0 ? (
+                  filteredSpreadsheetPosts.map((post) => {
+                    const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                    const dateVal = post.publishedAt || post.scheduledAt || post.createdAt;
+                    return (
+                      <tr
+                        key={post.id}
+                        onClick={() => setSelectedPostForModal(post)}
+                        className="hover:bg-[#F8F9FA] transition-colors cursor-pointer group"
+                      >
+                        {/* Thumbnail / Media */}
+                        <td className="py-2.5 px-4 text-center">
+                          {post.mediaUrl ? (
+                            <img
+                              src={post.mediaUrl}
+                              alt="thumb"
+                              className="w-8 h-8 rounded-lg object-cover border border-[#E2E8F0] mx-auto bg-slate-100"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-slate-100 border border-[#E2E8F0] mx-auto flex items-center justify-center text-slate-400">
+                              <ImageIcon className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+                        </td>
+
+                        {/* ID */}
+                        <td className="py-2.5 px-4 font-mono font-bold text-slate-600">
+                          #{post.id.slice(-6).toUpperCase()}
+                        </td>
+
+                        {/* Message */}
+                        <td className="py-2.5 px-4 font-medium text-slate-900 max-w-xs truncate">
+                          {post.message}
+                        </td>
+
+                        {/* Platform */}
+                        <td className="py-2.5 px-4">
+                          <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
+                        </td>
+
+                        {/* Destination */}
+                        <td className="py-2.5 px-4 text-slate-600 font-medium">
+                          {firstPage?.name || 'Multiple Pages'}
+                        </td>
+
+                        {/* Schedule / Date */}
+                        <td className="py-2.5 px-4 text-slate-500 font-medium whitespace-nowrap">
+                          {new Date(dateVal).toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                          })}{' '}
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {new Date(dateVal).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </td>
+
+                        {/* Format */}
+                        <td className="py-2.5 px-4 uppercase text-[10px] font-bold text-slate-500">
+                          {post.postType}
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-2.5 px-4">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize border ${
+                              post.status === 'published'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : post.status === 'scheduled'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}
+                          >
+                            {post.status}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {post.status === 'failed' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  retryPost(post.id);
+                                }}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold text-rose-600 hover:bg-rose-50 border border-rose-200"
+                              >
+                                Retry
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPostForModal(post);
+                              }}
+                              className="px-2 py-0.5 rounded-md text-[11px] font-bold text-slate-700 hover:text-black hover:bg-slate-100"
+                            >
+                              Details
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="py-10 text-center text-xs text-slate-400">
+                      No posts match the search or filter query.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
+          </div>
+
+          {/* Table Footer */}
+          <div className="p-3 bg-[#F8F9FA] border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-500 font-medium">
+            <span>
+              Showing {filteredSpreadsheetPosts.length} of {posts.length} dispatches
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400">Click any row to inspect complete details</span>
+            </div>
           </div>
         </div>
       )}
@@ -1035,7 +1351,41 @@ function DashboardContent() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+                {/* Week Navigation (Prev / Today / Next) */}
+                {calendarView === 'week' && (
+                  <div className="flex items-center gap-0.5 bg-[#F8F9FA] p-0.5 rounded-lg border border-[#E2E8F0]">
+                    <button
+                      type="button"
+                      onClick={() => setWeekOffset((w) => w - 1)}
+                      className="p-1 rounded-md hover:bg-white text-slate-600 hover:text-slate-900 transition-colors"
+                      title="Previous Week"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWeekOffset(0);
+                        const now = new Date();
+                        const dayOfWeek = now.getDay();
+                        setSelectedDayIndex(dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+                      }}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-bold text-slate-700 hover:bg-white hover:text-slate-900 transition-colors"
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWeekOffset((w) => w + 1)}
+                      className="p-1 rounded-md hover:bg-white text-slate-600 hover:text-slate-900 transition-colors"
+                      title="Next Week"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 {/* Week / Month Switcher */}
                 <div className="inline-flex items-center p-0.5 rounded-lg bg-[#F8F9FA] border border-[#E2E8F0]">
                   <button
@@ -1076,31 +1426,51 @@ function DashboardContent() {
             {/* Calendar View Switcher Content */}
             {calendarView === 'week' ? (
               <div className="space-y-4">
-                {/* Days of Week Header with Clickable Selection and Post Counts */}
+                {/* Days of Week Header with Clickable Selection, Today Highlight, and Post Counts */}
                 <div className="grid grid-cols-7 gap-1.5 text-center">
                   {daysWithPosts.map((d, index) => {
                     const isSelected = selectedDayIndex === index;
                     return (
                       <button
-                        key={d.day}
+                        key={d.isoDate}
                         type="button"
                         onClick={() => setSelectedDayIndex(index)}
                         className={`flex flex-col items-center p-2 rounded-xl transition-all relative ${
                           isSelected
-                            ? 'bg-[#F8F9FA] border-2 border-slate-900 shadow-xs'
+                            ? 'bg-[#F8F9FA] border-2 border-slate-900 shadow-xs ring-1 ring-slate-900'
+                            : d.isToday
+                            ? 'bg-emerald-50/40 border border-emerald-300 hover:bg-emerald-50'
                             : 'hover:bg-[#F8F9FA] border border-transparent'
                         }`}
                       >
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
+                        <div className="flex items-center gap-1">
+                          <span
+                            className={`text-[10px] font-bold uppercase ${
+                              isSelected ? 'text-slate-900 font-black' : 'text-slate-400'
+                            }`}
+                          >
+                            {d.day}
+                          </span>
+                          {d.isToday && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Today" />
+                          )}
+                        </div>
                         <span
                           className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black mt-1 transition-all ${
                             isSelected
                               ? 'bg-slate-900 text-white shadow-xs'
+                              : d.isToday
+                              ? 'bg-emerald-500 text-white shadow-2xs font-black'
                               : 'text-slate-700'
                           }`}
                         >
                           {d.date}
                         </span>
+                        {d.isToday && (
+                          <span className="text-[8px] font-black uppercase text-emerald-600 tracking-wider">
+                            Today
+                          </span>
+                        )}
                         <span
                           className={`text-[9px] font-extrabold mt-1 px-1.5 py-0.5 rounded-full transition-colors ${
                             isSelected
@@ -1406,136 +1776,208 @@ function DashboardContent() {
             </div>
           </div>
 
-          {/* B. Platform Distribution & Channel Health (4 cols on lg) */}
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-2xs flex flex-col justify-between space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
-              <div>
-                <h3 className="font-extrabold text-sm text-slate-900">Platform Distribution</h3>
-                <p className="text-[11px] text-slate-400">Broadcasting network status</p>
+          {/* B. Live Day Dispatch Queue & Inspector (4 cols on lg) */}
+          <div className="lg:col-span-4 bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 shadow-2xs flex flex-col justify-between space-y-4">
+            <div className="space-y-3">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-sm text-slate-900">
+                      {activeDay.isToday ? "Today's Dispatch Queue" : "Day Dispatch Queue"}
+                    </h3>
+                    {activeDay.isToday && (
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Live Today
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    {activeDay.full} • {activeDay.count} {activeDay.count === 1 ? 'post' : 'posts'}
+                  </p>
+                </div>
+                <Link
+                  href="/composer"
+                  className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-black text-[11px] font-bold text-white transition-colors flex items-center gap-1 shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Schedule</span>
+                </Link>
               </div>
-              <Link
-                href="/accounts"
-                className="text-[11px] font-bold text-slate-900 hover:underline"
-              >
-                Manage
-              </Link>
+
+              {/* Status Breakdown Bar */}
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                <div className="p-2 rounded-xl bg-blue-50/60 border border-blue-100">
+                  <div className="text-[10px] font-bold text-blue-600 uppercase">Scheduled</div>
+                  <div className="text-sm font-black text-blue-900 mt-0.5">{activeDayStats.scheduled}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                  <div className="text-[10px] font-bold text-emerald-600 uppercase">Published</div>
+                  <div className="text-sm font-black text-emerald-900 mt-0.5">{activeDayStats.published}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-rose-50/60 border border-rose-100">
+                  <div className="text-[10px] font-bold text-rose-600 uppercase">Failed</div>
+                  <div className="text-sm font-black text-rose-900 mt-0.5">{activeDayStats.failed}</div>
+                </div>
+              </div>
+
+              {/* Queue Filter Chips */}
+              <div className="flex items-center gap-1 p-1 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] overflow-x-auto text-[10px] font-bold">
+                {(['all', 'scheduled', 'published', 'failed'] as const).map((filterKey) => {
+                  const count =
+                    filterKey === 'all'
+                      ? activeDay.posts.length
+                      : filterKey === 'scheduled'
+                      ? activeDayStats.scheduled
+                      : filterKey === 'published'
+                      ? activeDayStats.published
+                      : activeDayStats.failed;
+                  const isActive = dayQueueFilter === filterKey;
+                  return (
+                    <button
+                      key={filterKey}
+                      type="button"
+                      onClick={() => setDayQueueFilter(filterKey)}
+                      className={`flex-1 py-1 px-1.5 rounded-lg capitalize transition-all whitespace-nowrap text-center ${
+                        isActive
+                          ? 'bg-slate-900 text-white shadow-2xs font-black'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                      }`}
+                    >
+                      {filterKey} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Scrollable Day Queue Post Cards */}
+              <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-0.5">
+                {filteredDayQueuePosts.length > 0 ? (
+                  filteredDayQueuePosts.map((post) => {
+                    const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                    const timeStr = post.scheduledAt
+                      ? new Date(post.scheduledAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : post.publishedAt
+                      ? new Date(post.publishedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '09:00 AM';
+
+                    return (
+                      <div
+                        key={post.id}
+                        onClick={() => setSelectedPostForModal(post)}
+                        className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all space-y-2 cursor-pointer group shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between text-[10px]">
+                          <div className="flex items-center gap-1.5 font-mono font-bold text-slate-500">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            <span>{timeStr}</span>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full capitalize font-bold border ${
+                              post.status === 'published'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : post.status === 'scheduled'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}
+                          >
+                            {post.status}
+                          </span>
+                        </div>
+
+                        <div className="flex items-start gap-2.5">
+                          {post.mediaUrl ? (
+                            <img
+                              src={post.mediaUrl}
+                              alt="thumbnail"
+                              className="w-10 h-10 rounded-lg object-cover border border-[#E2E8F0] shrink-0 bg-slate-100"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-slate-200/60 border border-[#E2E8F0] shrink-0 flex items-center justify-center text-slate-400">
+                              <ImageIcon className="w-4 h-4" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug">
+                              {post.message}
+                            </p>
+                            <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
+                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
+                              <span className="truncate font-medium">{firstPage?.name || 'All Pages'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[10px]">
+                          <span className="uppercase font-bold text-slate-400 font-mono">
+                            {post.postType}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {post.status === 'failed' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  retryPost(post.id);
+                                }}
+                                className="text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 hover:underline"
+                              >
+                                <RotateCw className="w-2.5 h-2.5" />
+                                <span>Retry</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPostForModal(post);
+                              }}
+                              className="text-slate-700 hover:text-black font-bold hover:underline"
+                            >
+                              Inspect Details →
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 px-3 rounded-xl bg-[#F8F9FA] border border-dashed border-[#CBD5E1] text-center space-y-2">
+                    <Calendar className="w-7 h-7 text-slate-300 mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">No dispatches in this filter</p>
+                    <p className="text-[11px] text-slate-400">
+                      Schedule a cross-platform post for {activeDay.day}, {activeDay.date}.
+                    </p>
+                    <Link
+                      href="/composer"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 mt-1 rounded-xl bg-slate-900 hover:bg-black text-white text-[11px] font-bold shadow-2xs transition-all"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>+ Schedule for this Day</span>
+                    </Link>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* SVG Donut Chart */}
-            <div className="relative w-36 h-36 mx-auto my-1 flex items-center justify-center">
-              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                {/* Facebook (45%) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="38"
-                  fill="transparent"
-                  stroke="#1877F2"
-                  strokeWidth="12"
-                  strokeDasharray="108 239"
-                  strokeDashoffset="0"
-                />
-                {/* Instagram (25%) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="38"
-                  fill="transparent"
-                  stroke="#FF007A"
-                  strokeWidth="12"
-                  strokeDasharray="60 239"
-                  strokeDashoffset="-108"
-                />
-                {/* YouTube (15%) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="38"
-                  fill="transparent"
-                  stroke="#FF0000"
-                  strokeWidth="12"
-                  strokeDasharray="36 239"
-                  strokeDashoffset="-168"
-                />
-                {/* Telegram (10%) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="38"
-                  fill="transparent"
-                  stroke="#0088CC"
-                  strokeWidth="12"
-                  strokeDasharray="24 239"
-                  strokeDashoffset="-204"
-                />
-                {/* Threads (5%) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="38"
-                  fill="transparent"
-                  stroke="#00C2FF"
-                  strokeWidth="12"
-                  strokeDasharray="11 239"
-                  strokeDashoffset="-228"
-                />
-              </svg>
-
-              {/* Inner Center Label */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                  Destinations
+            {/* Bottom Engine Health Footer */}
+            <div className="pt-3 border-t border-[#E2E8F0] space-y-2 text-[10px] font-medium text-slate-500">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-bold text-slate-700">Dispatcher Engine</span>
                 </span>
-                <span className="text-base font-black text-slate-900 leading-tight">
-                  {totalPages} Pages
-                </span>
+                <span className="font-mono text-emerald-600 font-bold">Active • Anti-Ban On</span>
               </div>
-            </div>
-
-            {/* Connected Platform List with Page Counts */}
-            <div className="space-y-2 text-xs font-semibold text-slate-700">
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2.5">
-                  <SocialIcon platform="facebook" className="w-6 h-6 rounded-md shadow-2xs" />
-                  <div>
-                    <div className="font-bold text-slate-900 leading-tight">Facebook</div>
-                    <span className="text-[10px] text-slate-400">Pages & Groups</span>
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">4 Pages</span>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2.5">
-                  <SocialIcon platform="instagram" className="w-6 h-6 rounded-md shadow-2xs" />
-                  <div>
-                    <div className="font-bold text-slate-900 leading-tight">Instagram</div>
-                    <span className="text-[10px] text-slate-400">Creator & Business</span>
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">1 Account</span>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2.5">
-                  <SocialIcon platform="youtube" className="w-6 h-6 rounded-md shadow-2xs" />
-                  <div>
-                    <div className="font-bold text-slate-900 leading-tight">YouTube</div>
-                    <span className="text-[10px] text-slate-400">Shorts & Videos</span>
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">1 Channel</span>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0]">
-                <div className="flex items-center gap-2.5">
-                  <SocialIcon platform="telegram" className="w-6 h-6 rounded-md shadow-2xs" />
-                  <div>
-                    <div className="font-bold text-slate-900 leading-tight">Telegram</div>
-                    <span className="text-[10px] text-slate-400">Broadcast Channel</span>
-                  </div>
-                </div>
-                <span className="text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">1 Channel</span>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Active Targets:</span>
+                <span className="font-bold text-slate-700">{totalPages} Connected Pages</span>
               </div>
             </div>
           </div>

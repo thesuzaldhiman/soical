@@ -175,6 +175,8 @@ export interface SigTemplate {
   canvasWidth: number;
   canvasHeight: number;
   templateImageUrl: string;
+  layerMode?: 'overlay' | 'background'; // 'overlay' = photo behind transparent PNG frame (default); 'background' = template behind photo
+  customFontUrl?: string;
   featuredImageBox: {
     x: number;
     y: number;
