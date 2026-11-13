@@ -57,7 +57,7 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
-  const { user, workspace, posts, pages, accounts, retryPost, deletePost } = useApp();
+  const { user, workspace, posts, pages, accounts, retryPost, deletePost, approvePost } = useApp();
 
   // Selected Post for detail modal
   const [selectedPostForModal, setSelectedPostForModal] = useState<Post | null>(null);
@@ -121,7 +121,7 @@ function DashboardContent() {
   });
 
   // Recent Posts Grid Filters
-  const [gridFilter, setGridFilter] = useState<'all' | 'published' | 'scheduled' | 'failed'>('all');
+  const [gridFilter, setGridFilter] = useState<'all' | 'published' | 'scheduled' | 'draft' | 'failed'>('all');
   const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(null);
 
   // Dynamic Live Statistics
@@ -1288,124 +1288,7 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* View 4: Channel Health & Token Audit (Replaces redundant spreadsheet) */}
-      {activeViewMode === 'channels' && (
-        <div className="space-y-5 animate-fade-in">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">
-                  <ShieldCheck className="w-4 h-4" />
-                </div>
-                <h3 className="font-extrabold text-sm text-slate-900">
-                  Connected Channels Health & Token Audit
-                </h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  All Systems Operational
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                Monitor access token validity, page publishing permissions, and zero-width anti-ban sanitization.
-              </p>
-            </div>
 
-            <Link
-              href="/accounts"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Connect New Channel</span>
-            </Link>
-          </div>
-
-          {/* Audit Matrix Table */}
-          <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-[#F8F9FA] text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                    <th className="py-3 px-4">Channel / Page</th>
-                    <th className="py-3 px-4">Platform</th>
-                    <th className="py-3 px-4">Token Health</th>
-                    <th className="py-3 px-4">Audience</th>
-                    <th className="py-3 px-4">Permissions</th>
-                    <th className="py-3 px-4">Anti-Ban Guard</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
-                  {pages.map((p) => {
-                    const audience = (p.followersCount || p.fanCount || 0).toLocaleString();
-                    return (
-                      <tr key={p.id} className="hover:bg-[#F8F9FA] transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <SocialIcon platform={p.platform} className="w-5 h-5 rounded-md shadow-2xs shrink-0" />
-                            <div>
-                              <div className="font-bold text-slate-900">{p.name}</div>
-                              <span className="text-[10px] text-slate-400 font-mono">ID: {p.pageId || p.id}</span>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4 font-bold capitalize text-slate-700">
-                          {p.platform}
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Valid (Active)</span>
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                          {audience} fans
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1 flex-wrap">
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                              publish_pages
-                            </span>
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                              manage_posts
-                            </span>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>Zero-Width On</span>
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <Link
-                            href="/accounts"
-                            className="px-2.5 py-1 rounded-md text-[11px] font-bold text-slate-700 hover:text-black hover:bg-slate-100"
-                          >
-                            Inspect
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="p-3 bg-[#F8F9FA] border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-500 font-medium">
-              <span>All {pages.length} destination channels are synced with zero active auth warnings.</span>
-              <Link href="/accounts" className="text-slate-900 font-bold hover:underline">
-                Manage Accounts & Reauth →
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Calendar View (Interactive Content Calendar + Platform Breakdown) */}
       {activeViewMode === 'calendar' && (
@@ -1522,9 +1405,9 @@ function DashboardContent() {
 
             {/* Calendar View Switcher Content */}
             {calendarView === 'week' ? (
-              <div className="space-y-4">
-                {/* Days of Week Header with Clickable Selection, Today Highlight, and Post Counts */}
-                <div className="grid grid-cols-7 gap-1.5 text-center">
+              <div className="space-y-2.5">
+                {/* Days of Week Header with Clickable Selection, Today Highlight, and Compact Post Counts */}
+                <div className="grid grid-cols-7 gap-1 text-center">
                   {daysWithPosts.map((d, index) => {
                     const isSelected = selectedDayIndex === index;
                     return (
@@ -1532,7 +1415,7 @@ function DashboardContent() {
                         key={d.isoDate}
                         type="button"
                         onClick={() => setSelectedDayIndex(index)}
-                        className={`flex flex-col items-center p-2 rounded-xl transition-all relative ${
+                        className={`flex flex-col items-center py-1.5 px-0.5 rounded-xl transition-all relative ${
                           isSelected
                             ? 'bg-[#F8F9FA] border-2 border-slate-900 shadow-xs ring-1 ring-slate-900'
                             : d.isToday
@@ -1542,7 +1425,7 @@ function DashboardContent() {
                       >
                         <div className="flex items-center gap-1">
                           <span
-                            className={`text-[10px] font-bold uppercase ${
+                            className={`text-[9px] font-extrabold uppercase ${
                               isSelected ? 'text-slate-900 font-black' : 'text-slate-400'
                             }`}
                           >
@@ -1553,7 +1436,7 @@ function DashboardContent() {
                           )}
                         </div>
                         <span
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black mt-1 transition-all ${
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black mt-0.5 transition-all ${
                             isSelected
                               ? 'bg-slate-900 text-white shadow-xs'
                               : d.isToday
@@ -1564,12 +1447,12 @@ function DashboardContent() {
                           {d.date}
                         </span>
                         {d.isToday && (
-                          <span className="text-[8px] font-black uppercase text-emerald-600 tracking-wider">
+                          <span className="text-[7px] font-black uppercase text-emerald-600 tracking-wider">
                             Today
                           </span>
                         )}
                         <span
-                          className={`text-[9px] font-extrabold mt-1 px-1.5 py-0.5 rounded-full transition-colors ${
+                          className={`text-[8px] font-black mt-0.5 px-1 py-0.2 rounded-full transition-colors ${
                             isSelected
                               ? 'bg-slate-900 text-white'
                               : d.count > 0
@@ -1611,10 +1494,10 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* Day Posts Compact Visual Grid */}
+                {/* Day Posts Compact Visual Grid (Vertical Rectangle Portrait Cards) */}
                 <div className="min-h-[200px]">
                   {activeDay.posts.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
                       {activeDay.posts.map((post) => {
                         const firstPage = pages.find((p) => post.pageIds.includes(p.id));
                         const timeStr = post.scheduledAt
@@ -1634,16 +1517,18 @@ function DashboardContent() {
                             ? 'bg-emerald-500 text-white'
                             : post.status === 'scheduled'
                             ? 'bg-blue-600 text-white'
+                            : post.status === 'draft'
+                            ? 'bg-amber-500 text-white'
                             : 'bg-rose-500 text-white';
 
                         return (
                           <div
                             key={post.id}
                             onClick={() => setSelectedPostForModal(post)}
-                            className="group rounded-xl border border-[#E2E8F0] bg-white hover:border-slate-400 hover:shadow-xs transition-all overflow-hidden flex flex-col cursor-pointer"
+                            className="group rounded-2xl border border-[#E2E8F0] bg-white hover:border-slate-900 hover:shadow-md transition-all overflow-hidden flex flex-col cursor-pointer"
                           >
-                            {/* Thumbnail Banner with floating time & status */}
-                            <div className="relative h-28 w-full bg-slate-900 overflow-hidden shrink-0">
+                            {/* Portrait Media Header (Vertical Rectangle aspect-[4/5] sm:h-52) */}
+                            <div className="relative aspect-[4/5] sm:h-52 w-full bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center">
                               {post.mediaUrl ? (
                                 <img
                                   src={post.mediaUrl}
@@ -1651,46 +1536,54 @@ function DashboardContent() {
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                 />
                               ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-3 text-center">
-                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-7 h-7 rounded-lg shadow-xs" />
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 mt-1">
-                                    {post.postType}
+                                <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex flex-col items-center justify-center p-4 text-center">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-10 h-10 rounded-xl shadow-md" />
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 mt-2">
+                                    {post.postType} Story
                                   </span>
                                 </div>
                               )}
 
-                              {/* Time Badge Floating Top-Left */}
-                              <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white font-mono text-[10px] font-bold">
+                              {/* Subtle Bottom Gradient for Overlay Readability */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+
+                              {/* Floating Time Badge Top-Left */}
+                              <div className="absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-md text-white font-mono text-[10px] font-bold border border-white/10 shadow-xs">
                                 <Clock className="w-3 h-3 text-slate-300" />
                                 <span>{timeStr}</span>
                               </div>
 
-                              {/* Status Badge Floating Top-Right */}
-                              <div className="absolute top-2 right-2">
-                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-2xs ${statusStyle}`}>
+                              {/* Floating Status Badge Top-Right */}
+                              <div className="absolute top-2.5 right-2.5">
+                                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-xs ${statusStyle}`}>
                                   {post.status}
+                                </span>
+                              </div>
+
+                              {/* Floating Page Badge Bottom */}
+                              <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-white">
+                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/65 backdrop-blur-md border border-white/15 max-w-[80%]">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs shrink-0" />
+                                  <span className="text-[10px] font-bold truncate">{firstPage?.name || 'All Connected Pages'}</span>
+                                </div>
+                                <span className="px-1.5 py-0.5 rounded-md bg-white/20 backdrop-blur-xs font-mono font-bold text-[9px] uppercase tracking-wider">
+                                  {post.postType}
                                 </span>
                               </div>
                             </div>
 
-                            {/* Card Details */}
-                            <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
-                                  <span className="truncate">{firstPage?.name || 'All Connected Pages'}</span>
-                                </div>
-                                <p className="text-xs font-semibold text-slate-900 line-clamp-2 leading-snug">
-                                  {post.message}
-                                </p>
-                              </div>
+                            {/* Card Details / Clamped Caption */}
+                            <div className="p-3.5 flex-1 flex flex-col justify-between space-y-2.5">
+                              <p className="text-xs font-bold text-slate-900 line-clamp-3 leading-snug">
+                                {post.message}
+                              </p>
 
-                              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[10px]">
-                                <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold uppercase text-slate-600 font-mono text-[9px]">
-                                  {post.postType}
+                              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px]">
+                                <span className="text-[10px] font-semibold text-slate-400">
+                                  {post.pageIds.length} {post.pageIds.length === 1 ? 'target' : 'targets'}
                                 </span>
-                                <span className="text-slate-500 font-bold group-hover:text-slate-900 group-hover:underline">
-                                  Inspect →
+                                <span className="text-slate-900 font-extrabold flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                  Inspect Details →
                                 </span>
                               </div>
                             </div>
@@ -1796,7 +1689,7 @@ function DashboardContent() {
                   </div>
 
                   {monthSelectedPosts.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
                       {monthSelectedPosts.map((post) => {
                         const firstPage = pages.find((p) => post.pageIds.includes(p.id));
                         const timeStr = post.scheduledAt
@@ -1810,15 +1703,18 @@ function DashboardContent() {
                             ? 'bg-emerald-500 text-white'
                             : post.status === 'scheduled'
                             ? 'bg-blue-600 text-white'
+                            : post.status === 'draft'
+                            ? 'bg-amber-500 text-white'
                             : 'bg-rose-500 text-white';
 
                         return (
                           <div
                             key={post.id}
                             onClick={() => setSelectedPostForModal(post)}
-                            className="group rounded-xl border border-[#E2E8F0] bg-white hover:border-slate-400 hover:shadow-xs transition-all overflow-hidden flex flex-col cursor-pointer"
+                            className="group rounded-2xl border border-[#E2E8F0] bg-white hover:border-slate-900 hover:shadow-md transition-all overflow-hidden flex flex-col cursor-pointer"
                           >
-                            <div className="relative h-28 w-full bg-slate-900 overflow-hidden shrink-0">
+                            {/* Portrait Media Header (Vertical Rectangle aspect-[4/5] sm:h-52) */}
+                            <div className="relative aspect-[4/5] sm:h-52 w-full bg-slate-950 overflow-hidden shrink-0 flex items-center justify-center">
                               {post.mediaUrl ? (
                                 <img
                                   src={post.mediaUrl}
@@ -1826,39 +1722,54 @@ function DashboardContent() {
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                 />
                               ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-3 text-center">
-                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-7 h-7 rounded-lg shadow-xs" />
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 mt-1">
-                                    {post.postType}
+                                <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex flex-col items-center justify-center p-4 text-center">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-10 h-10 rounded-xl shadow-md" />
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 mt-2">
+                                    {post.postType} Story
                                   </span>
                                 </div>
                               )}
-                              <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white font-mono text-[10px] font-bold">
+
+                              {/* Subtle Bottom Gradient for Overlay Readability */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+
+                              {/* Floating Time Badge Top-Left */}
+                              <div className="absolute top-2.5 left-2.5 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-md text-white font-mono text-[10px] font-bold border border-white/10 shadow-xs">
                                 <Clock className="w-3 h-3 text-slate-300" />
                                 <span>{timeStr}</span>
                               </div>
-                              <div className="absolute top-2 right-2">
-                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-2xs ${statusStyle}`}>
+
+                              {/* Floating Status Badge Top-Right */}
+                              <div className="absolute top-2.5 right-2.5">
+                                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-xs ${statusStyle}`}>
                                   {post.status}
                                 </span>
                               </div>
-                            </div>
-                            <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
-                                  <span className="truncate">{firstPage?.name || 'All Connected Pages'}</span>
+
+                              {/* Floating Page Badge Bottom */}
+                              <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-white">
+                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/65 backdrop-blur-md border border-white/15 max-w-[80%]">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs shrink-0" />
+                                  <span className="text-[10px] font-bold truncate">{firstPage?.name || 'All Connected Pages'}</span>
                                 </div>
-                                <p className="text-xs font-semibold text-slate-900 line-clamp-2 leading-snug">
-                                  {post.message}
-                                </p>
-                              </div>
-                              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[10px]">
-                                <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold uppercase text-slate-600 font-mono text-[9px]">
+                                <span className="px-1.5 py-0.5 rounded-md bg-white/20 backdrop-blur-xs font-mono font-bold text-[9px] uppercase tracking-wider">
                                   {post.postType}
                                 </span>
-                                <span className="text-slate-500 font-bold group-hover:text-slate-900 group-hover:underline">
-                                  Inspect →
+                              </div>
+                            </div>
+
+                            {/* Card Details / Clamped Caption */}
+                            <div className="p-3.5 flex-1 flex flex-col justify-between space-y-2.5">
+                              <p className="text-xs font-bold text-slate-900 line-clamp-3 leading-snug">
+                                {post.message}
+                              </p>
+
+                              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px]">
+                                <span className="text-[10px] font-semibold text-slate-400">
+                                  {post.pageIds.length} {post.pageIds.length === 1 ? 'target' : 'targets'}
+                                </span>
+                                <span className="text-slate-900 font-extrabold flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                  Inspect Details →
                                 </span>
                               </div>
                             </div>
@@ -2050,7 +1961,7 @@ function DashboardContent() {
           <div className="flex items-center gap-2.5 flex-wrap">
             {/* Filter Pills */}
             <div className="inline-flex items-center p-1 rounded-xl bg-white border border-[#E2E8F0] shadow-2xs">
-              {(['all', 'published', 'scheduled', 'failed'] as const).map((status) => {
+              {(['all', 'published', 'scheduled', 'draft', 'failed'] as const).map((status) => {
                 const count =
                   status === 'all'
                     ? posts.length
@@ -2058,6 +1969,8 @@ function DashboardContent() {
                     ? publishedCount
                     : status === 'scheduled'
                     ? scheduledCount
+                    : status === 'draft'
+                    ? posts.filter((p) => p.status === 'draft').length
                     : failedCount;
 
                 return (
@@ -2071,7 +1984,7 @@ function DashboardContent() {
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <span>{status}</span>
+                    <span>{status === 'draft' ? 'Drafts / Approvals' : status}</span>
                     <span
                       className={`text-[10px] px-1.5 py-0.2 rounded-full ${
                         gridFilter === status
@@ -2284,11 +2197,28 @@ function DashboardContent() {
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
                         <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>
-                          {post.scheduledAt ? 'Scheduled' : 'Dispatched'}
+                          {post.scheduledAt
+                            ? 'Scheduled'
+                            : post.status === 'draft'
+                            ? 'Awaiting Review'
+                            : 'Dispatched'}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {post.status === 'draft' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              approvePost(post.id);
+                            }}
+                            className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-xs transition-colors"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Approve & Publish</span>
+                          </button>
+                        )}
                         {post.status === 'failed' && (
                           <button
                             type="button"
@@ -2488,6 +2418,20 @@ function DashboardContent() {
               </button>
 
               <div className="flex items-center gap-2">
+                {selectedPostForModal.status === 'draft' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      approvePost(selectedPostForModal.id);
+                      setSelectedPostForModal(null);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all flex items-center gap-1.5 shadow-xs"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Approve & Publish Now</span>
+                  </button>
+                )}
+
                 {selectedPostForModal.status === 'failed' && (
                   <button
                     type="button"
