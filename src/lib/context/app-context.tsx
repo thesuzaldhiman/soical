@@ -288,87 +288,113 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [allUsers, isHydrated]);
 
+  // Synchronize state with Hostinger MySQL Database
+  const syncToCloud = (email: string, payload: any, userData?: any) => {
+    if (!email || typeof window === 'undefined') return;
+    fetch('/api/user/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim(), payload, user: userData }),
+    }).catch((e) => console.warn('[Cloud MySQL Sync] Failed background sync:', e));
+  };
+
   // Helper to load user-isolated data
   const loadUserDataForEmail = (email: string, name?: string) => {
-    if (typeof localStorage === 'undefined') return;
-    const userKey = getStorageKeyForEmail(email);
-    let stored = localStorage.getItem(userKey);
+    if (!email) return;
+    const cleanEmail = email.toLowerCase().trim();
+    const userKey = getStorageKeyForEmail(cleanEmail);
 
-    // Backward compatibility: If no user key exists yet for Suzal, check previous storage keys
-    if (!stored && (email.includes('suzal') || email.includes('khabarmonkey'))) {
-      stored = localStorage.getItem('sap_saas_live_v1') || localStorage.getItem('sap_saas_app_state_v2');
-    }
+    // 1. Instant local cache load
+    if (typeof localStorage !== 'undefined') {
+      let stored = localStorage.getItem(userKey);
+      if (!stored && (cleanEmail.includes('suzal') || cleanEmail.includes('khabarmonkey'))) {
+        stored = localStorage.getItem('sap_saas_live_v1') || localStorage.getItem('sap_saas_app_state_v2');
+      }
 
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (parsed.accounts) setAccounts(parsed.accounts);
-        else setAccounts([]);
-        if (parsed.pages) setPages(parsed.pages);
-        else setPages([]);
-        if (parsed.categories) setCategories(parsed.categories);
-        else setCategories(INITIAL_CATEGORIES);
-        if (parsed.posts) setPosts(parsed.posts);
-        else setPosts([]);
-        if (parsed.sigTemplates) setSigTemplates(parsed.sigTemplates);
-        else setSigTemplates(INITIAL_SIG_TEMPLATES);
-        if (parsed.pageAnalytics) setPageAnalytics(parsed.pageAnalytics);
-        else setPageAnalytics({});
-        if (parsed.postPerformances) setPostPerformances(parsed.postPerformances);
-        else setPostPerformances([]);
-        if (parsed.postComments) setPostComments(parsed.postComments);
-        else setPostComments([]);
-        if (parsed.automations) setAutomations(parsed.automations);
-        else setAutomations([]);
-        if (parsed.settings) {
-          setSettings((prev) => ({ ...prev, ...parsed.settings }));
-        } else {
-          const globalRaw = localStorage.getItem('sap_app_settings');
-          if (globalRaw) {
-            try {
-              setSettings((prev) => ({ ...prev, ...JSON.parse(globalRaw) }));
-            } catch {}
-          }
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed.accounts) setAccounts(parsed.accounts);
+          if (parsed.pages) setPages(parsed.pages);
+          if (parsed.categories) setCategories(parsed.categories);
+          if (parsed.posts) setPosts(parsed.posts);
+          if (parsed.sigTemplates) setSigTemplates(parsed.sigTemplates);
+          if (parsed.pageAnalytics) setPageAnalytics(parsed.pageAnalytics);
+          if (parsed.postPerformances) setPostPerformances(parsed.postPerformances);
+          if (parsed.postComments) setPostComments(parsed.postComments);
+          if (parsed.automations) setAutomations(parsed.automations);
+          if (parsed.settings) setSettings((prev) => ({ ...prev, ...parsed.settings }));
+          if (parsed.workspace) setWorkspace(parsed.workspace);
+        } catch (e) {
+          console.error('Failed to parse local user state:', e);
         }
-        if (parsed.workspace) {
-          setWorkspace(parsed.workspace);
-        } else {
-          setWorkspace({
-            id: `ws_${email.replace(/[^a-z0-9_]/g, '_')}`,
-            name: `${name || email.split('@')[0]}'s Workspace`,
-            slug: 'workspace',
-            plan: 'pro',
-            monthlyPostsLimit: 1500,
-            monthlyPostsUsed: 0,
-            connectedChannelsLimit: 25,
-          });
-        }
-        return;
-      } catch (e) {
-        console.error('Failed to parse user state:', e);
+      } else {
+        // If no local data, set clean initial state while cloud fetch runs
+        setAccounts([]);
+        setPages([]);
+        setCategories(INITIAL_CATEGORIES);
+        setPosts([]);
+        setSigTemplates(INITIAL_SIG_TEMPLATES);
+        setPageAnalytics({});
+        setPostPerformances([]);
+        setPostComments([]);
+        setAutomations([]);
+        setSettings(INITIAL_SETTINGS);
+        setWorkspace({
+          id: `ws_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+          name: `${name || cleanEmail.split('@')[0]}'s Workspace`,
+          slug: 'workspace',
+          plan: 'pro',
+          monthlyPostsLimit: 1500,
+          monthlyPostsUsed: 0,
+          connectedChannelsLimit: 25,
+        });
       }
     }
 
-    // New user with no prior data -> Brand new isolated clean state!
-    setAccounts([]);
-    setPages([]);
-    setCategories(INITIAL_CATEGORIES);
-    setPosts([]);
-    setSigTemplates(INITIAL_SIG_TEMPLATES);
-    setPageAnalytics({});
-    setPostPerformances([]);
-    setPostComments([]);
-    setAutomations([]);
-    setSettings(INITIAL_SETTINGS);
-    setWorkspace({
-      id: `ws_${email.replace(/[^a-z0-9_]/g, '_')}`,
-      name: `${name || email.split('@')[0]}'s Workspace`,
-      slug: 'workspace',
-      plan: 'pro',
-      monthlyPostsLimit: 1500,
-      monthlyPostsUsed: 0,
-      connectedChannelsLimit: 25,
-    });
+    // 2. Fetch authoritative state from Hostinger MySQL Database
+    if (typeof window !== 'undefined') {
+      fetch(`/api/user/sync?email=${encodeURIComponent(cleanEmail)}`)
+        .then((res) => res.json())
+        .then((res) => {
+          if (res.success && res.data) {
+            const db = res.data;
+            if (Array.isArray(db.accounts)) setAccounts(db.accounts);
+            if (Array.isArray(db.pages)) setPages(db.pages);
+            if (Array.isArray(db.categories)) setCategories(db.categories);
+            if (Array.isArray(db.posts)) setPosts(db.posts);
+            if (Array.isArray(db.sigTemplates)) setSigTemplates(db.sigTemplates);
+            if (db.pageAnalytics && typeof db.pageAnalytics === 'object') setPageAnalytics(db.pageAnalytics);
+            if (Array.isArray(db.postPerformances)) setPostPerformances(db.postPerformances);
+            if (Array.isArray(db.postComments)) setPostComments(db.postComments);
+            if (Array.isArray(db.automations)) setAutomations(db.automations);
+            if (db.settings && typeof db.settings === 'object') {
+              setSettings((prev) => ({ ...prev, ...db.settings }));
+            }
+            if (db.workspace) setWorkspace(db.workspace);
+
+            // Update local storage cache
+            if (typeof localStorage !== 'undefined') {
+              try {
+                localStorage.setItem(userKey, JSON.stringify(db));
+              } catch {}
+            }
+          } else if (res.success && !res.data) {
+            // First time on MySQL: Seed DB with current local data
+            if (typeof localStorage !== 'undefined') {
+              const localStored = localStorage.getItem(userKey);
+              if (localStored) {
+                try {
+                  syncToCloud(cleanEmail, JSON.parse(localStored));
+                } catch {}
+              }
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn('[Cloud MySQL Sync] Fetch error (running with local cache):', err);
+        });
+    }
   };
 
   // Hydrate from localStorage / Cookies on client mount
@@ -493,28 +519,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Save to user-isolated localStorage on state changes
+  // Save to user-isolated localStorage and sync to Hostinger MySQL Database
   useEffect(() => {
     if (!isHydrated || !isAuthenticated || !user?.email) return;
+    const cleanEmail = user.email.toLowerCase().trim();
+    const payload = {
+      accounts,
+      pages,
+      categories,
+      posts,
+      sigTemplates,
+      pageAnalytics,
+      postPerformances,
+      postComments,
+      automations,
+      settings,
+      workspace,
+    };
+
+    // 1. Save locally for instant offline cache
     try {
-      const storageKey = getStorageKeyForEmail(user.email);
-      const payload = {
-        accounts,
-        pages,
-        categories,
-        posts,
-        sigTemplates,
-        pageAnalytics,
-        postPerformances,
-        postComments,
-        automations,
-        settings,
-        workspace,
-      };
+      const storageKey = getStorageKeyForEmail(cleanEmail);
       localStorage.setItem(storageKey, JSON.stringify(payload));
     } catch (e) {
       console.error('Failed to save state to localStorage:', e);
     }
+
+    // 2. Debounce sync to Hostinger MySQL Database (1.2s delay to batch rapid changes)
+    const timer = setTimeout(() => {
+      syncToCloud(cleanEmail, payload, user);
+    }, 1200);
+
+    return () => clearTimeout(timer);
   }, [
     accounts,
     pages,
@@ -800,6 +836,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const userPayload = userStored ? JSON.parse(userStored) : {};
             userPayload.settings = updated;
             localStorage.setItem(userKey, JSON.stringify(userPayload));
+
+            // Immediately persist updated credentials/settings to Hostinger MySQL
+            syncToCloud(user.email, userPayload, user);
           }
           const liveStored = localStorage.getItem(STORAGE_KEY);
           if (liveStored) {
