@@ -14,7 +14,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const feed = await fetchAndParseRssFeed(url);
+    const feed = await fetchAndParseRssFeed(url, {
+      scrapeMissingImages: true,
+      scrapeFullArticle: true,
+      maxItems: 8,
+    });
+
     return NextResponse.json({
       success: true,
       feed: {
@@ -43,6 +48,9 @@ export async function POST(request: NextRequest) {
       linkInComment = true,
       customCaption = '',
       postStatus = 'published',
+      scrapeMissingImages = true,
+      scrapeFullArticle = true,
+      generatedMediaMap = {}, // Record<string, string> map of item link/id -> generated composite template image
     } = body;
 
     if (!feedUrl) {
@@ -52,8 +60,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Fetch & Parse RSS Feed
-    const feed = await fetchAndParseRssFeed(feedUrl);
+    // 1. Fetch & Parse RSS Feed (with Auto Engine scraping fallbacks for missing images & full body)
+    const feed = await fetchAndParseRssFeed(feedUrl, {
+      scrapeMissingImages,
+      scrapeFullArticle,
+      maxItems,
+    });
 
     // If only preview requested
     if (action === 'preview') {
@@ -72,7 +84,11 @@ export async function POST(request: NextRequest) {
     // 2. Action === 'dispatch'
     if (!targets || targets.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'No publishing targets selected. Choose at least one destination page or WordPress site.' },
+        {
+          success: false,
+          error:
+            'No publishing targets selected. Choose at least one connected WordPress website or social page.',
+        },
         { status: 400 }
       );
     }
@@ -119,15 +135,20 @@ export async function POST(request: NextRequest) {
       }
 
       // First comment link (improves Facebook organic reach)
-      const comment = linkInComment && item.link
-        ? `👉 पूरी खबर और विस्तृत जानकारी के लिए यहाँ पढ़ें:\n${item.link}`
-        : '';
+      const comment =
+        linkInComment && item.link
+          ? `👉 पूरी खबर और विस्तृत जानकारी के लिए यहाँ पढ़ें:\n${item.link}`
+          : '';
+
+      // Use generated template card image if available, else scraped image
+      const finalMediaUrl =
+        generatedMediaMap[item.id] || generatedMediaMap[item.link] || item.imageUrl || '';
 
       const targetResults = await dispatchToTargets({
-        postType: item.imageUrl ? 'image' : 'text',
+        postType: finalMediaUrl ? 'image' : 'text',
         title: item.title,
         message: caption,
-        mediaUrl: item.imageUrl || '',
+        mediaUrl: finalMediaUrl,
         linkUrl: item.link || '',
         commentText: comment,
         contentHtml: item.content || item.summary,
@@ -139,7 +160,7 @@ export async function POST(request: NextRequest) {
           id: item.id,
           title: item.title,
           link: item.link,
-          imageUrl: item.imageUrl,
+          imageUrl: finalMediaUrl,
         },
         results: targetResults,
       });
@@ -148,8 +169,11 @@ export async function POST(request: NextRequest) {
       if (item.link) newlyAddedGuids.push(item.link);
     }
 
-    // Merge updated GUIDs (keep last 500 to prevent unbounded memory growth)
-    const updatedProcessedGuids = Array.from(new Set([...newlyAddedGuids, ...processedGuids])).slice(0, 500);
+    // Merge updated GUIDs (keep last 500)
+    const updatedProcessedGuids = Array.from(new Set([...newlyAddedGuids, ...processedGuids])).slice(
+      0,
+      500
+    );
 
     return NextResponse.json({
       success: true,
@@ -163,9 +187,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Automation RSS dispatch error';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

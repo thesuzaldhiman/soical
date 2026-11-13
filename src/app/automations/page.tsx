@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { SocialIcon } from '@/components/ui/SocialIcon';
+import { renderTemplateToCanvas } from '@/lib/services/image-compositor';
 import {
   Cpu,
   Plus,
@@ -29,6 +31,8 @@ import {
   Square,
   MessageSquare,
   Radio,
+  Palette,
+  FileText,
 } from 'lucide-react';
 
 interface FeedPreviewItem {
@@ -73,11 +77,15 @@ function AutomationsContent() {
     categories,
     pages,
     settings,
+    sigTemplates,
     toggleAutomation,
     deleteAutomation,
     createAutomation,
     updateAutomation,
   } = useApp();
+
+  // Hidden off-screen canvas for composite card generation
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Create Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -91,6 +99,14 @@ function AutomationsContent() {
   const [intervalMinutes, setIntervalMinutes] = useState(15);
   const [postStatus, setPostStatus] = useState<'published' | 'draft'>('published');
 
+  // Advanced Scraper & SIG Template Options
+  const [autoGenerateImage, setAutoGenerateImage] = useState(true);
+  const [selectedSigTemplateId, setSelectedSigTemplateId] = useState<string>(
+    sigTemplates[0]?.id || 'tmpl_1'
+  );
+  const [scrapeFullArticle, setScrapeFullArticle] = useState(true);
+  const [scrapeMissingImages, setScrapeMissingImages] = useState(true);
+
   // Preview & Live Test State in Modal
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewItems, setPreviewItems] = useState<FeedPreviewItem[]>([]);
@@ -98,6 +114,7 @@ function AutomationsContent() {
 
   // Live Dispatch / Execution Modal State
   const [executingFeedId, setExecutingFeedId] = useState<string | null>(null);
+  const [dispatchStatusNote, setDispatchStatusNote] = useState<string>('');
   const [dispatchResultData, setDispatchResultData] = useState<DispatchResultModalData | null>(null);
 
   // Inspector Preview Modal State
@@ -207,7 +224,8 @@ function AutomationsContent() {
       targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
       isActive: true,
       intervalMinutes: Number(intervalMinutes) || 15,
-      autoGenerateImage: true,
+      autoGenerateImage,
+      sigTemplateId: selectedSigTemplateId,
       linkInComment,
       postStatus,
       maxItemsPerRun: maxItems,
@@ -220,13 +238,16 @@ function AutomationsContent() {
     setPreviewItems([]);
     setPreviewError(null);
     setModalOpen(false);
-    setTestFeedSuccess(`RSS Feed "${feedName.trim()}" successfully activated! Ready for auto-dispatch.`);
+    setTestFeedSuccess(
+      `RSS Feed "${feedName.trim()}" successfully activated! Ready for auto-dispatch.`
+    );
     setTimeout(() => setTestFeedSuccess(null), 4000);
   };
 
   // Live Dispatch / Execute a Feed
   const handleRunFeedNow = async (auto: any) => {
     setExecutingFeedId(auto.id);
+    setDispatchStatusNote('Checking RSS feed & scraping latest stories...');
     setTestFeedSuccess(null);
 
     // Resolve target pages
@@ -260,6 +281,54 @@ function AutomationsContent() {
     }));
 
     try {
+      // 1. Fetch preview of feed items
+      const previewRes = await fetch(
+        `/api/automations/rss?url=${encodeURIComponent(auto.feedUrl)}`
+      );
+      const previewData = await previewRes.json();
+      const allItems: FeedPreviewItem[] = previewData.feed?.items || [];
+
+      // 2. Filter new unseen items
+      const seenSet = new Set<string>(auto.processedGuids || []);
+      const newItems = allItems.filter(
+        (it) => !seenSet.has(it.id) && !seenSet.has(it.link)
+      );
+
+      // 3. Pre-generate composite card images using template (SIG) if enabled!
+      const generatedMediaMap: Record<string, string> = {};
+      const shouldGenerateImages = auto.autoGenerateImage ?? true;
+
+      if (shouldGenerateImages && newItems.length > 0 && offscreenCanvasRef.current) {
+        setDispatchStatusNote('🎨 Rendering branded template news cards with Featured Image & Title Box...');
+        const templateToUse =
+          sigTemplates.find((t) => t.id === auto.sigTemplateId) ||
+          sigTemplates.find((t) => t.isDefault) ||
+          sigTemplates[0];
+
+        if (templateToUse) {
+          const limit = Math.min(newItems.length, auto.maxItemsPerRun || 2);
+          for (let i = 0; i < limit; i++) {
+            const item = newItems[i];
+            try {
+              const cardDataUrl = await renderTemplateToCanvas(offscreenCanvasRef.current, {
+                template: templateToUse,
+                headline: item.title,
+                featuredImageUrl: item.imageUrl || '',
+              });
+              if (cardDataUrl) {
+                generatedMediaMap[item.id] = cardDataUrl;
+                if (item.link) generatedMediaMap[item.link] = cardDataUrl;
+              }
+            } catch (err) {
+              console.warn('Card compositing skipped for item:', item.title, err);
+            }
+          }
+        }
+      }
+
+      setDispatchStatusNote('Broadcasting to connected WordPress sites & social channels...');
+
+      // 4. Dispatch
       const res = await fetch('/api/automations/rss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -271,6 +340,9 @@ function AutomationsContent() {
           maxItems: auto.maxItemsPerRun || 2,
           linkInComment: auto.linkInComment ?? true,
           postStatus: auto.postStatus || 'published',
+          scrapeMissingImages: true,
+          scrapeFullArticle: true,
+          generatedMediaMap,
         }),
       });
 
@@ -303,6 +375,7 @@ function AutomationsContent() {
       alert(`Dispatch Error: ${err instanceof Error ? err.message : 'Failed to execute feed'}`);
     } finally {
       setExecutingFeedId(null);
+      setDispatchStatusNote('');
     }
   };
 
@@ -336,8 +409,14 @@ function AutomationsContent() {
     setLabelMappings((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const wpPages = pages.filter((p) => p.platform === 'wordpress');
+  const socialPages = pages.filter((p) => p.platform !== 'wordpress');
+
   return (
     <div className="space-y-5 font-sans max-w-5xl animate-fade-in pb-12">
+      {/* Hidden canvas for off-screen image compositing */}
+      <canvas ref={offscreenCanvasRef} className="hidden" />
+
       {/* Header (Studio Minimal) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#EEF1F6]">
         <div>
@@ -348,11 +427,19 @@ function AutomationsContent() {
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 font-medium">
-            Add any news/blog RSS feeds. New stories are auto-published to WordPress, Facebook, Telegram &amp; Instagram.
+            Scrapes news from RSS, auto-generates branded template cards (SIG), and pushes to multiple WordPress sites &amp; social pages.
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          <Link
+            href="/image-generator"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs"
+          >
+            <Palette className="w-3.5 h-3.5 text-amber-600" />
+            <span>Visual Template Editor</span>
+          </Link>
+
           <button
             type="button"
             onClick={() => {
@@ -386,11 +473,11 @@ function AutomationsContent() {
               <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
                 <span>WordPress Realtime Webhook &amp; Auto Engine Bridge</span>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Ready
+                  Ready ({wpPages.length} Sites Connected)
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Publishing from RSS here auto-watermarks via Auto Engine. When WordPress publishes a post, it also pings this webhook.
+                Supports multiple WordPress sites! Content can be pushed to all connected websites simultaneously with automatic watermarking &amp; SEO.
               </p>
             </div>
           </div>
@@ -473,6 +560,11 @@ function AutomationsContent() {
                 targetPagesForCard = pages.filter((p) => auto.targetPageIds?.includes(p.id));
               }
 
+              const matchedTemplate =
+                sigTemplates.find((t) => t.id === auto.sigTemplateId) ||
+                sigTemplates.find((t) => t.isDefault) ||
+                sigTemplates[0];
+
               return (
                 <div
                   key={auto.id}
@@ -503,6 +595,14 @@ function AutomationsContent() {
                             <span className="text-[10px] font-medium text-slate-400">
                               Every {auto.intervalMinutes || 15}m
                             </span>
+                            {auto.autoGenerateImage && (
+                              <>
+                                <span className="text-slate-300">•</span>
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded">
+                                  🎨 Auto Card
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -543,7 +643,11 @@ function AutomationsContent() {
                           targetPagesForCard.slice(0, 4).map((p) => (
                             <span
                               key={p.id}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-[#EEF1F6] text-[10px] font-bold text-slate-700 shadow-2xs"
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold shadow-2xs ${
+                                p.platform === 'wordpress'
+                                  ? 'bg-[#21759B]/10 border-[#21759B]/30 text-[#21759B]'
+                                  : 'bg-white border-[#EEF1F6] text-slate-700'
+                              }`}
                             >
                               <SocialIcon platform={p.platform} size={12} />
                               <span className="truncate max-w-[90px]">{p.name}</span>
@@ -560,6 +664,16 @@ function AutomationsContent() {
                           </span>
                         )}
                       </div>
+
+                      {/* Template Card Info if active */}
+                      {auto.autoGenerateImage && matchedTemplate && (
+                        <div className="pt-1.5 border-t border-[#EEF1F6] flex items-center justify-between text-[10px] text-slate-500">
+                          <span className="text-slate-400 font-medium">Card Template:</span>
+                          <span className="font-bold text-slate-700 truncate max-w-[200px]">
+                            🎨 {matchedTemplate.name}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Last Dispatched Story if available */}
                       {auto.lastDispatchedTitle && (
@@ -721,7 +835,7 @@ function AutomationsContent() {
                   Add RSS / Ingestion Source
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Configure an RSS feed to automatically publish news across WordPress and social channels.
+                  Configure an RSS feed to automatically scrape &amp; post to multiple WordPress sites &amp; social channels.
                 </p>
               </div>
               <button
@@ -853,9 +967,9 @@ function AutomationsContent() {
                 </div>
               )}
 
-              {/* Target Destinations (Interactive Multi-Select with Platform Badges) */}
-              <div className="pt-2 border-t border-[#EEF1F6]">
-                <div className="flex items-center justify-between mb-1.5">
+              {/* ── TARGET PUBLISHING DESTINATIONS (Multiple WordPress + Social Channels) ── */}
+              <div className="pt-2 border-t border-[#EEF1F6] space-y-2">
+                <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800">
                     Publishing Target Destinations ({selectedPageIds.length}/{pages.length} Selected)
                   </label>
@@ -873,7 +987,7 @@ function AutomationsContent() {
                       onClick={handleSelectWordpressOnly}
                       className="text-[#21759B] hover:underline font-semibold cursor-pointer"
                     >
-                      WordPress Only
+                      WP Only ({wpPages.length})
                     </button>
                     <span>•</span>
                     <button
@@ -886,41 +1000,136 @@ function AutomationsContent() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-1 border border-[#EEF1F6] rounded-xl bg-[#F8F9FD]">
-                  {pages.map((p) => {
-                    const isSelected = selectedPageIds.includes(p.id);
-                    return (
-                      <div
-                        key={p.id}
-                        onClick={() => handleToggleSelectPage(p.id)}
-                        className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none ${
-                          isSelected
-                            ? 'bg-white border-slate-900 shadow-2xs'
-                            : 'bg-white/60 border-slate-200 text-slate-500 hover:bg-white'
-                        }`}
-                      >
-                        <div
-                          className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${
-                            isSelected
-                              ? 'bg-slate-900 border-slate-900 text-white font-bold'
-                              : 'border-slate-300'
-                          }`}
-                        >
-                          {isSelected && '✓'}
-                        </div>
-                        <SocialIcon platform={p.platform} size={15} />
-                        <div className="truncate text-xs font-bold text-slate-800 flex-1">
-                          {p.name}
-                        </div>
-                        {p.platform === 'wordpress' && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-[#21759B]/10 text-[#21759B] font-bold">
-                            WP
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
+                {/* Section A: Connected WordPress Websites (Multiple Sites Support) */}
+                {wpPages.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-[#21759B] uppercase tracking-wider block">
+                      WordPress Websites (Push to All or Selected):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {wpPages.map((p) => {
+                        const isSelected = selectedPageIds.includes(p.id);
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => handleToggleSelectPage(p.id)}
+                            className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none ${
+                              isSelected
+                                ? 'bg-cyan-50/50 border-[#21759B] ring-1 ring-[#21759B]/20 text-[#21759B] font-bold'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div
+                              className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${
+                                isSelected
+                                  ? 'bg-[#21759B] border-[#21759B] text-white font-bold'
+                                  : 'border-slate-300'
+                              }`}
+                            >
+                              {isSelected && '✓'}
+                            </div>
+                            <SocialIcon platform="wordpress" size={15} />
+                            <div className="truncate text-xs flex-1">
+                              <div>{p.name}</div>
+                              {p.siteUrl && (
+                                <div className="text-[9px] text-slate-400 font-mono truncate">
+                                  {p.siteUrl}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section B: Connected Social Channels (Facebook, Telegram, Instagram) */}
+                {socialPages.length > 0 && (
+                  <div className="space-y-1 pt-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Social Media Channels:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      {socialPages.map((p) => {
+                        const isSelected = selectedPageIds.includes(p.id);
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => handleToggleSelectPage(p.id)}
+                            className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none ${
+                              isSelected
+                                ? 'bg-white border-slate-900 shadow-2xs font-bold text-slate-900'
+                                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div
+                              className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${
+                                isSelected
+                                  ? 'bg-slate-900 border-slate-900 text-white font-bold'
+                                  : 'border-slate-300'
+                              }`}
+                            >
+                              {isSelected && '✓'}
+                            </div>
+                            <SocialIcon platform={p.platform} size={15} />
+                            <div className="truncate text-xs flex-1">{p.name}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── CARD TEMPLATE GENERATION (SIG) ── */}
+              <div className="pt-2 border-t border-[#EEF1F6] space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Palette className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Auto-Generate Branded Card Image (SIG Template)</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Renders the article photo into the Featured Image Box and headline in Title Box.
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={autoGenerateImage}
+                    onChange={(e) => setAutoGenerateImage(e.target.checked)}
+                    className="w-4 h-4 rounded text-slate-900 cursor-pointer"
+                  />
                 </div>
+
+                {autoGenerateImage && (
+                  <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-bold text-amber-900 block mb-1">
+                        Select Template Layout:
+                      </label>
+                      <select
+                        value={selectedSigTemplateId}
+                        onChange={(e) => setSelectedSigTemplateId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-slate-800"
+                      >
+                        {sigTemplates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.canvasWidth}×{t.canvasHeight})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <Link
+                      href="/image-generator"
+                      target="_blank"
+                      className="text-[11px] font-bold text-amber-800 hover:underline shrink-0"
+                    >
+                      Edit Layout &rarr;
+                    </Link>
+                  </div>
+                )}
               </div>
 
               {/* Automation Rules */}
@@ -929,7 +1138,7 @@ function AutomationsContent() {
                   <div>
                     <div className="font-bold text-slate-800 text-xs">First Comment Source Link</div>
                     <div className="text-[10px] text-slate-400">
-                      Places the news link in the first comment (avoids Facebook organic reach penalty).
+                      Places the news link in the first comment (avoids Facebook reach penalty).
                     </div>
                   </div>
                   <input
@@ -1034,8 +1243,20 @@ function AutomationsContent() {
                 <div className="space-y-3">
                   {dispatchResultData.dispatched.map((d, idx) => (
                     <div key={idx} className="p-3.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] space-y-2">
-                      <div className="font-bold text-slate-900 text-xs line-clamp-2">
-                        📰 {d.item.title}
+                      <div className="flex items-start gap-2.5">
+                        {d.item.imageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={d.item.imageUrl}
+                            alt=""
+                            className="w-16 h-12 rounded-lg object-cover shrink-0 border border-slate-200"
+                          />
+                        )}
+                        <div className="flex-1">
+                          <div className="font-bold text-slate-900 text-xs line-clamp-2">
+                            📰 {d.item.title}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="space-y-1">

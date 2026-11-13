@@ -232,6 +232,17 @@ export const DEMO_ACCOUNTS: SocialAccount[] = [
     bridgeType: 'auto-engine',
     lastCheckedAt: '2026-11-12T12:00:00.000Z',
   },
+  {
+    id: 'acc_wp_2',
+    platform: 'wordpress',
+    accountId: 'wp_daily_himachal',
+    name: 'Daily Himachal Live (WordPress Blog)',
+    avatarUrl: '/icons/social/wordpress.png',
+    status: 'active',
+    siteUrl: 'https://dailyhimachal.in',
+    bridgeType: 'auto-engine',
+    lastCheckedAt: '2026-11-12T12:00:00.000Z',
+  },
 ];
 
 export const INITIAL_PAGES: SocialPage[] = [];
@@ -539,6 +550,21 @@ export const DEMO_PAGES: SocialPage[] = [
     siteUrl: 'https://himachalsamachar.com',
     bridgeType: 'auto-engine',
     category: 'Breaking News',
+    isActive: true,
+  },
+  {
+    id: 'pg_wp_2',
+    accountId: 'acc_wp_2',
+    platform: 'wordpress',
+    pageId: 'wp_daily_himachal',
+    name: 'Daily Himachal Live (WP Blog)',
+    avatarUrl: '/icons/social/wordpress.png',
+    fanCount: 31200,
+    followersCount: 31200,
+    followersDeltaToday: 95,
+    siteUrl: 'https://dailyhimachal.in',
+    bridgeType: 'auto-engine',
+    category: 'Viral / Trending',
     isActive: true,
   },
 ];
