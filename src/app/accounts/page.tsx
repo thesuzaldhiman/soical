@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { Platform, SocialPage, SocialAccount } from '@/types';
@@ -96,6 +97,16 @@ function AccountsContent() {
   const [connectSuccess, setConnectSuccess] = useState<string | null>(null);
   const [copiedUri, setCopiedUri] = useState(false);
 
+  const searchParams = useSearchParams();
+
+  // Watch for auth errors in searchParams
+  useEffect(() => {
+    const errorParam = searchParams.get('error');
+    if (errorParam) {
+      setConnectError(decodeURIComponent(errorParam));
+    }
+  }, [searchParams]);
+
   const currentOrigin =
     typeof window !== 'undefined'
       ? window.location.origin
@@ -112,85 +123,145 @@ function AccountsContent() {
 
   // Check for pending imported pages from Facebook OAuth callback
   useEffect(() => {
-    if (typeof document !== 'undefined') {
+    if (typeof window === 'undefined') return;
+
+    let parsed: any = null;
+
+    // 1. Check localStorage first (immune to header overflow and Unicode issues)
+    try {
+      const local = localStorage.getItem('sap_pending_fb_import');
+      if (local) {
+        parsed = JSON.parse(local);
+        localStorage.removeItem('sap_pending_fb_import');
+      }
+    } catch (e) {
+      console.warn('Failed parsing localStorage pending_fb_import:', e);
+    }
+
+    // 2. Check sessionStorage fallback
+    if (!parsed) {
+      try {
+        const session = sessionStorage.getItem('sap_pending_fb_import');
+        if (session) {
+          parsed = JSON.parse(session);
+          sessionStorage.removeItem('sap_pending_fb_import');
+        }
+      } catch {}
+    }
+
+    // 3. Fallback to cookie if present
+    if (!parsed && typeof document !== 'undefined') {
       const match = document.cookie.match(new RegExp('(^| )sap_pending_fb_import=([^;]+)'));
       if (match) {
         try {
-          const parsed = JSON.parse(decodeURIComponent(match[2]));
-          if (parsed.pages && parsed.pages.length > 0) {
-            const firstPage = parsed.pages[0];
-            const newAcc = addAccount('facebook', `${firstPage.name} (Meta Account)`, {
-              accessToken: parsed.userToken,
-              avatarUrl: firstPage.avatarUrl || '/icons/social/facebook.png',
-              fanCount: firstPage.fanCount,
-            });
+          parsed = JSON.parse(decodeURIComponent(match[2]));
+          document.cookie = 'sap_pending_fb_import=; path=/; max-age=0; SameSite=Lax';
+        } catch {}
+      }
+    }
 
-            const pagesToAdd: SocialPage[] = parsed.pages.map((p: any, idx: number) => ({
-              id: `pg_fb_${Date.now()}_${idx}`,
-              accountId: newAcc.id,
-              platform: 'facebook',
-              pageId: p.id,
-              name: p.name,
-              avatarUrl: p.avatarUrl || '/icons/social/facebook.png',
-              fanCount: p.fanCount || 0,
-              isActive: true,
-              accessToken: p.accessToken || parsed.userToken,
-              targetUrl: `https://facebook.com/${p.id}`,
-              category: 'Facebook Page',
-              permissions: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list'],
-            }));
+    if (parsed && Array.isArray(parsed.pages) && parsed.pages.length > 0) {
+      try {
+        const firstPage = parsed.pages[0];
+        const userToken = parsed.userAccessToken || parsed.userToken || '';
+        const newAcc = addAccount('facebook', `${firstPage.name} (Meta Account)`, {
+          accessToken: userToken,
+          avatarUrl: firstPage.avatarUrl || parsed.user?.avatarUrl || '/icons/social/facebook.png',
+          fanCount: firstPage.fanCount || 0,
+        });
 
-            addPages(pagesToAdd);
-            setConnectSuccess(`Successfully imported ${parsed.pages.length} Facebook Page(s) live via OAuth!`);
-            // Clear the cookie
-            document.cookie = 'sap_pending_fb_import=; path=/; max-age=0; SameSite=Lax';
-          }
-        } catch (e) {
-          console.error('Failed importing pending Facebook pages:', e);
-        }
+        const pagesToAdd: SocialPage[] = parsed.pages.map((p: any, idx: number) => ({
+          id: p.id && !p.id.startsWith('pg_') ? `pg_fb_${p.pageId || p.id}_${Date.now()}` : (p.id || `pg_fb_${Date.now()}_${idx}`),
+          accountId: newAcc.id,
+          platform: 'facebook',
+          pageId: String(p.pageId || p.id),
+          name: p.name || 'Facebook Page',
+          avatarUrl: p.avatarUrl || p.picture?.data?.url || '/icons/social/facebook.png',
+          fanCount: p.fanCount || p.fan_count || 0,
+          isActive: true,
+          accessToken: p.accessToken || p.access_token || userToken,
+          targetUrl: `https://facebook.com/${p.pageId || p.id}`,
+          category: p.category || 'Facebook Page',
+          permissions: Array.isArray(p.permissions)
+            ? p.permissions
+            : (Array.isArray(p.tasks) ? p.tasks : ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list']),
+        }));
+
+        addPages(pagesToAdd);
+        setConnectSuccess(`Successfully imported ${parsed.pages.length} Facebook Page(s) live via OAuth!`);
+      } catch (e) {
+        console.error('Failed importing pending Facebook pages:', e);
       }
     }
   }, [addAccount, addPages]);
 
   // Check for pending imported YouTube channel from OAuth callback
   useEffect(() => {
-    if (typeof document !== 'undefined') {
+    if (typeof window === 'undefined') return;
+
+    let parsed: any = null;
+
+    // 1. Check localStorage first
+    try {
+      const local = localStorage.getItem('sap_pending_yt_import');
+      if (local) {
+        parsed = JSON.parse(local);
+        localStorage.removeItem('sap_pending_yt_import');
+      }
+    } catch {}
+
+    // 2. Check sessionStorage fallback
+    if (!parsed) {
+      try {
+        const session = sessionStorage.getItem('sap_pending_yt_import');
+        if (session) {
+          parsed = JSON.parse(session);
+          sessionStorage.removeItem('sap_pending_yt_import');
+        }
+      } catch {}
+    }
+
+    // 3. Fallback to cookie
+    if (!parsed && typeof document !== 'undefined') {
       const match = document.cookie.match(new RegExp('(^| )sap_pending_yt_import=([^;]+)'));
       if (match) {
         try {
-          const parsed = JSON.parse(decodeURIComponent(match[2]));
-          if (parsed.channel) {
-            const ch = parsed.channel;
-            const newAcc = addAccount('youtube', `${ch.name} (YouTube Account)`, {
-              accessToken: parsed.accessToken,
-              avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
-              fanCount: ch.subscriberCount,
-            });
+          parsed = JSON.parse(decodeURIComponent(match[2]));
+          document.cookie = 'sap_pending_yt_import=; path=/; max-age=0; SameSite=Lax';
+        } catch {}
+      }
+    }
 
-            const pageToAdd: SocialPage = {
-              id: `pg_yt_${Date.now()}`,
-              accountId: newAcc.id,
-              platform: 'youtube',
-              pageId: ch.id,
-              name: ch.name,
-              avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
-              fanCount: ch.subscriberCount || 0,
-              isActive: true,
-              accessToken: parsed.accessToken,
-              targetUrl: ch.customUrl
-                ? `https://youtube.com/${ch.customUrl}`
-                : `https://youtube.com/channel/${ch.id}`,
-              category: 'YouTube Shorts',
-              permissions: ['youtube.upload', 'youtube.readonly'],
-            };
+    if (parsed && parsed.channel) {
+      try {
+        const ch = parsed.channel;
+        const newAcc = addAccount('youtube', `${ch.name} (YouTube Account)`, {
+          accessToken: parsed.accessToken,
+          avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
+          fanCount: ch.subscriberCount,
+        });
 
-            addPages([pageToAdd]);
-            setConnectSuccess(`Successfully connected "${ch.name}" via YouTube OAuth!`);
-            document.cookie = 'sap_pending_yt_import=; path=/; max-age=0; SameSite=Lax';
-          }
-        } catch (e) {
-          console.error('Failed importing pending YouTube channel:', e);
-        }
+        const pageToAdd: SocialPage = {
+          id: `pg_yt_${Date.now()}`,
+          accountId: newAcc.id,
+          platform: 'youtube',
+          pageId: ch.id,
+          name: ch.name,
+          avatarUrl: ch.avatarUrl || '/icons/social/youtube.png',
+          fanCount: ch.subscriberCount || 0,
+          isActive: true,
+          accessToken: parsed.accessToken,
+          targetUrl: ch.customUrl
+            ? `https://youtube.com/${ch.customUrl}`
+            : `https://youtube.com/channel/${ch.id}`,
+          category: 'YouTube Shorts',
+          permissions: ['youtube.upload', 'youtube.readonly'],
+        };
+
+        addPages([pageToAdd]);
+        setConnectSuccess(`Successfully connected "${ch.name}" via YouTube OAuth!`);
+      } catch (e) {
+        console.error('Failed importing pending YouTube channel:', e);
       }
     }
   }, [addAccount, addPages]);

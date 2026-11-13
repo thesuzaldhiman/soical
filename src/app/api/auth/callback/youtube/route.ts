@@ -140,30 +140,123 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Set pending import cookie and redirect to /accounts
-    const redirectResponse = NextResponse.redirect(
-      new URL(
-        `/accounts?auth=youtube_success&channel_name=${encodeURIComponent(channelInfo.name)}`,
-        baseUrl
-      )
-    );
+    // 4. Return Client-Side Auth Bridge HTML (HTTP 200)
+    // Immune to cookie character/size limits
+    const payload = {
+      channel: channelInfo,
+      accessToken,
+      refreshToken,
+      importedAt: new Date().toISOString(),
+    };
+    const safePayloadJson = JSON.stringify(payload).replace(/</g, '\\u003c');
 
-    redirectResponse.cookies.set(
-      'sap_pending_yt_import',
-      JSON.stringify({
-        channel: channelInfo,
-        accessToken,
-        refreshToken,
-      }),
-      {
-        path: '/',
-        maxAge: 3600,
-        httpOnly: false,
-        sameSite: 'lax',
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YouTube Connected | Social Auto Poster</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background-color: #F8F9FA;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      color: #0F172A;
+    }
+    .card {
+      background: #FFFFFF;
+      padding: 36px 32px;
+      border-radius: 24px;
+      border: 1px solid #E2E8F0;
+      text-align: center;
+      max-width: 440px;
+      width: 90%;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+    }
+    .icon-wrap {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: #FF0000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px auto;
+      color: white;
+    }
+    h1 {
+      font-size: 19px;
+      font-weight: 700;
+      margin: 0 0 8px 0;
+      letter-spacing: -0.02em;
+    }
+    p {
+      font-size: 13px;
+      color: #64748B;
+      margin: 0 0 24px 0;
+      line-height: 1.5;
+    }
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid #E2E8F0;
+      border-top-color: #FF0000;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrap">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+      </svg>
+    </div>
+    <h1>YouTube Connected!</h1>
+    <p id="status-text">Connecting channel "${channelInfo.name.replace(/"/g, '')}"...</p>
+    <div class="spinner"></div>
+  </div>
+
+  <script>
+    (function() {
+      try {
+        var payload = ${safePayloadJson};
+        try {
+          localStorage.setItem('sap_pending_yt_import', JSON.stringify(payload));
+        } catch(e) {}
+        try {
+          sessionStorage.setItem('sap_pending_yt_import', JSON.stringify(payload));
+        } catch(e) {}
+
+        setTimeout(function() {
+          window.location.replace('/accounts?auth=youtube_success&channel_name=' + encodeURIComponent(payload.channel.name || 'YouTube'));
+        }, 500);
+      } catch (err) {
+        console.error('YouTube Bridge Error:', err);
+        window.location.replace('/accounts?error=' + encodeURIComponent(err.message || 'Import error'));
       }
-    );
+    })();
+  </script>
+</body>
+</html>`;
 
-    return redirectResponse;
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      },
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed token exchange';
     return NextResponse.redirect(
