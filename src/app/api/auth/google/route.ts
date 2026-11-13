@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBaseUrl } from '@/lib/utils/url';
 
+
+
 export async function GET(request: NextRequest) {
   const baseUrl = getBaseUrl(request);
-  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const clientId = (process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
 
-  if (!clientId || clientId.trim() === '') {
-    return NextResponse.redirect(
+  if (!clientId) {
+    const res = NextResponse.redirect(
       new URL('/login?error=google_client_id_missing', baseUrl)
     );
+    res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    return res;
   }
 
   const redirectUri = `${baseUrl}/api/auth/callback/google`;
@@ -19,5 +23,7 @@ export async function GET(request: NextRequest) {
     redirectUri
   )}&response_type=code&scope=${scope}&access_type=offline&prompt=select_account`;
 
-  return NextResponse.redirect(googleAuthUrl);
+  const response = NextResponse.redirect(googleAuthUrl);
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  return response;
 }

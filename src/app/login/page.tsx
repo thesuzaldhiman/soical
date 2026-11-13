@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/lib/context/app-context';
@@ -34,7 +34,7 @@ export default function LoginPage() {
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, isAuthenticated, loginWithEmail, logout } = useApp();
+  const { user, isAuthenticated, isHydrated, loginWithEmail, logout } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -45,6 +45,13 @@ function LoginContent() {
 
   const errorParam = searchParams.get('error');
   const isGoogleMissing = errorParam === 'google_client_id_missing';
+
+  // Automatically redirect already logged in users to dashboard
+  useEffect(() => {
+    if (isHydrated && isAuthenticated && user?.email && !searchParams.get('logout')) {
+      router.replace('/dashboard');
+    }
+  }, [isHydrated, isAuthenticated, user, searchParams, router]);
 
   const currentOrigin =
     typeof window !== 'undefined'
