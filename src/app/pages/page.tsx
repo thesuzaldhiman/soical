@@ -21,6 +21,7 @@ import {
   Eye,
   Lock,
   ExternalLink,
+  BarChart3,
 } from 'lucide-react';
 
 export default function PagesManagementPage() {
@@ -440,17 +441,27 @@ function PagesContent() {
                       {(page.followersCount ?? page.fanCount ?? 0).toLocaleString()}
                     </td>
 
-                    {/* API Permissions: Clean Eye icon button */}
+                    {/* API Permissions & Deep Analytics */}
                     <td className="py-3.5 px-5" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPermissionsPage(page)}
-                        className="inline-flex items-center justify-center p-2 rounded-xl bg-[#F8F9FA] hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-[#E2E8F0] transition-all group/perm shadow-2xs cursor-pointer"
-                        title={`View granted Graph API scopes (${(page.permissions || DEFAULT_SCOPES.map((s) => s.key)).length})`}
-                        aria-label="View API Permissions"
-                      >
-                        <Eye className="w-4 h-4 text-slate-600 group-hover/perm:text-slate-900 group-hover/perm:scale-110 transition-transform" />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <Link
+                          href={`/analytics?pageId=${page.id}`}
+                          className="inline-flex items-center justify-center p-2 rounded-xl bg-[#F8F9FA] hover:bg-pink-50 text-slate-600 hover:text-[#FF007A] border border-[#E2E8F0] hover:border-pink-200 transition-all group/ana shadow-2xs cursor-pointer"
+                          title={`Open Deep-Dive Analytics for ${page.name}`}
+                          aria-label="View Page Analytics"
+                        >
+                          <BarChart3 className="w-4 h-4 text-slate-600 group-hover/ana:text-[#FF007A] group-hover/ana:scale-110 transition-transform" />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPermissionsPage(page)}
+                          className="inline-flex items-center justify-center p-2 rounded-xl bg-[#F8F9FA] hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-[#E2E8F0] transition-all group/perm shadow-2xs cursor-pointer"
+                          title={`View granted Graph API scopes (${(page.permissions || DEFAULT_SCOPES.map((s) => s.key)).length})`}
+                          aria-label="View API Permissions"
+                        >
+                          <Eye className="w-4 h-4 text-slate-600 group-hover/perm:text-slate-900 group-hover/perm:scale-110 transition-transform" />
+                        </button>
+                      </div>
                     </td>
 
                     <td className="py-3.5 px-5 text-right" onClick={(e) => e.stopPropagation()}>
@@ -679,28 +690,38 @@ function PagesContent() {
 
             {/* Footer Buttons */}
             <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => {
-                  togglePageActive(selectedPageForModal.id);
-                  setSelectedPageForModal(null);
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  selectedPageForModal.isActive
-                    ? 'border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                }`}
+              <Link
+                href={`/analytics?pageId=${selectedPageForModal.id}`}
+                className="px-3.5 py-2 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#FF007A] border border-pink-200 text-xs font-bold transition-all flex items-center gap-1.5"
               >
-                {selectedPageForModal.isActive ? 'Pause / Disable' : 'Activate Channel'}
-              </button>
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>Open Deep Analytics</span>
+              </Link>
 
-              <button
-                type="button"
-                onClick={() => setSelectedPageForModal(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs ml-auto"
-              >
-                Done
-              </button>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    togglePageActive(selectedPageForModal.id);
+                    setSelectedPageForModal(null);
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    selectedPageForModal.isActive
+                      ? 'border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                  }`}
+                >
+                  {selectedPageForModal.isActive ? 'Pause / Disable' : 'Activate Channel'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPageForModal(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
         </div>

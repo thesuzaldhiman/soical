@@ -34,7 +34,7 @@ export default function LibraryPage() {
 
 function LibraryContent() {
   const router = useRouter();
-  const { posts, pages, retryPost, deletePost } = useApp();
+  const { posts, pages, retryPost, approvePost, deletePost } = useApp();
 
   const [activeTab, setActiveTab] = useState<'all' | PostStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -218,6 +218,17 @@ function LibraryContent() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 self-end sm:self-start shrink-0">
+                    {post.status === 'draft' && (
+                      <button
+                        type="button"
+                        onClick={() => approvePost(post.id)}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                        title="Approve this draft and publish immediately"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Approve &amp; Publish</span>
+                      </button>
+                    )}
                     {post.status === 'failed' && (
                       <button
                         type="button"

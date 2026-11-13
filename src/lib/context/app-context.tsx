@@ -96,6 +96,7 @@ interface AppContextType {
     }
   ) => Post;
   retryPost: (postId: string) => void;
+  approvePost: (postId: string) => void;
   deletePost: (postId: string) => void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   createAutomation: (feed: Omit<AutomationFeed, 'id' | 'itemsProcessed'>) => void;
@@ -212,6 +213,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
     updatedAt: new Date().toISOString(),
   }),
   retryPost: noop,
+  approvePost: noop,
   deletePost: noop,
   updateSettings: noop,
   createAutomation: noop,
@@ -905,6 +907,72 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           publishedAt: new Date().toISOString(),
           results: retriedResults,
           updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+  };
+
+  const approvePost = (postId: string) => {
+    setPosts((prev) =>
+      prev.map((post) => {
+        if (post.id !== postId) return post;
+        const approvedResults = post.pageIds.map((pid) => {
+          const pg = pages.find((p) => p.id === pid);
+          return {
+            pageId: pid,
+            platform: pg?.platform || 'facebook',
+            pageName: pg?.name || 'Social Target',
+            status: 'success' as const,
+            externalPostId: `appr_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            timestamp: new Date().toISOString(),
+          };
+        });
+
+        const nowIso = new Date().toISOString();
+        // Immediately register in post performances
+        const perfEntries: PostPerformanceMetric[] = post.pageIds.map((pid) => {
+          const pg = pages.find((p) => p.id === pid);
+          return {
+            id: `perf_${Date.now()}_${pid}`,
+            postId: post.id,
+            pageId: pid,
+            pageName: pg?.name || 'Social Destination',
+            externalPostId: `ext_appr_${Date.now()}`,
+            postType: post.postType,
+            message: post.message,
+            mediaUrl: post.mediaUrl,
+            publishedAt: nowIso,
+            reach: 840 + Math.floor(Math.random() * 600),
+            mediaViews: 420 + Math.floor(Math.random() * 300),
+            likes: 65 + Math.floor(Math.random() * 40),
+            reactions: {
+              like: 45,
+              love: 15,
+              wow: 5,
+              haha: 0,
+              sad: 0,
+              angry: 0,
+            },
+            commentsCount: 8 + Math.floor(Math.random() * 10),
+            sharesCount: 4 + Math.floor(Math.random() * 6),
+            estimatedEarningsMicro: 120000,
+            lastSyncedAt: nowIso,
+            isToday: true,
+          };
+        });
+        setPostPerformances((perfPrev) => [...perfEntries, ...perfPrev]);
+
+        setWorkspace((wsPrev) => ({
+          ...wsPrev,
+          monthlyPostsUsed: wsPrev.monthlyPostsUsed + 1,
+        }));
+
+        return {
+          ...post,
+          status: 'published',
+          publishedAt: nowIso,
+          results: approvedResults,
+          updatedAt: nowIso,
         };
       })
     );
@@ -1827,6 +1895,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteCategory,
         createPost,
         retryPost,
+        approvePost,
         deletePost,
         updateSettings,
         createAutomation,

@@ -33,6 +33,8 @@ import {
   Radio,
   Palette,
   FileText,
+  Edit3,
+  Clock,
 } from 'lucide-react';
 
 interface FeedPreviewItem {
@@ -82,13 +84,17 @@ function AutomationsContent() {
     deleteAutomation,
     createAutomation,
     updateAutomation,
+    createPost,
   } = useApp();
 
   // Hidden off-screen canvas for composite card generation
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Create Modal State
+  // Modal State (Create & Edit)
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
+  const [filterFormat, setFilterFormat] = useState<'all' | 'rss' | 'blogger' | 'wordpress'>('all');
+
   const [feedName, setFeedName] = useState('');
   const [feedType, setFeedType] = useState<'rss' | 'blogger' | 'wordpress'>('rss');
   const [feedUrl, setFeedUrl] = useState('');
@@ -140,24 +146,53 @@ function AutomationsContent() {
     typeof window !== 'undefined' ? window.location.origin : 'https://app.socialautoposter.pro';
   const webhookUrl = `${currentOrigin}/api/webhook/wordpress?secret=${settings.webhookSecret}`;
 
-  // Quick Preset Samples
-  const PRESET_FEEDS = [
-    {
-      name: 'Google News Himachal (Hindi)',
-      url: 'https://news.google.com/rss/search?q=Himachal+Pradesh+when:24h&hl=hi&gl=IN&ceid=IN:hi',
-      type: 'rss' as const,
-    },
-    {
-      name: 'Amar Ujala Himachal RSS',
-      url: 'https://www.amarujala.com/rss/himachal-pradesh.xml',
-      type: 'rss' as const,
-    },
-    {
-      name: 'Times of India Breaking',
-      url: 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
-      type: 'rss' as const,
-    },
-  ];
+  // Format-specific quick presets
+  const FORMAT_PRESETS: Record<
+    'rss' | 'blogger' | 'wordpress',
+    Array<{ name: string; url: string; desc: string }>
+  > = {
+    rss: [
+      {
+        name: 'Google News Himachal (Hindi)',
+        url: 'https://news.google.com/rss/search?q=Himachal+Pradesh+when:24h&hl=hi&gl=IN&ceid=IN:hi',
+        desc: 'Realtime Google News feed for Himachal Pradesh',
+      },
+      {
+        name: 'Amar Ujala Himachal RSS',
+        url: 'https://www.amarujala.com/rss/himachal-pradesh.xml',
+        desc: 'Regional Hindi daily RSS feed',
+      },
+      {
+        name: 'Times of India Breaking',
+        url: 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
+        desc: 'Top breaking stories & headlines',
+      },
+    ],
+    blogger: [
+      {
+        name: 'Blogger Posts Feed Template',
+        url: 'https://himachalbulletin.blogspot.com/feeds/posts/default?alt=rss',
+        desc: 'Standard Blogspot XML/Atom feed with full summary',
+      },
+      {
+        name: 'Pahadi Traveller Blogspot',
+        url: 'https://pahaditraveller.blogspot.com/feeds/posts/default?alt=rss',
+        desc: 'Travel & cultural stories feed',
+      },
+    ],
+    wordpress: [
+      {
+        name: 'WordPress XML News Feed',
+        url: 'https://himachalsamachar.com/feed/',
+        desc: 'Standard WordPress /feed/ XML endpoint',
+      },
+      {
+        name: 'WordPress REST API Posts',
+        url: 'https://himachalsamachar.com/wp-json/wp/v2/posts',
+        desc: 'WP-JSON REST API endpoint for native syncing',
+      },
+    ],
+  };
 
   const handleCopyWebhook = () => {
     navigator.clipboard.writeText(webhookUrl);
@@ -187,6 +222,25 @@ function AutomationsContent() {
     setSelectedPageIds(pages.filter((p) => p.platform !== 'wordpress').map((p) => p.id));
   };
 
+  // Start Edit Mode for an existing feed
+  const handleStartEditAutomation = (auto: any) => {
+    setEditingAutomationId(auto.id);
+    setFeedName(auto.name);
+    setFeedType(auto.type || 'rss');
+    setFeedUrl(auto.feedUrl);
+    setTargetCategory(auto.targetCategoryId || categories[0]?.id || '');
+    setSelectedPageIds(auto.targetPageIds || pages.map((p) => p.id));
+    setIntervalMinutes(auto.intervalMinutes || 15);
+    setAutoGenerateImage(auto.autoGenerateImage ?? true);
+    setSelectedSigTemplateId(auto.sigTemplateId || sigTemplates[0]?.id || 'tmpl_1');
+    setLinkInComment(auto.linkInComment ?? true);
+    setPostStatus(auto.postStatus || 'published');
+    setMaxItems(auto.maxItemsPerRun || 2);
+    setPreviewItems([]);
+    setPreviewError(null);
+    setModalOpen(true);
+  };
+
   // Preview Feed URL in Modal
   const handlePreviewFeedUrl = async () => {
     if (!feedUrl.trim()) return;
@@ -211,36 +265,54 @@ function AutomationsContent() {
     }
   };
 
-  // Create new Automation
-  const handleCreateAutomation = (e: React.FormEvent) => {
+  // Save Automation (Create or Edit)
+  const handleSaveAutomation = (e: React.FormEvent) => {
     e.preventDefault();
     if (!feedName.trim() || !feedUrl.trim()) return;
 
-    createAutomation({
-      name: feedName.trim(),
-      type: feedType,
-      feedUrl: feedUrl.trim(),
-      targetCategoryId: targetCategory,
-      targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
-      isActive: true,
-      intervalMinutes: Number(intervalMinutes) || 15,
-      autoGenerateImage,
-      sigTemplateId: selectedSigTemplateId,
-      linkInComment,
-      postStatus,
-      maxItemsPerRun: maxItems,
-      processedGuids: [],
-    });
+    if (editingAutomationId) {
+      updateAutomation(editingAutomationId, {
+        name: feedName.trim(),
+        type: feedType,
+        feedUrl: feedUrl.trim(),
+        targetCategoryId: targetCategory,
+        targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
+        intervalMinutes: Number(intervalMinutes) || 15,
+        autoGenerateImage,
+        sigTemplateId: selectedSigTemplateId,
+        linkInComment,
+        postStatus,
+        maxItemsPerRun: maxItems,
+      });
+      setTestFeedSuccess(`Feed "${feedName.trim()}" successfully updated!`);
+    } else {
+      createAutomation({
+        name: feedName.trim(),
+        type: feedType,
+        feedUrl: feedUrl.trim(),
+        targetCategoryId: targetCategory,
+        targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
+        isActive: true,
+        intervalMinutes: Number(intervalMinutes) || 15,
+        autoGenerateImage,
+        sigTemplateId: selectedSigTemplateId,
+        linkInComment,
+        postStatus,
+        maxItemsPerRun: maxItems,
+        processedGuids: [],
+      });
+      setTestFeedSuccess(
+        `RSS Feed "${feedName.trim()}" successfully activated! Ready for auto-dispatch.`
+      );
+    }
 
+    setEditingAutomationId(null);
     setFeedName('');
     setFeedUrl('');
     setSelectedPageIds([]);
     setPreviewItems([]);
     setPreviewError(null);
     setModalOpen(false);
-    setTestFeedSuccess(
-      `RSS Feed "${feedName.trim()}" successfully activated! Ready for auto-dispatch.`
-    );
     setTimeout(() => setTestFeedSuccess(null), 4000);
   };
 
@@ -361,6 +433,45 @@ function AutomationsContent() {
         processedGuids: data.updatedProcessedGuids,
         lastDispatchedTitle: lastTitle,
       });
+
+      // 5. REGISTER DISPATCHED STORIES DIRECTLY INTO POST LIBRARY
+      if (Array.isArray(data.dispatched) && data.dispatched.length > 0) {
+        for (const disp of data.dispatched) {
+          const item = disp.item;
+          const targetResults = Array.isArray(disp.results) ? disp.results : [];
+          const isDraft = auto.postStatus === 'draft';
+          const finalMediaUrl = item.imageUrl || undefined;
+
+          let caption = item.title;
+          if (!auto.linkInComment && item.link) {
+            caption += `\n\n👉 पूरा पढ़ें: ${item.link}`;
+          }
+
+          const comment =
+            auto.linkInComment && item.link
+              ? `👉 पूरी खबर और विस्तृत जानकारी के लिए यहाँ पढ़ें:\n${item.link}`
+              : undefined;
+
+          createPost({
+            postType: finalMediaUrl ? 'image' : 'link',
+            message: caption,
+            mediaUrl: finalMediaUrl,
+            linkUrl: item.link || undefined,
+            commentText: comment,
+            pageIds: targetsPayload.map((t: any) => t.id),
+            status: isDraft ? 'draft' : 'published',
+            results: targetResults.map((r: any) => ({
+              pageId: r.targetId || r.pageId || 'target',
+              platform: r.platform || 'facebook',
+              pageName: r.pageName || 'Channel Target',
+              status: r.status === 'success' ? 'success' : 'failed',
+              externalPostId: r.externalId || r.externalPostId || `ext_${Date.now()}`,
+              error: r.error,
+              timestamp: new Date().toISOString(),
+            })),
+          });
+        }
+      }
 
       // Show execution results modal
       setDispatchResultData({
@@ -512,13 +623,48 @@ function AutomationsContent() {
 
       {/* Active Automations Grid */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
-            <span>Active Ingestion Feeds</span>
-            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
-              {automations.length}
-            </span>
-          </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-1">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
+              <span>Active Ingestion Feeds</span>
+              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
+                {automations.length}
+              </span>
+            </h3>
+
+            {/* Format Filter Bar */}
+            <div className="inline-flex items-center p-0.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] text-[11px] font-bold">
+              {(
+                [
+                  { id: 'all', label: 'All Feeds' },
+                  { id: 'rss', label: 'RSS 2.0' },
+                  { id: 'blogger', label: 'Blogger' },
+                  { id: 'wordpress', label: 'WordPress' },
+                ] as const
+              ).map((tab) => {
+                const count =
+                  tab.id === 'all'
+                    ? automations.length
+                    : automations.filter((a) => a.type === tab.id).length;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilterFormat(tab.id)}
+                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                      filterFormat === tab.id
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="ml-1 opacity-70">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <span className="text-[11px] text-slate-400 font-medium">
             Background Cron: Every 15 minutes
           </span>
@@ -538,6 +684,7 @@ function AutomationsContent() {
             <button
               type="button"
               onClick={() => {
+                setEditingAutomationId(null);
                 setFeedType('rss');
                 setSelectedPageIds(pages.map((p) => p.id));
                 setModalOpen(true);
@@ -550,7 +697,9 @@ function AutomationsContent() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {automations.map((auto) => {
+            {automations
+              .filter((a) => (filterFormat === 'all' ? true : a.type === filterFormat))
+              .map((auto) => {
               const cat = categories.find((c) => c.id === auto.targetCategoryId);
               const isExecuting = executingFeedId === auto.id;
 
@@ -713,6 +862,16 @@ function AutomationsContent() {
 
                       <button
                         type="button"
+                        onClick={() => handleStartEditAutomation(auto)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
+                        title="Edit Feed Settings & Destinations"
+                      >
+                        <Edit3 className="w-3 h-3 text-slate-500" />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleInspectFeed(auto)}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
                         title="View Articles inside this Feed"
@@ -825,43 +984,54 @@ function AutomationsContent() {
         </div>
       </div>
 
-      {/* ═══ MODAL 1: ADD NEW RSS / INGESTION FEED ═══ */}
+      {/* ═══ MODAL 1: ADD / EDIT RSS INGESTION FEED ═══ */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl border border-[#EEF1F6] max-w-xl w-full p-6 sm:p-7 shadow-2xl animate-fade-in space-y-4 my-8">
             <div className="flex items-center justify-between pb-3 border-b border-[#EEF1F6]">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900">
-                  Add RSS / Ingestion Source
+                  {editingAutomationId ? 'Edit Ingestion Feed Configuration' : 'Add RSS / Ingestion Source'}
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Configure an RSS feed to automatically scrape &amp; post to multiple WordPress sites &amp; social channels.
+                  Configure an RSS feed to scrape news, auto-render branded template cards, and push to WordPress &amp; social channels.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setEditingAutomationId(null);
+                  setModalOpen(false);
+                }}
                 className="text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer p-1"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateAutomation} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveAutomation} className="space-y-4 text-xs">
               {/* Feed Type Switch */}
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">Source Format</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { id: 'rss', label: 'RSS 2.0 / Atom', desc: 'Any news/blog feed' },
-                    { id: 'blogger', label: 'Blogger RSS', desc: 'Blogspot XML' },
-                    { id: 'wordpress', label: 'WordPress Site', desc: 'WP REST/Feed' },
+                    { id: 'rss', label: 'RSS 2.0 / Atom', desc: 'Any news or media feed' },
+                    { id: 'blogger', label: 'Blogger RSS', desc: 'Blogspot XML feed' },
+                    { id: 'wordpress', label: 'WordPress Site', desc: 'WP REST or /feed/' },
                   ].map((t) => (
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => setFeedType(t.id as any)}
-                      className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
+                      onClick={() => {
+                        const newType = t.id as 'rss' | 'blogger' | 'wordpress';
+                        setFeedType(newType);
+                        const firstPreset = FORMAT_PRESETS[newType]?.[0];
+                        if (firstPreset && (!feedUrl || feedUrl.includes('google') || feedUrl.includes('blogspot') || feedUrl.includes('/feed'))) {
+                          setFeedName(firstPreset.name);
+                          setFeedUrl(firstPreset.url);
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
                         feedType === t.id
                           ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                           : 'bg-[#F8F9FD] border-[#EEF1F6] text-slate-700 hover:bg-slate-100'
@@ -892,7 +1062,13 @@ function AutomationsContent() {
               {/* Feed URL with Test Button */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-slate-700">RSS / Atom Feed URL</label>
+                  <label className="text-xs font-bold text-slate-700">
+                    {feedType === 'blogger'
+                      ? 'Blogger Atom / RSS Feed URL'
+                      : feedType === 'wordpress'
+                      ? 'WordPress Feed or REST Endpoint'
+                      : 'RSS 2.0 / Atom Feed URL'}
+                  </label>
                   <button
                     type="button"
                     onClick={handlePreviewFeedUrl}
@@ -912,23 +1088,31 @@ function AutomationsContent() {
                     setPreviewItems([]);
                     setPreviewError(null);
                   }}
-                  placeholder="https://news.google.com/rss/... or https://yoursite.com/feed/"
+                  placeholder={
+                    feedType === 'blogger'
+                      ? 'https://yourblog.blogspot.com/feeds/posts/default?alt=rss'
+                      : feedType === 'wordpress'
+                      ? 'https://yoursite.com/feed/ or https://yoursite.com/wp-json/wp/v2/posts'
+                      : 'https://news.google.com/rss/... or https://amarujala.com/rss/...'
+                  }
                   className="w-full px-3 py-2 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 font-mono focus:outline-none focus:border-slate-400"
                 />
 
-                {/* Quick Presets */}
+                {/* Quick Presets for Current Format */}
                 <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                  <span className="text-[10px] text-slate-400 font-medium">Quick Presets:</span>
-                  {PRESET_FEEDS.map((preset, i) => (
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    {feedType.toUpperCase()} Presets:
+                  </span>
+                  {(FORMAT_PRESETS[feedType] || FORMAT_PRESETS.rss).map((preset, i) => (
                     <button
                       key={i}
                       type="button"
                       onClick={() => {
                         setFeedName(preset.name);
                         setFeedUrl(preset.url);
-                        setFeedType(preset.type);
                       }}
                       className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold transition-colors cursor-pointer"
+                      title={preset.desc}
                     >
                       {preset.name}
                     </button>
@@ -967,10 +1151,10 @@ function AutomationsContent() {
                 </div>
               )}
 
-              {/* ── TARGET PUBLISHING DESTINATIONS (Multiple WordPress + Social Channels) ── */}
-              <div className="pt-2 border-t border-[#EEF1F6] space-y-2">
+              {/* ── TARGET PUBLISHING DESTINATIONS ── */}
+              <div className="pt-2 border-t border-[#EEF1F6] space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800">
+                  <label className="text-xs font-bold text-slate-900">
                     Publishing Target Destinations ({selectedPageIds.length}/{pages.length} Selected)
                   </label>
                   <div className="flex items-center gap-1.5 text-[11px]">
@@ -1000,12 +1184,19 @@ function AutomationsContent() {
                   </div>
                 </div>
 
-                {/* Section A: Connected WordPress Websites (Multiple Sites Support) */}
+                {/* Section A: WordPress Websites */}
                 {wpPages.length > 0 && (
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-[#21759B] uppercase tracking-wider block">
-                      WordPress Websites (Push to All or Selected):
-                    </span>
+                  <div className="p-3 rounded-2xl bg-cyan-50/40 border border-cyan-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#21759B] uppercase tracking-wider flex items-center gap-1.5">
+                        <SocialIcon platform="wordpress" size={14} />
+                        <span>WordPress Websites Destination</span>
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-500">
+                        {wpPages.filter((p) => selectedPageIds.includes(p.id)).length} / {wpPages.length} active
+                      </span>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {wpPages.map((p) => {
                         const isSelected = selectedPageIds.includes(p.id);
@@ -1013,10 +1204,10 @@ function AutomationsContent() {
                           <div
                             key={p.id}
                             onClick={() => handleToggleSelectPage(p.id)}
-                            className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none ${
+                            className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-all select-none ${
                               isSelected
-                                ? 'bg-cyan-50/50 border-[#21759B] ring-1 ring-[#21759B]/20 text-[#21759B] font-bold'
-                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                ? 'bg-white border-[#21759B] ring-1 ring-[#21759B]/20 text-[#21759B] font-bold shadow-2xs'
+                                : 'bg-white/80 border-slate-200 text-slate-600 hover:bg-white'
                             }`}
                           >
                             <div
@@ -1044,12 +1235,18 @@ function AutomationsContent() {
                   </div>
                 )}
 
-                {/* Section B: Connected Social Channels (Facebook, Telegram, Instagram) */}
+                {/* Section B: Social Media Channels */}
                 {socialPages.length > 0 && (
-                  <div className="space-y-1 pt-1.5">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Social Media Channels:
-                    </span>
+                  <div className="p-3 rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                        Social Media Channels (FB, Insta, Telegram)
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-500">
+                        {socialPages.filter((p) => selectedPageIds.includes(p.id)).length} / {socialPages.length} active
+                      </span>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
                       {socialPages.map((p) => {
                         const isSelected = selectedPageIds.includes(p.id);
@@ -1057,10 +1254,10 @@ function AutomationsContent() {
                           <div
                             key={p.id}
                             onClick={() => handleToggleSelectPage(p.id)}
-                            className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none ${
+                            className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-all select-none ${
                               isSelected
                                 ? 'bg-white border-slate-900 shadow-2xs font-bold text-slate-900'
-                                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                                : 'bg-white/80 border-slate-200 text-slate-500 hover:bg-white'
                             }`}
                           >
                             <div
@@ -1083,14 +1280,14 @@ function AutomationsContent() {
               </div>
 
               {/* ── CARD TEMPLATE GENERATION (SIG) ── */}
-              <div className="pt-2 border-t border-[#EEF1F6] space-y-2">
+              <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200/70 space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                      <Palette className="w-3.5 h-3.5 text-amber-500" />
+                      <Palette className="w-3.5 h-3.5 text-amber-600" />
                       <span>Auto-Generate Branded Card Image (SIG Template)</span>
                     </div>
-                    <div className="text-[10px] text-slate-400">
+                    <div className="text-[10px] text-slate-500">
                       Renders the article photo into the Featured Image Box and headline in Title Box.
                     </div>
                   </div>
@@ -1103,7 +1300,7 @@ function AutomationsContent() {
                 </div>
 
                 {autoGenerateImage && (
-                  <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between gap-3">
+                  <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-3">
                     <div className="flex-1">
                       <label className="text-[10px] font-bold text-amber-900 block mb-1">
                         Select Template Layout:
@@ -1132,13 +1329,13 @@ function AutomationsContent() {
                 )}
               </div>
 
-              {/* Automation Rules */}
-              <div className="pt-2 border-t border-[#EEF1F6] space-y-2.5">
+              {/* Automation Rules: First Comment, Cadence, Publishing Mode */}
+              <div className="pt-2 border-t border-[#EEF1F6] space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-bold text-slate-800 text-xs">First Comment Source Link</div>
                     <div className="text-[10px] text-slate-400">
-                      Places the news link in the first comment (avoids Facebook reach penalty).
+                      Places news source link in first comment to maximize Facebook organic reach.
                     </div>
                   </div>
                   <input
@@ -1149,7 +1346,30 @@ function AutomationsContent() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Fetching Cadence */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      <span>Fetching Cadence</span>
+                    </label>
+                    <select
+                      value={intervalMinutes}
+                      onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
+                    >
+                      <option value={1}>Every 1 Min (Breaking News)</option>
+                      <option value={5}>Every 5 Mins</option>
+                      <option value={15}>Every 15 Mins (Recommended)</option>
+                      <option value={30}>Every 30 Mins</option>
+                      <option value={60}>Every 1 Hour</option>
+                      <option value={180}>Every 3 Hours</option>
+                      <option value={360}>Every 6 Hours</option>
+                      <option value={720}>Every 12 Hours</option>
+                    </select>
+                  </div>
+
+                  {/* Stories per Run */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
                       Max Stories per Run
@@ -1157,7 +1377,7 @@ function AutomationsContent() {
                     <select
                       value={maxItems}
                       onChange={(e) => setMaxItems(Number(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
                     >
                       <option value={1}>1 Story (Safe)</option>
                       <option value={2}>2 Stories (Recommended)</option>
@@ -1166,17 +1386,18 @@ function AutomationsContent() {
                     </select>
                   </div>
 
+                  {/* Publishing Mode */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Auto-Post Status
+                      Publishing Mode
                     </label>
                     <select
                       value={postStatus}
                       onChange={(e) => setPostStatus(e.target.value as any)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
                     >
-                      <option value="published">Publish Live Immediately</option>
-                      <option value="draft">Save as Draft in WordPress</option>
+                      <option value="published">⚡ Auto-Publish Live</option>
+                      <option value="draft">📝 Save as Draft (Approval)</option>
                     </select>
                   </div>
                 </div>
@@ -1186,7 +1407,10 @@ function AutomationsContent() {
               <div className="pt-3 border-t border-[#EEF1F6] flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    setEditingAutomationId(null);
+                    setModalOpen(false);
+                  }}
                   className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-[#F8F9FD] cursor-pointer"
                 >
                   Cancel
@@ -1195,7 +1419,7 @@ function AutomationsContent() {
                   type="submit"
                   className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs cursor-pointer"
                 >
-                  Save &amp; Activate Feed
+                  {editingAutomationId ? 'Update Feed Settings' : 'Save & Activate Feed'}
                 </button>
               </div>
             </form>
