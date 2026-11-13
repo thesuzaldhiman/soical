@@ -142,7 +142,7 @@ export interface PostResult {
   pageId: string;
   platform: Platform;
   pageName: string;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'draft';
   externalPostId?: string;
   commentId?: string;
   error?: string;
@@ -160,6 +160,7 @@ export interface Post {
   commentText?: string;
   pageIds: string[];
   status: PostStatus;
+  externalPostId?: string;
   scheduledAt?: string;
   publishedAt?: string;
   intervalMinSeconds?: number;

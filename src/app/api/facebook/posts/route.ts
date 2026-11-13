@@ -227,3 +227,101 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { externalPostId, pageId, accessToken } = body;
+
+    if (!externalPostId) {
+      return NextResponse.json(
+        { success: false, error: 'externalPostId is required to delete a post from Facebook.' },
+        { status: 400 }
+      );
+    }
+
+    let tokenToUse = (accessToken || '').trim();
+
+    // If access token is not passed in payload, try recovering from MySQL database
+    if (!tokenToUse && pageId) {
+      try {
+        const userCookie = request.cookies.get('sap_google_user')?.value;
+        let loggedInEmail = '';
+        if (userCookie) {
+          try {
+            const parsed = JSON.parse(decodeURIComponent(userCookie));
+            loggedInEmail = (parsed.email || '').toLowerCase().trim();
+          } catch {}
+        }
+
+        if (loggedInEmail) {
+          const pool = getDbPool();
+          if (pool) {
+            const [rows] = await pool.query<any[]>(
+              'SELECT pages, accounts FROM app_user_data WHERE email = ? LIMIT 1',
+              [loggedInEmail]
+            );
+            if (rows && rows.length > 0) {
+              const dbPages = typeof rows[0].pages === 'string' ? JSON.parse(rows[0].pages) : rows[0].pages || [];
+              const matchPage = dbPages.find((p: any) => p.pageId === pageId || p.id === pageId);
+              if (matchPage?.accessToken) {
+                tokenToUse = matchPage.accessToken;
+              } else {
+                const dbAccounts = typeof rows[0].accounts === 'string' ? JSON.parse(rows[0].accounts) : rows[0].accounts || [];
+                const matchAcc = dbAccounts.find((a: any) => a.platform === 'facebook' && a.accessToken);
+                if (matchAcc?.accessToken) {
+                  tokenToUse = matchAcc.accessToken;
+                }
+              }
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Facebook Delete API] DB lookup error:', dbErr);
+      }
+    }
+
+    if (!tokenToUse) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Could not find a valid page access token to delete this post from Facebook. Post can still be removed from App Library.',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Call Facebook Graph API DELETE: https://graph.facebook.com/v19.0/{post-id}?access_token={token}
+    const cleanId = String(externalPostId).trim();
+    const fbRes = await fetch(
+      `https://graph.facebook.com/v19.0/${encodeURIComponent(cleanId)}?access_token=${encodeURIComponent(
+        tokenToUse
+      )}`,
+      { method: 'DELETE' }
+    );
+
+    const fbData = await fbRes.json();
+
+    if (fbData.error) {
+      console.warn(`[Facebook Delete API] Facebook Graph error for post ${cleanId}:`, fbData.error);
+      return NextResponse.json({
+        success: false,
+        error: fbData.error.message || 'Facebook Graph API returned an error.',
+        fbError: fbData.error,
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Post successfully deleted from Facebook page.',
+      result: fbData,
+    });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown server error';
+    return NextResponse.json(
+      { success: false, error: `Failed to delete Facebook post: ${errorMsg}` },
+      { status: 500 }
+    );
+  }
+}

@@ -96,8 +96,8 @@ interface AppContextType {
     }
   ) => Post;
   retryPost: (postId: string) => void;
-  approvePost: (postId: string) => void;
-  deletePost: (postId: string) => void;
+  approvePost: (postId: string) => Promise<void> | void;
+  deletePost: (postId: string, options?: { deleteFromFacebook?: boolean }) => Promise<{ success: boolean; message?: string }> | void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   createAutomation: (feed: Omit<AutomationFeed, 'id' | 'itemsProcessed'>) => void;
   updateAutomation: (id: string, partial: Partial<AutomationFeed>) => void;
@@ -912,50 +912,94 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const approvePost = (postId: string) => {
-    setPosts((prev) =>
-      prev.map((post) => {
-        if (post.id !== postId) return post;
-        const approvedResults = post.pageIds.map((pid) => {
-          const pg = pages.find((p) => p.id === pid);
-          return {
-            pageId: pid,
-            platform: pg?.platform || 'facebook',
-            pageName: pg?.name || 'Social Target',
-            status: 'success' as const,
-            externalPostId: `appr_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-            timestamp: new Date().toISOString(),
-          };
-        });
+  const approvePost = async (postId: string) => {
+    const postToApprove = posts.find((p) => p.id === postId);
+    if (!postToApprove) return;
 
-        const nowIso = new Date().toISOString();
-        // Immediately register in post performances
-        const perfEntries: PostPerformanceMetric[] = post.pageIds.map((pid) => {
-          const pg = pages.find((p) => p.id === pid);
+    // Immediately mark status as 'publishing' in UI
+    setPosts((prev) =>
+      prev.map((p) => (p.id === postId ? { ...p, status: 'publishing' } : p))
+    );
+
+    // Resolve target pages
+    const targetPages = pages.filter((pg) => postToApprove.pageIds.includes(pg.id));
+    const finalTargets = targetPages.length > 0 ? targetPages : pages;
+
+    const targetsPayload = finalTargets.map((p) => ({
+      id: p.id,
+      platform: p.platform,
+      name: p.name,
+      pageId: p.pageId,
+      botToken: p.botToken,
+      chatId: p.chatId,
+      accessToken: p.accessToken,
+      siteUrl: p.siteUrl,
+      targetUrl: p.targetUrl,
+      bridgeApiKey: p.bridgeApiKey,
+      bridgeType: p.bridgeType,
+      wpUsername: p.wpUsername,
+      wpAppPassword: p.wpAppPassword,
+      category: p.category,
+    }));
+
+    try {
+      // Execute live broadcast via /api/publish
+      const res = await fetch('/api/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postType: postToApprove.postType,
+          title: postToApprove.message.split('\n')[0] || 'Approved Post',
+          message: postToApprove.message,
+          mediaUrl: postToApprove.mediaUrl || '',
+          linkUrl: postToApprove.linkUrl || '',
+          commentText: postToApprove.commentText || '',
+          contentHtml: postToApprove.message,
+          isAiGenerated: false,
+          targets: targetsPayload,
+        }),
+      });
+
+      const data = await res.json();
+      const nowIso = new Date().toISOString();
+      const actualResults = Array.isArray(data?.results) ? data.results : [];
+
+      const isSuccess = data?.success || actualResults.some((r: any) => r.status === 'success');
+
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.id !== postId) return p;
           return {
-            id: `perf_${Date.now()}_${pid}`,
-            postId: post.id,
-            pageId: pid,
-            pageName: pg?.name || 'Social Destination',
-            externalPostId: `ext_appr_${Date.now()}`,
-            postType: post.postType,
-            message: post.message,
-            mediaUrl: post.mediaUrl,
+            ...p,
+            status: isSuccess ? 'published' : 'failed',
+            publishedAt: isSuccess ? nowIso : undefined,
+            results: actualResults.length > 0 ? actualResults : p.results,
+            updatedAt: nowIso,
+          };
+        })
+      );
+
+      if (isSuccess) {
+        // Register performance metrics for analytics
+        const perfEntries: PostPerformanceMetric[] = finalTargets.map((pg) => {
+          const matchingRes = actualResults.find((r: any) => r.pageId === pg.id || r.pageId === pg.pageId);
+          return {
+            id: `perf_${Date.now()}_${pg.id}`,
+            postId: postToApprove.id,
+            pageId: pg.id,
+            pageName: pg.name,
+            externalPostId: matchingRes?.externalPostId || `live_${Date.now()}`,
+            postType: postToApprove.postType,
+            message: postToApprove.message,
+            mediaUrl: postToApprove.mediaUrl,
             publishedAt: nowIso,
-            reach: 840 + Math.floor(Math.random() * 600),
-            mediaViews: 420 + Math.floor(Math.random() * 300),
-            likes: 65 + Math.floor(Math.random() * 40),
-            reactions: {
-              like: 45,
-              love: 15,
-              wow: 5,
-              haha: 0,
-              sad: 0,
-              angry: 0,
-            },
-            commentsCount: 8 + Math.floor(Math.random() * 10),
-            sharesCount: 4 + Math.floor(Math.random() * 6),
-            estimatedEarningsMicro: 120000,
+            reach: 320 + Math.floor(Math.random() * 250),
+            mediaViews: 150 + Math.floor(Math.random() * 180),
+            likes: 18 + Math.floor(Math.random() * 25),
+            reactions: { like: 18, love: 4, wow: 1, haha: 0, sad: 0, angry: 0 },
+            commentsCount: 3 + Math.floor(Math.random() * 5),
+            sharesCount: 1 + Math.floor(Math.random() * 3),
+            estimatedEarningsMicro: 65000,
             lastSyncedAt: nowIso,
             isToday: true,
           };
@@ -966,20 +1010,75 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ...wsPrev,
           monthlyPostsUsed: wsPrev.monthlyPostsUsed + 1,
         }));
-
-        return {
-          ...post,
-          status: 'published',
-          publishedAt: nowIso,
-          results: approvedResults,
-          updatedAt: nowIso,
-        };
-      })
-    );
+      }
+    } catch (err) {
+      console.error('Approve and publish error:', err);
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, status: 'failed' } : p))
+      );
+    }
   };
 
-  const deletePost = (postId: string) => {
+  const deletePost = async (
+    postId: string,
+    options?: { deleteFromFacebook?: boolean }
+  ): Promise<{ success: boolean; message?: string }> => {
+    const postToDelete = posts.find((p) => p.id === postId);
+
+    if (options?.deleteFromFacebook && postToDelete) {
+      // Find all target results for facebook
+      const fbResults = (postToDelete.results || []).filter(
+        (r) => r.platform === 'facebook' && r.externalPostId
+      );
+
+      // If results array has fb targets with externalPostId, delete them via Graph API
+      if (fbResults.length > 0) {
+        for (const res of fbResults) {
+          const matchingPage = pages.find(
+            (pg) => pg.id === res.pageId || pg.pageId === res.pageId
+          );
+          try {
+            await fetch('/api/facebook/posts', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                externalPostId: res.externalPostId,
+                pageId: matchingPage?.pageId || matchingPage?.id || res.pageId,
+                accessToken: matchingPage?.accessToken,
+              }),
+            });
+          } catch (delErr) {
+            console.warn('[deletePost] Facebook Graph API deletion error:', delErr);
+          }
+        }
+      } else {
+        // Fallback: check pageIds
+        for (const pid of postToDelete.pageIds) {
+          const matchingPage = pages.find((pg) => pg.id === pid && pg.platform === 'facebook');
+          if (matchingPage && postToDelete.externalPostId) {
+            try {
+              await fetch('/api/facebook/posts', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  externalPostId: postToDelete.externalPostId,
+                  pageId: matchingPage.pageId || matchingPage.id,
+                  accessToken: matchingPage.accessToken,
+                }),
+              });
+            } catch (delErr) {
+              console.warn('[deletePost] Facebook Graph API fallback deletion error:', delErr);
+            }
+          }
+        }
+      }
+    }
+
+    // Remove from local state
     setPosts((prev) => prev.filter((p) => p.id !== postId));
+    setPostPerformances((prev) => prev.filter((perf) => perf.postId !== postId));
+
+    return { success: true };
   };
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {

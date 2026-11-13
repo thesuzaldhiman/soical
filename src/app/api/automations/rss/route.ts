@@ -144,16 +144,32 @@ export async function POST(request: NextRequest) {
       const finalMediaUrl =
         generatedMediaMap[item.id] || generatedMediaMap[item.link] || item.imageUrl || '';
 
-      const targetResults = await dispatchToTargets({
-        postType: finalMediaUrl ? 'image' : 'text',
-        title: item.title,
-        message: caption,
-        mediaUrl: finalMediaUrl,
-        linkUrl: item.link || '',
-        commentText: comment,
-        contentHtml: item.content || item.summary,
-        targets: targets as PublishTarget[],
-      });
+      const isDraftMode = postStatus === 'draft';
+      let targetResults: any[] = [];
+
+      if (isDraftMode) {
+        // Safe Draft Mode: Prepare card image and formatted caption, but DO NOT dispatch live to Facebook or external APIs yet!
+        targetResults = (targets as PublishTarget[]).map((t) => ({
+          pageId: t.id,
+          platform: t.platform,
+          pageName: t.name,
+          status: 'draft',
+          externalPostId: '',
+          timestamp: new Date().toISOString(),
+        }));
+      } else {
+        // Live auto-publishing mode
+        targetResults = await dispatchToTargets({
+          postType: finalMediaUrl ? 'image' : 'text',
+          title: item.title,
+          message: caption,
+          mediaUrl: finalMediaUrl,
+          linkUrl: item.link || '',
+          commentText: comment,
+          contentHtml: item.content || item.summary,
+          targets: targets as PublishTarget[],
+        });
+      }
 
       dispatchResults.push({
         item: {
