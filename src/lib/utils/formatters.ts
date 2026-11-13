@@ -12,10 +12,12 @@ export function formatMicroCurrency(microAmount: number, currency = 'USD'): stri
   }
 }
 
-export function formatCompactNumber(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return value.toLocaleString();
+export function formatCompactNumber(value?: number | null): string {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return '0';
+  const num = Number(value);
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}k`;
+  return num.toLocaleString();
 }
 
 export function formatTimeShort(isoString?: string): string {

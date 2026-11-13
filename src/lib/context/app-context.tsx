@@ -247,6 +247,82 @@ const getStorageKeyForEmail = (email?: string) => {
   return `sap_user_${safe}_v1`;
 };
 
+const sanitizePages = (rawPages: any[]): SocialPage[] => {
+  if (!Array.isArray(rawPages)) return [];
+  return rawPages.map((p, idx) => {
+    let platform = p.platform;
+    if (!platform || typeof platform !== 'string') {
+      const idStr = String(p.id || '').toLowerCase();
+      const targetStr = String(p.targetUrl || '').toLowerCase();
+      const catStr = String(p.category || '').toLowerCase();
+      if (
+        idStr.includes('fb') ||
+        targetStr.includes('facebook') ||
+        catStr.includes('facebook') ||
+        p.fanCount !== undefined
+      ) {
+        platform = 'facebook';
+      } else if (idStr.includes('yt') || targetStr.includes('youtube')) {
+        platform = 'youtube';
+      } else if (idStr.includes('tg') || targetStr.includes('t.me') || p.botToken || p.chatId) {
+        platform = 'telegram';
+      } else if (idStr.includes('wp') || p.siteUrl) {
+        platform = 'wordpress';
+      } else if (idStr.includes('ig') || targetStr.includes('instagram')) {
+        platform = 'instagram';
+      } else {
+        platform = 'facebook';
+      }
+    }
+    const cleanPlat = (platform || 'facebook').toLowerCase() as Platform;
+    const fanCount = Number(p.fanCount ?? p.followersCount ?? 0) || 0;
+    const followersCount = Number(p.followersCount ?? p.fanCount ?? 0) || fanCount;
+
+    return {
+      ...p,
+      id: p.id || `pg_${cleanPlat}_${Date.now()}_${idx}`,
+      platform: cleanPlat,
+      name: p.name || 'Social Page',
+      pageId: String(p.pageId || p.id || ''),
+      fanCount,
+      followersCount,
+      isActive: p.isActive !== false,
+      category: p.category || (cleanPlat === 'facebook' ? 'Facebook Page' : cleanPlat),
+      avatarUrl: p.avatarUrl || `/icons/social/${cleanPlat}.png`,
+    };
+  });
+};
+
+const sanitizeAccounts = (rawAccounts: any[]): SocialAccount[] => {
+  if (!Array.isArray(rawAccounts)) return [];
+  return rawAccounts.map((a, idx) => {
+    let platform = a.platform;
+    if (!platform || typeof platform !== 'string') {
+      const idStr = String(a.id || '').toLowerCase();
+      const nameStr = String(a.name || '').toLowerCase();
+      if (idStr.includes('fb') || nameStr.includes('meta') || nameStr.includes('facebook')) {
+        platform = 'facebook';
+      } else if (idStr.includes('yt') || nameStr.includes('youtube')) {
+        platform = 'youtube';
+      } else if (idStr.includes('tg') || a.botToken) {
+        platform = 'telegram';
+      } else if (idStr.includes('wp') || a.siteUrl) {
+        platform = 'wordpress';
+      } else {
+        platform = 'facebook';
+      }
+    }
+    const cleanPlat = (platform || 'facebook').toLowerCase() as Platform;
+    return {
+      ...a,
+      id: a.id || `acc_${cleanPlat}_${Date.now()}_${idx}`,
+      platform: cleanPlat,
+      status: a.status || 'active',
+      avatarUrl: a.avatarUrl || `/icons/social/${cleanPlat}.png`,
+    };
+  });
+};
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User>(GUEST_USER);
   const [workspace, setWorkspace] = useState<Workspace>(INITIAL_WORKSPACE);
@@ -314,8 +390,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.accounts) setAccounts(parsed.accounts);
-          if (parsed.pages) setPages(parsed.pages);
+          if (parsed.accounts) setAccounts(sanitizeAccounts(parsed.accounts));
+          if (parsed.pages) setPages(sanitizePages(parsed.pages));
           if (parsed.categories) setCategories(parsed.categories);
           if (parsed.posts) setPosts(parsed.posts);
           if (parsed.sigTemplates) setSigTemplates(parsed.sigTemplates);
@@ -359,8 +435,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => {
           if (res.success && res.data) {
             const db = res.data;
-            if (Array.isArray(db.accounts)) setAccounts(db.accounts);
-            if (Array.isArray(db.pages)) setPages(db.pages);
+            if (Array.isArray(db.accounts)) setAccounts(sanitizeAccounts(db.accounts));
+            if (Array.isArray(db.pages)) {
+              const healedPages = sanitizePages(db.pages);
+              setPages(healedPages);
+              if (healedPages.length > 0) {
+                setTimeout(() => syncPageLiveFollowers(), 400);
+              }
+            }
             if (Array.isArray(db.categories)) setCategories(db.categories);
             if (Array.isArray(db.posts)) setPosts(db.posts);
             if (Array.isArray(db.sigTemplates)) setSigTemplates(db.sigTemplates);
@@ -640,9 +722,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addPages = (pagesToAdd: SocialPage[]) => {
+    const sanitizedIncoming = sanitizePages(pagesToAdd);
     setPages((prev) => {
       const incomingMap = new Map<string, SocialPage>();
-      pagesToAdd.forEach((p) => incomingMap.set(p.pageId, p));
+      sanitizedIncoming.forEach((p) => incomingMap.set(p.pageId, p));
 
       // 1. Update existing pages if re-imported with fresh token or updated metadata
       const updatedPrev = prev.map((existing) => {
@@ -651,6 +734,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           incomingMap.delete(existing.pageId);
           return {
             ...existing,
+            platform: incoming.platform || existing.platform || 'facebook',
             accessToken: incoming.accessToken || existing.accessToken,
             name: incoming.name || existing.name,
             avatarUrl: incoming.avatarUrl || existing.avatarUrl,
@@ -666,6 +750,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const fresh = Array.from(incomingMap.values());
       return [...updatedPrev, ...fresh];
     });
+    setTimeout(() => syncPageLiveFollowers(), 300);
   };
 
   const updatePage = (id: string, pageData: Partial<SocialPage>) => {

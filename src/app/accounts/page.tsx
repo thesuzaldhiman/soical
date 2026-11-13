@@ -41,6 +41,19 @@ export default function AccountsPage() {
   );
 }
 
+function isPageForPlatform(p: SocialPage, targetPlat: Platform | string): boolean {
+  if (!targetPlat) return true;
+  const plat = targetPlat.toLowerCase();
+  const pagePlat = (p.platform || '').toLowerCase();
+  if (pagePlat === plat) return true;
+  if (plat === 'facebook' && (pagePlat.includes('fb') || p.id?.includes('fb') || p.targetUrl?.includes('facebook') || (p.category || '').toLowerCase().includes('facebook') || p.fanCount !== undefined)) return true;
+  if (plat === 'youtube' && (pagePlat.includes('yt') || p.id?.includes('yt') || p.targetUrl?.includes('youtube'))) return true;
+  if (plat === 'telegram' && (pagePlat.includes('tg') || p.id?.includes('tg') || p.targetUrl?.includes('t.me') || p.botToken || p.chatId)) return true;
+  if (plat === 'wordpress' && (pagePlat.includes('wp') || p.id?.includes('wp') || p.siteUrl)) return true;
+  if (plat === 'instagram' && (pagePlat.includes('ig') || p.id?.includes('ig') || p.targetUrl?.includes('instagram'))) return true;
+  return false;
+}
+
 function AccountsContent() {
   const {
     accounts,
@@ -741,7 +754,7 @@ function AccountsContent() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {platformsConfig.map((plat) => {
           const platformAccount = accounts.find((a) => a.platform === plat.id);
-          const platformPages = pages.filter((p) => p.platform === plat.id);
+          const platformPages = pages.filter((p) => isPageForPlatform(p, plat.id));
           const isConnected = !!platformAccount || platformPages.length > 0;
 
           return (
@@ -867,7 +880,7 @@ function AccountsContent() {
             {/* List of Pages */}
             <div className="space-y-3">
               {pages
-                .filter((p) => p.platform === selectedPlatformModal)
+                .filter((p) => isPageForPlatform(p, selectedPlatformModal))
                 .map((page) => (
                   <div
                     key={page.id}
@@ -907,7 +920,7 @@ function AccountsContent() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {page.platform === 'facebook' && (
+                      {isPageForPlatform(page, 'facebook') && (
                         <button
                           type="button"
                           onClick={() => {
@@ -947,7 +960,7 @@ function AccountsContent() {
                   </div>
                 ))}
 
-              {pages.filter((p) => p.platform === selectedPlatformModal).length === 0 && (
+              {pages.filter((p) => isPageForPlatform(p, selectedPlatformModal)).length === 0 && (
                 <div className="p-8 text-center bg-[#F8F9FA] rounded-2xl border border-dashed border-[#E2E8F0]">
                   <p className="text-xs text-slate-500 font-medium">No destinations found for this platform.</p>
                 </div>

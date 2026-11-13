@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 interface SyncPageInput {
   id: string;
-  platform: 'facebook' | 'instagram' | 'youtube' | 'threads' | 'telegram';
+  platform?: string;
   pageId?: string;
   accessToken?: string;
   botToken?: string;
@@ -25,9 +25,17 @@ export async function POST(request: NextRequest) {
     const syncResults = await Promise.all(
       pages.map(async (pg) => {
         const fallbackCount = pg.followersCount ?? pg.fanCount ?? 0;
+        const platStr = String(pg.platform || '').toLowerCase();
 
         // 1. FACEBOOK LIVE SYNC
-        if (pg.platform === 'facebook' && pg.accessToken && pg.pageId) {
+        const isFb =
+          platStr === 'facebook' ||
+          platStr === 'fb' ||
+          (pg.id && pg.id.includes('fb')) ||
+          (pg.targetUrl && pg.targetUrl.includes('facebook')) ||
+          pg.fanCount !== undefined;
+
+        if (isFb && pg.accessToken && pg.pageId) {
           try {
             const fbRes = await fetch(
               `https://graph.facebook.com/v19.0/${encodeURIComponent(pg.pageId)}?fields=fan_count,followers_count,name&access_token=${encodeURIComponent(pg.accessToken)}`

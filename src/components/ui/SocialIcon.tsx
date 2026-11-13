@@ -17,6 +17,7 @@ export function SocialIcon({ platform, className = 'w-5 h-5', size }: SocialIcon
   const imageMap: Record<string, string> = {
     facebook: '/icons/social/facebook.png',
     fb: '/icons/social/facebook.png',
+    meta: '/icons/social/facebook.png',
     instagram: '/icons/social/instagram.png',
     ig: '/icons/social/instagram.png',
     youtube: '/icons/social/youtube.png',
@@ -34,7 +35,20 @@ export function SocialIcon({ platform, className = 'w-5 h-5', size }: SocialIcon
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={imageMap[matchedKey]}
-        alt={platform}
+        alt={platform || 'Social Platform'}
+        className={`object-contain shrink-0 select-none ${className}`}
+        {...dimensionProps}
+      />
+    );
+  }
+
+  // If empty or page-related, default to Facebook icon
+  if (!norm || norm === 'all' || norm.includes('page') || norm.includes('destination')) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src="/icons/social/facebook.png"
+        alt="Facebook"
         className={`object-contain shrink-0 select-none ${className}`}
         {...dimensionProps}
       />
@@ -138,13 +152,14 @@ export function SocialIcon({ platform, className = 'w-5 h-5', size }: SocialIcon
     );
   }
 
-  // Fallback broadcast icon
+  // Fallback: Default to official Facebook icon
   return (
-    <div
-      className={`rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-[10px] ${className}`}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/icons/social/facebook.png"
+      alt={platform || 'Facebook'}
+      className={`object-contain shrink-0 select-none ${className}`}
       {...dimensionProps}
-    >
-      📢
-    </div>
+    />
   );
 }

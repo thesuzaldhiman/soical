@@ -41,6 +41,19 @@ const DEFAULT_SCOPES = [
   { key: 'pages_show_list', label: 'Enumerate Pages List', desc: 'Permits listing verified business pages linked to the account' },
 ];
 
+function isPageForPlatform(p: SocialPage, targetPlat: string): boolean {
+  if (targetPlat === 'all') return true;
+  const plat = targetPlat.toLowerCase();
+  const pagePlat = (p.platform || '').toLowerCase();
+  if (pagePlat === plat) return true;
+  if (plat === 'facebook' && (pagePlat.includes('fb') || p.id?.includes('fb') || p.targetUrl?.includes('facebook') || (p.category || '').toLowerCase().includes('facebook') || p.fanCount !== undefined)) return true;
+  if (plat === 'youtube' && (pagePlat.includes('yt') || p.id?.includes('yt') || p.targetUrl?.includes('youtube'))) return true;
+  if (plat === 'telegram' && (pagePlat.includes('tg') || p.id?.includes('tg') || p.targetUrl?.includes('t.me') || p.botToken || p.chatId)) return true;
+  if (plat === 'wordpress' && (pagePlat.includes('wp') || p.id?.includes('wp') || p.siteUrl)) return true;
+  if (plat === 'instagram' && (pagePlat.includes('ig') || p.id?.includes('ig') || p.targetUrl?.includes('instagram'))) return true;
+  return false;
+}
+
 function PagesContent() {
   const { pages, togglePageActive, disconnectPage } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,7 +65,7 @@ function PagesContent() {
   // Filtered pages based on platform, status, and search query
   const filteredPages = useMemo(() => {
     return pages.filter((page) => {
-      const matchesPlatform = platformFilter === 'all' || page.platform === platformFilter;
+      const matchesPlatform = isPageForPlatform(page, platformFilter);
       const matchesStatus =
         statusFilter === 'all' ||
         (statusFilter === 'active' && page.isActive) ||
@@ -230,7 +243,7 @@ function PagesContent() {
           <div className="flex items-center gap-1.5 flex-wrap">
             {(['all', 'facebook', 'instagram', 'youtube', 'threads', 'telegram', 'wordpress'] as const).map((plat) => {
               const count =
-                plat === 'all' ? pages.length : pages.filter((p) => p.platform === plat).length;
+                plat === 'all' ? pages.length : pages.filter((p) => isPageForPlatform(p, plat)).length;
 
               return (
                 <button
@@ -412,8 +425,8 @@ function PagesContent() {
 
                     <td className="py-3.5 px-5">
                       <span className="capitalize font-semibold text-slate-800 flex items-center gap-2">
-                        <SocialIcon platform={page.platform} className="w-4 h-4 rounded-xs shadow-2xs" />
-                        <span>{page.platform}</span>
+                        <SocialIcon platform={page.platform || (page.id?.includes('fb') ? 'facebook' : 'facebook')} className="w-4 h-4 rounded-xs shadow-2xs" />
+                        <span>{page.platform || (page.id?.includes('fb') ? 'facebook' : 'facebook')}</span>
                       </span>
                     </td>
 

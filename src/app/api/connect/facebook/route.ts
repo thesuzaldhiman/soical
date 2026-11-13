@@ -37,8 +37,10 @@ export async function POST(request: NextRequest) {
         pages: [
           {
             id: pageData.id,
+            platform: 'facebook',
             name: pageData.name,
             fanCount: pageData.fan_count || 0,
+            followersCount: pageData.fan_count || 0,
             avatarUrl: pageData.picture?.data?.url || '',
             accessToken: pageData.access_token || cleanToken,
             tasks: pageData.tasks || ['MANAGE', 'CREATE_CONTENT'],
@@ -66,8 +68,10 @@ export async function POST(request: NextRequest) {
           pages: [
             {
               id: directPageData.id,
+              platform: 'facebook',
               name: directPageData.name,
               fanCount: directPageData.fan_count || 0,
+              followersCount: directPageData.fan_count || 0,
               avatarUrl: directPageData.picture?.data?.url || '',
               accessToken: cleanToken,
               tasks: ['MANAGE', 'CREATE_CONTENT'],
@@ -87,8 +91,10 @@ export async function POST(request: NextRequest) {
 
     const pagesList = (meData.data || []).map((p: any) => ({
       id: p.id,
+      platform: 'facebook',
       name: p.name,
       fanCount: p.fan_count || 0,
+      followersCount: p.fan_count || 0,
       avatarUrl: p.picture?.data?.url || '',
       accessToken: p.access_token || cleanToken,
       tasks: p.tasks || ['MANAGE', 'CREATE_CONTENT'],
