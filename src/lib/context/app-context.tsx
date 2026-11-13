@@ -15,6 +15,7 @@ import {
   PageAnalyticsSnapshot,
   PostPerformanceMetric,
   PostComment,
+  PostCommentReply,
   AutomationFeed,
   AppSettings,
   SubscriptionTier,
@@ -138,11 +139,13 @@ interface AppContextType {
   // Facebook Analytics & Monetization Actions
   syncPageLiveFollowers: (pageId?: string) => Promise<void> | void;
   syncPostInsights: (pageId?: string) => Promise<void> | void;
-  replyToComment: (commentId: string, message: string) => void;
-  toggleLikeComment: (commentId: string) => void;
-  toggleHideComment: (commentId: string) => void;
-  deleteComment: (commentId: string) => void;
-  sendPrivateReply: (commentId: string, message: string) => void;
+  replyToComment: (commentId: string, message: string, pageId?: string, accessToken?: string) => Promise<void> | void;
+  toggleLikeComment: (commentId: string, pageId?: string, accessToken?: string) => Promise<void> | void;
+  toggleHideComment: (commentId: string, pageId?: string, accessToken?: string) => Promise<void> | void;
+  deleteComment: (commentId: string, pageId?: string, accessToken?: string) => Promise<void> | void;
+  sendPrivateReply: (commentId: string, message: string, pageId?: string, accessToken?: string) => Promise<void> | void;
+  createPostComment: (postId: string, message: string, pageId?: string, accessToken?: string) => Promise<void> | void;
+  fetchPostComments: (postId: string, pageId?: string, accessToken?: string) => Promise<PostComment[]>;
   simulateWebhookEvent: (pageId?: string) => string;
   syncMonetizationAll: () => void;
 }
@@ -232,11 +235,13 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   switchActiveUser: noop,
   syncPageLiveFollowers: noopAsync,
   syncPostInsights: noopAsync,
-  replyToComment: noop,
-  toggleLikeComment: noop,
-  toggleHideComment: noop,
-  deleteComment: noop,
-  sendPrivateReply: noop,
+  replyToComment: noopAsync,
+  toggleLikeComment: noopAsync,
+  toggleHideComment: noopAsync,
+  deleteComment: noopAsync,
+  sendPrivateReply: noopAsync,
+  createPostComment: noopAsync,
+  fetchPostComments: async () => [],
   simulateWebhookEvent: () => 'Simulated event',
   syncMonetizationAll: noop,
 };
@@ -1478,61 +1483,299 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const syncPostInsights = async (pageId?: string) => {
-    const now = new Date().toISOString();
-    // Maintain genuine numbers and update timestamp
-    setPostPerformances((prev) =>
-      prev.map((metric) => {
-        if (pageId && metric.pageId !== pageId) return metric;
-        return {
-          ...metric,
-          lastSyncedAt: now,
-        };
+    const fbPages = pages
+      .filter((p) => {
+        const plat = (p.platform || '').toLowerCase();
+        return (
+          plat === 'facebook' ||
+          plat.includes('fb') ||
+          p.id?.includes('fb') ||
+          p.targetUrl?.includes('facebook') ||
+          p.fanCount !== undefined
+        );
       })
-    );
+      .filter((p) => !pageId || p.id === pageId || p.pageId === pageId);
+
+    if (fbPages.length === 0) return;
+
+    try {
+      const payloadPages = fbPages.map((p) => {
+        const acc = accounts.find((a) => a.id === p.accountId);
+        return {
+          id: p.id,
+          pageId: p.pageId,
+          name: p.name,
+          accessToken: p.accessToken || acc?.accessToken,
+          monetization: p.monetization,
+        };
+      });
+
+      const res = await fetch('/api/facebook/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pages: payloadPages }),
+      });
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.posts)) {
+        setPostPerformances((prev) => {
+          const targetIds = new Set(fbPages.map((p) => p.id));
+          const retained = prev.filter((item) => !targetIds.has(item.pageId));
+          return [...data.posts, ...retained];
+        });
+      }
+    } catch (err) {
+      console.warn('[Sync Post Insights] Error fetching FB posts:', err);
+    }
   };
 
-  const replyToComment = (commentId: string, message: string) => {
+  const fetchPostComments = async (postId: string, pageId?: string, accessToken?: string): Promise<PostComment[]> => {
+    let resolvedToken = accessToken;
+    if (!resolvedToken && pageId) {
+      const p = pages.find((pg) => pg.id === pageId || pg.pageId === pageId);
+      const acc = accounts.find((a) => a.id === p?.accountId);
+      resolvedToken = p?.accessToken || acc?.accessToken;
+    }
+
+    try {
+      const q = new URLSearchParams({ postId });
+      if (pageId) q.append('pageId', pageId);
+      if (resolvedToken) q.append('accessToken', resolvedToken);
+
+      const res = await fetch(`/api/facebook/comments?${q.toString()}`);
+      const data = await res.json();
+
+      if (data.success && Array.isArray(data.comments)) {
+        setPostComments((prev) => {
+          const otherComments = prev.filter((c) => c.externalPostId !== postId && c.postId !== postId);
+          return [...otherComments, ...data.comments];
+        });
+        return data.comments;
+      }
+    } catch (err) {
+      console.warn('[Fetch Post Comments] Error:', err);
+    }
+    return [];
+  };
+
+  const replyToComment = async (commentId: string, message: string, pageId?: string, accessToken?: string) => {
     if (!message.trim()) return;
-    const newReply = {
+    const cleanMsg = message.trim();
+
+    let resolvedToken = accessToken;
+    let resolvedAuthor = user.name || 'Page Admin';
+    let resolvedAvatar = user.avatar;
+    if (pageId) {
+      const p = pages.find((pg) => pg.id === pageId || pg.pageId === pageId);
+      const acc = accounts.find((a) => a.id === p?.accountId);
+      resolvedToken = resolvedToken || p?.accessToken || acc?.accessToken;
+      if (p?.name) resolvedAuthor = p.name;
+      if (p?.avatarUrl) resolvedAvatar = p.avatarUrl;
+    }
+
+    const tempReply: PostCommentReply = {
       id: `rep_${Date.now()}`,
-      authorName: user.name,
-      authorAvatar: user.avatar,
-      message: message.trim(),
+      authorName: resolvedAuthor,
+      authorAvatar: resolvedAvatar,
+      message: cleanMsg,
       createdAt: new Date().toISOString(),
       isPageAuthor: true,
     };
+
     setPostComments((prev) =>
       prev.map((c) =>
-        c.id === commentId ? { ...c, replies: [...c.replies, newReply] } : c
+        c.id === commentId ? { ...c, replies: [...c.replies, tempReply] } : c
       )
     );
+
+    try {
+      const res = await fetch('/api/facebook/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reply',
+          commentId,
+          message: cleanMsg,
+          pageId,
+          accessToken: resolvedToken,
+          authorName: resolvedAuthor,
+          authorAvatar: resolvedAvatar,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.reply) {
+        setPostComments((prev) =>
+          prev.map((c) =>
+            c.id === commentId
+              ? {
+                  ...c,
+                  replies: c.replies.map((r) => (r.id === tempReply.id ? data.reply : r)),
+                }
+              : c
+          )
+        );
+      }
+    } catch (err) {
+      console.warn('[Facebook Comment Reply] Error:', err);
+    }
   };
 
-  const toggleLikeComment = (commentId: string) => {
+  const createPostComment = async (postId: string, message: string, pageId?: string, accessToken?: string) => {
+    if (!message.trim()) return;
+    const cleanMsg = message.trim();
+
+    let resolvedToken = accessToken;
+    let resolvedAuthor = user.name || 'Page';
+    let resolvedAvatar = user.avatar;
+    if (pageId) {
+      const p = pages.find((pg) => pg.id === pageId || pg.pageId === pageId);
+      const acc = accounts.find((a) => a.id === p?.accountId);
+      resolvedToken = resolvedToken || p?.accessToken || acc?.accessToken;
+      if (p?.name) resolvedAuthor = p.name;
+      if (p?.avatarUrl) resolvedAvatar = p.avatarUrl;
+    }
+
+    const tempComment: PostComment = {
+      id: `cmt_${Date.now()}`,
+      postId,
+      pageId: pageId || '',
+      externalPostId: postId,
+      authorName: resolvedAuthor,
+      authorAvatar: resolvedAvatar,
+      message: cleanMsg,
+      createdAt: new Date().toISOString(),
+      likeCount: 0,
+      isLikedByPage: false,
+      isHidden: false,
+      replies: [],
+    };
+
+    setPostComments((prev) => [tempComment, ...prev]);
+
+    try {
+      const res = await fetch('/api/facebook/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_comment',
+          postId,
+          message: cleanMsg,
+          pageId,
+          accessToken: resolvedToken,
+          authorName: resolvedAuthor,
+          authorAvatar: resolvedAvatar,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.comment) {
+        setPostComments((prev) =>
+          prev.map((c) => (c.id === tempComment.id ? data.comment : c))
+        );
+      }
+    } catch (err) {
+      console.warn('[Create Post Comment] Error:', err);
+    }
+  };
+
+  const toggleLikeComment = async (commentId: string, pageId?: string, accessToken?: string) => {
+    let willLike = true;
     setPostComments((prev) =>
-      prev.map((c) =>
-        c.id === commentId
-          ? {
-              ...c,
-              isLikedByPage: !c.isLikedByPage,
-              likeCount: c.isLikedByPage ? c.likeCount - 1 : c.likeCount + 1,
-            }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id === commentId) {
+          willLike = !c.isLikedByPage;
+          return {
+            ...c,
+            isLikedByPage: willLike,
+            likeCount: willLike ? c.likeCount + 1 : Math.max(0, c.likeCount - 1),
+          };
+        }
+        return c;
+      })
     );
+
+    try {
+      await fetch('/api/facebook/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: willLike ? 'like' : 'unlike',
+          commentId,
+          pageId,
+          accessToken,
+        }),
+      });
+    } catch (err) {
+      console.warn('[Facebook Like Comment] Error:', err);
+    }
   };
 
-  const toggleHideComment = (commentId: string) => {
+  const toggleHideComment = async (commentId: string, pageId?: string, accessToken?: string) => {
+    let willHide = true;
     setPostComments((prev) =>
-      prev.map((c) => (c.id === commentId ? { ...c, isHidden: !c.isHidden } : c))
+      prev.map((c) => {
+        if (c.id === commentId) {
+          willHide = !c.isHidden;
+          return { ...c, isHidden: willHide };
+        }
+        return c;
+      })
     );
+
+    try {
+      await fetch('/api/facebook/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: willHide ? 'hide' : 'unhide',
+          commentId,
+          pageId,
+          accessToken,
+        }),
+      });
+    } catch (err) {
+      console.warn('[Facebook Hide Comment] Error:', err);
+    }
   };
 
-  const deleteComment = (commentId: string) => {
+  const deleteComment = async (commentId: string, pageId?: string, accessToken?: string) => {
     setPostComments((prev) => prev.filter((c) => c.id !== commentId));
+    try {
+      await fetch('/api/facebook/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          commentId,
+          pageId,
+          accessToken,
+        }),
+      });
+    } catch (err) {
+      console.warn('[Facebook Delete Comment] Error:', err);
+    }
   };
 
-  const sendPrivateReply = (_commentId: string, _message: string) => {};
+  const sendPrivateReply = async (commentId: string, message: string, pageId?: string, accessToken?: string) => {
+    if (!message.trim()) return;
+    setPostComments((prev) =>
+      prev.map((c) => (c.id === commentId ? { ...c, privateReplySent: true } : c))
+    );
+    try {
+      await fetch('/api/facebook/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'private_reply',
+          commentId,
+          message: message.trim(),
+          pageId,
+          accessToken,
+        }),
+      });
+    } catch (err) {
+      console.warn('[Facebook Private Reply] Error:', err);
+    }
+  };
 
   const simulateWebhookEvent = (_pageId?: string): string => {
     return 'Webhook processed';
@@ -1612,6 +1855,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleHideComment,
         deleteComment,
         sendPrivateReply,
+        createPostComment,
+        fetchPostComments,
         simulateWebhookEvent,
         syncMonetizationAll,
       }}
