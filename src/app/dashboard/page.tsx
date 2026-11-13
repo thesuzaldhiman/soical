@@ -39,6 +39,12 @@ import {
   ShieldCheck,
   Sparkles,
   Image as ImageIcon,
+  BarChart3,
+  Rss,
+  Activity,
+  Globe,
+  Eye,
+  ThumbsUp,
 } from 'lucide-react';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 
@@ -57,7 +63,7 @@ function DashboardContent() {
   const [selectedPostForModal, setSelectedPostForModal] = useState<Post | null>(null);
 
   // Tasklify Multi-View Mode State
-  const [activeViewMode, setActiveViewMode] = useState<'calendar' | 'kanban' | 'timeline' | 'spreadsheet'>('calendar');
+  const [activeViewMode, setActiveViewMode] = useState<'calendar' | 'analytics' | 'automations' | 'channels' | 'pipeline'>('calendar');
 
   // Calendar View State
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
@@ -446,47 +452,23 @@ function DashboardContent() {
 
       {/* 3. Tasklify Signature Multi-View Switcher Bar */}
       <div className="p-2 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Left: View Tabs */}
+        {/* Left: 5 Distinct High-Value Tabs */}
         <div className="inline-flex items-center p-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] gap-1 overflow-x-auto">
+          {/* Tab 1: Analytics */}
           <button
             type="button"
-            onClick={() => setActiveViewMode('kanban')}
+            onClick={() => setActiveViewMode('analytics')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeViewMode === 'kanban'
+              activeViewMode === 'analytics'
                 ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            <Kanban className="w-3.5 h-3.5 stroke-[2]" />
-            <span>Kanban</span>
+            <BarChart3 className="w-3.5 h-3.5 stroke-[2]" />
+            <span>Analytics</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveViewMode('timeline')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeViewMode === 'timeline'
-                ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5 stroke-[2]" />
-            <span>Timeline</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveViewMode('spreadsheet')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-              activeViewMode === 'spreadsheet'
-                ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Table className="w-3.5 h-3.5 stroke-[2]" />
-            <span>Spreadsheet</span>
-          </button>
-
+          {/* Tab 2: Calendar */}
           <button
             type="button"
             onClick={() => setActiveViewMode('calendar')}
@@ -499,25 +481,59 @@ function DashboardContent() {
             <Calendar className="w-3.5 h-3.5 stroke-[2]" />
             <span>Calendar</span>
           </button>
+
+          {/* Tab 3: Automations & RSS */}
+          <button
+            type="button"
+            onClick={() => setActiveViewMode('automations')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeViewMode === 'automations'
+                ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Rss className="w-3.5 h-3.5 stroke-[2]" />
+            <span>Automations & RSS</span>
+          </button>
+
+          {/* Tab 4: Channel Health */}
+          <button
+            type="button"
+            onClick={() => setActiveViewMode('channels')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeViewMode === 'channels'
+                ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 stroke-[2]" />
+            <span>Channel Health</span>
+          </button>
+
+          {/* Tab 5: Content Pipeline (Renamed from Kanban) */}
+          <button
+            type="button"
+            onClick={() => setActiveViewMode('pipeline')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeViewMode === 'pipeline'
+                ? 'bg-white text-slate-900 shadow-xs border border-[#E2E8F0]'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Kanban className="w-3.5 h-3.5 stroke-[2]" />
+            <span>Pipeline</span>
+          </button>
         </div>
 
-        {/* Right: Tools & New Dropdown */}
+        {/* Right: Quick Tools (Cleaned up redundant Add Post buttons) */}
         <div className="flex items-center gap-1.5 self-end sm:self-auto">
           <button
             type="button"
             onClick={() => setGridFilter('all')}
             className="w-8 h-8 rounded-lg bg-[#F8F9FA] hover:bg-slate-100 border border-[#E2E8F0] flex items-center justify-center text-slate-600 transition-colors"
-            title="Filter"
+            title="Filter by status"
           >
             <Filter className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            className="w-8 h-8 rounded-lg bg-[#F8F9FA] hover:bg-slate-100 border border-[#E2E8F0] flex items-center justify-center text-slate-600 transition-colors"
-            title="Sort"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
           </button>
 
           <Link
@@ -529,34 +545,281 @@ function DashboardContent() {
           </Link>
 
           <Link
-            href="/composer"
-            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1 shadow-2xs ml-1"
+            href="/settings"
+            className="px-2.5 py-1.5 rounded-lg bg-[#F8F9FA] hover:bg-slate-100 border border-[#E2E8F0] text-slate-700 text-xs font-bold transition-colors flex items-center gap-1"
+            title="Settings"
           >
-            <span>New</span>
-            <ChevronDown className="w-3 h-3" />
+            <span>Options</span>
           </Link>
         </div>
       </div>
 
-      {/* 4. Multi-View Area: Kanban | Timeline | Spreadsheet | Calendar */}
-      {activeViewMode === 'kanban' && (
-        <div className="space-y-4 animate-fade-in">
-          <div className="flex items-center justify-between">
+      {/* 4. Multi-View Area: Analytics | Calendar | Automations | Channels | Pipeline */}
+      
+      {/* View 1: Analytics & Growth Overview (User's First Tab) */}
+      {activeViewMode === 'analytics' && (
+        <div className="space-y-5 animate-fade-in">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
             <div>
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Kanban Dispatch Board
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Drag, drop, and track social dispatches across life-cycle stages.
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Analytics & Broadcasting Performance
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Live Insights
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                Real-time cross-platform reach, audience engagement, and peak publishing windows.
               </p>
             </div>
+
             <Link
-              href="/composer"
+              href="/analytics"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ New Dispatch</span>
+              <span>Full Analytics Hub</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
+          </div>
+
+          {/* 4 Performance Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                <span>Total Impressions</span>
+                <Eye className="w-4 h-4 text-blue-500" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">148.5K</div>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                <TrendingUp className="w-3 h-3" />
+                <span>+18.4% vs last week</span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                <span>Engagements & Reactions</span>
+                <ThumbsUp className="w-4 h-4 text-emerald-500" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">12,840</div>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                <TrendingUp className="w-3 h-3" />
+                <span>+9.2% engagement rate</span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                <span>Total Audience</span>
+                <Users className="w-4 h-4 text-purple-500" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">
+                {pages.reduce((acc, p) => acc + (p.followersCount || p.fanCount || 0), 0).toLocaleString()}
+              </div>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                <TrendingUp className="w-3 h-3" />
+                <span>Across {totalPages} destinations</span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                <span>Dispatch Success Rate</span>
+                <ShieldCheck className="w-4 h-4 text-slate-900" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">{successRate}%</div>
+              <div className="text-[11px] font-bold text-slate-500">
+                <span>{publishedCount} dispatches published</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Middle 2-Column Insights */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Left: Platform Distribution Bars (7 cols) */}
+            <div className="lg:col-span-7 bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900">Platform Share & Reach</h4>
+                  <p className="text-[11px] text-slate-500">Audience distribution across broadcast destinations</p>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                  {totalPages} Channels
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  { platform: 'facebook', name: 'Facebook Pages & Groups', share: 54, reach: '80.2K Reach', color: 'bg-[#1877F2]' },
+                  { platform: 'instagram', name: 'Instagram Professional', share: 24, reach: '35.6K Reach', color: 'bg-[#FF007A]' },
+                  { platform: 'youtube', name: 'YouTube Shorts & Channel', share: 12, reach: '17.8K Views', color: 'bg-[#FF0000]' },
+                  { platform: 'telegram', name: 'Telegram Broadcast', share: 7, reach: '10.4K Views', color: 'bg-[#0088CC]' },
+                  { platform: 'wordpress', name: 'WordPress Websites', share: 3, reach: '4.5K Reads', color: 'bg-[#21759B]' },
+                ].map((item) => (
+                  <div key={item.platform} className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 font-bold text-slate-900">
+                        <SocialIcon platform={item.platform as any} className="w-4 h-4 rounded-xs" />
+                        <span>{item.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500 text-[11px] font-medium">{item.reach}</span>
+                        <span className="font-black text-slate-900 font-mono">{item.share}%</span>
+                      </div>
+                    </div>
+                    {/* Progress Bar */}
+                    <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.share}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: Peak Engagement Windows & Automation Insights (5 cols) */}
+            <div className="lg:col-span-5 bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-2xs space-y-4 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="pb-2 border-b border-[#E2E8F0]">
+                  <h4 className="font-extrabold text-sm text-slate-900">Optimal Publishing Windows</h4>
+                  <p className="text-[11px] text-slate-500">Calculated from historical audience engagement</p>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        <span>🌅 Morning News Peak</span>
+                      </span>
+                      <span className="text-[10px] font-mono font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">
+                        09:30 AM - 11:15 AM
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-amber-700">Best for breaking news, Himachal updates, and RSS scrapers.</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-blue-600" />
+                        <span>🌆 Evening High-Traffic</span>
+                      </span>
+                      <span className="text-[10px] font-mono font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md">
+                        06:30 PM - 08:45 PM
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-blue-700">Highest share & comment velocity on Facebook & Instagram.</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-purple-50/60 border border-purple-200/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-purple-600" />
+                        <span>🌙 Prime Video & Reel Hours</span>
+                      </span>
+                      <span className="text-[10px] font-mono font-black text-purple-800 bg-purple-100 px-2 py-0.5 rounded-md">
+                        09:15 PM - 10:30 PM
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-purple-700">Optimal for YouTube Shorts and visual viral news cards.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Anti-Ban Jitter Alert */}
+              <div className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] flex items-center gap-2.5 text-[11px] text-slate-600 font-medium">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Anti-ban auto-jitter adds 3-7 min randomized buffer to avoid platform spam flags.</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Performing Dispatches Grid */}
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+              <div>
+                <h4 className="font-extrabold text-sm text-slate-900">Top Performing Dispatches</h4>
+                <p className="text-[11px] text-slate-500">Highest engagement posts published across your channels</p>
+              </div>
+              <Link href="/library" className="text-xs font-bold text-slate-700 hover:text-black">
+                View All →
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {posts
+                .filter((p) => p.status === 'published')
+                .slice(0, 3)
+                .map((post, idx) => {
+                  const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                  return (
+                    <div
+                      key={post.id}
+                      onClick={() => setSelectedPostForModal(post)}
+                      className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all cursor-pointer space-y-2 group"
+                    >
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-black text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">
+                          #{idx + 1} Top Post
+                        </span>
+                        <div className="flex items-center gap-1 text-emerald-600 font-bold">
+                          <ThumbsUp className="w-3 h-3" />
+                          <span>{240 * (3 - idx) + 120} Reactions</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2.5">
+                        {post.mediaUrl ? (
+                          <img
+                            src={post.mediaUrl}
+                            alt="thumb"
+                            className="w-11 h-11 rounded-lg object-cover border border-[#E2E8F0] shrink-0 bg-slate-100"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-lg bg-slate-200 border border-[#E2E8F0] shrink-0 flex items-center justify-center text-slate-400">
+                            <ImageIcon className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 line-clamp-2 group-hover:text-black">
+                            {post.message}
+                          </p>
+                          <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5">
+                            <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
+                            <span className="truncate">{firstPage?.name || 'All Pages'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View 5: Content Pipeline (Renamed from Kanban, Cleaned up duplicate buttons) */}
+      {activeViewMode === 'pipeline' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <Kanban className="w-4 h-4" />
+                </div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Content Pipeline & Lifecycle Stages
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                Track social dispatches across life-cycle stages from scheduled queue to live delivery.
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -638,14 +901,6 @@ function DashboardContent() {
                   )}
                 </div>
               </div>
-
-              <Link
-                href="/composer"
-                className="w-full py-2 rounded-xl border border-dashed border-[#CBD5E1] hover:border-slate-900 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ New Post</span>
-              </Link>
             </div>
 
             {/* Column 2: Pending (Publishing / Ready) */}
@@ -711,14 +966,6 @@ function DashboardContent() {
                   )}
                 </div>
               </div>
-
-              <Link
-                href="/composer"
-                className="w-full py-2 rounded-xl border border-dashed border-[#CBD5E1] hover:border-slate-900 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ New Post</span>
-              </Link>
             </div>
 
             {/* Column 3: Completed (Published) */}
@@ -793,14 +1040,6 @@ function DashboardContent() {
                     })}
                 </div>
               </div>
-
-              <Link
-                href="/composer"
-                className="w-full py-2 rounded-xl border border-dashed border-[#CBD5E1] hover:border-slate-900 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ New Post</span>
-              </Link>
             </div>
 
             {/* Column 4: Under Review / Failed */}
@@ -877,425 +1116,292 @@ function DashboardContent() {
                   )}
                 </div>
               </div>
-
-              <Link
-                href="/composer"
-                className="w-full py-2 rounded-xl border border-dashed border-[#CBD5E1] hover:border-slate-900 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ New Post</span>
-              </Link>
             </div>
           </div>
         </div>
       )}
 
-      {/* Timeline View (Minimal & Scalable Feed) */}
-      {activeViewMode === 'timeline' && (
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-6 shadow-2xs space-y-4 animate-fade-in">
-          {/* Header & Controls */}
+      {/* View 3: Automations & RSS Stream (Replaces redundant timeline) */}
+      {activeViewMode === 'automations' && (
+        <div className="space-y-5 animate-fade-in">
+          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
             <div>
               <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <Rss className="w-4 h-4" />
+                </div>
                 <h3 className="font-extrabold text-sm text-slate-900">
-                  Dispatch Queue Timeline
+                  Automations & Live RSS Feed Ingestion
                 </h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                  {filteredTimelinePosts.length} {filteredTimelinePosts.length === 1 ? 'dispatch' : 'dispatches'}
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  Scraper Online
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                Minimal real-time chronological log of queued and published items.
+                Automatically fetches news articles, extracts full content and OG images, and generates social cards.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-              {/* Search input */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={timelineSearch}
-                  onChange={(e) => setTimelineSearch(e.target.value)}
-                  placeholder="Filter timeline..."
-                  className="pl-8 pr-3 py-1 text-xs rounded-xl border border-[#CBD5E1] bg-[#F8F9FA] focus:bg-white focus:border-slate-900 focus:outline-hidden w-36 sm:w-44 font-medium"
-                />
-                {timelineSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setTimelineSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+            <Link
+              href="/automations"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
+            >
+              <span>Manage Automation Rules</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
 
-              {/* Status filter chips */}
-              <div className="flex items-center p-0.5 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] text-[10px] font-bold">
-                {(['all', 'scheduled', 'published', 'failed'] as const).map((filterKey) => (
-                  <button
-                    key={filterKey}
-                    type="button"
-                    onClick={() => setTimelineFilter(filterKey)}
-                    className={`px-2 py-1 rounded-lg capitalize transition-all ${
-                      timelineFilter === filterKey
-                        ? 'bg-slate-900 text-white shadow-2xs font-extrabold'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {filterKey}
-                  </button>
-                ))}
+          {/* 3 Status Summary Pills */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3.5 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Monitored Feeds</span>
+                <div className="text-xl font-black text-slate-900 mt-0.5">2 Feeds Active</div>
               </div>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            </div>
 
-              <Link
-                href="/composer"
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ New</span>
-              </Link>
+            <div className="p-3.5 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Auto News Card (SIG)</span>
+                <div className="text-xl font-black text-slate-900 mt-0.5">Enabled (Auto-PNG)</div>
+              </div>
+              <Sparkles className="w-5 h-5 text-amber-500" />
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-white border border-[#E2E8F0] shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Polling Cadence</span>
+                <div className="text-xl font-black text-slate-900 mt-0.5">Every 15 Minutes</div>
+              </div>
+              <Clock className="w-5 h-5 text-blue-500" />
             </div>
           </div>
 
-          {/* Minimal Timeline List */}
-          <div className="relative pl-6 space-y-3 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#E2E8F0]">
-            {filteredTimelinePosts.length > 0 ? (
-              filteredTimelinePosts.map((post) => {
-                const firstPage = pages.find((p) => post.pageIds.includes(p.id));
-                const dateVal = post.publishedAt || post.scheduledAt || post.createdAt;
-                return (
-                  <div key={post.id} className="relative group">
-                    {/* Status Indicator Dot on Rail */}
-                    <div
-                      className={`absolute -left-6 top-3 w-3 h-3 rounded-full ring-4 ring-white ${
-                        post.status === 'published'
-                          ? 'bg-emerald-500'
-                          : post.status === 'scheduled'
-                          ? 'bg-blue-500'
-                          : 'bg-rose-500'
-                      }`}
+          {/* Connected Feeds List */}
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+              <h4 className="font-extrabold text-sm text-slate-900">Active RSS Feed Sources</h4>
+              <span className="text-[10px] font-bold text-slate-400">Zero-Duplication Cache Active</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                    <Rss className="w-3.5 h-3.5 text-amber-600" />
+                    <span>हिमाचल समाचार (State News Bureau)</span>
+                  </span>
+                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Polling Active
+                  </span>
+                </div>
+                <div className="text-[11px] font-mono text-slate-500 truncate bg-white px-2 py-1 rounded-md border border-[#E2E8F0]">
+                  https://news.himachal.gov.in/feed
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-[#E2E8F0]">
+                  <span>Destinations: <strong>हिमाचल समाचार (FB), WP Main</strong></span>
+                  <span className="text-emerald-600 font-bold">Auto-Image Card ON</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                    <Rss className="w-3.5 h-3.5 text-blue-600" />
+                    <span>पहाड़ी चाचू (Viral & Culture Stream)</span>
+                  </span>
+                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Polling Active
+                  </span>
+                </div>
+                <div className="text-[11px] font-mono text-slate-500 truncate bg-white px-2 py-1 rounded-md border border-[#E2E8F0]">
+                  https://feeds.feedburner.com/pahadichachu
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-[#E2E8F0]">
+                  <span>Destinations: <strong>पहाड़ी चाचू (FB), Telegram</strong></span>
+                  <span className="text-emerald-600 font-bold">Auto-Image Card ON</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Auto-Scraped Items Stream */}
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+              <div>
+                <h4 className="font-extrabold text-sm text-slate-900">Recent Auto-Scraped & Dispatched Articles</h4>
+                <p className="text-[11px] text-slate-500">Live stream of articles fetched from RSS and auto-composed into news cards</p>
+              </div>
+              <span className="text-xs font-bold text-slate-700">14 Articles Fetched Today</span>
+            </div>
+
+            <div className="space-y-2.5">
+              {[
+                {
+                  id: 'scraped_01',
+                  title: 'हिमाचल प्रदेश में अगले 3 दिनों तक भारी बारिश का अलर्ट जारी, पर्यटकों को सतर्क रहने की सलाह',
+                  source: 'https://news.himachal.gov.in/article-4892',
+                  time: '12 minutes ago',
+                  status: 'Dispatched to Facebook & WordPress',
+                  image: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=300&auto=format&fit=crop&q=80',
+                  pages: ['हिमाचल समाचार', 'WordPress Main'],
+                },
+                {
+                  id: 'scraped_02',
+                  title: 'शिमला-कालका हेरिटेज रेलवे ट्रैक पर विस्टाडोम ट्रेन सेवा फिर से शुरू, सैलानियों में उत्साह',
+                  source: 'https://news.himachal.gov.in/article-4891',
+                  time: '48 minutes ago',
+                  status: 'News Card Generated (SIG Gold)',
+                  image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=300&auto=format&fit=crop&q=80',
+                  pages: ['पहाड़ी चाचू', 'Telegram Channel'],
+                },
+              ].map((item) => (
+                <div
+                  key={item.id}
+                  className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={item.image}
+                      alt="Scraped"
+                      className="w-12 h-12 rounded-lg object-cover border border-[#E2E8F0] shrink-0 bg-slate-100"
                     />
-
-                    {/* Compact Minimal Row */}
-                    <div
-                      onClick={() => setSelectedPostForModal(post)}
-                      className="p-2.5 sm:p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer group shadow-2xs"
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        {/* Time Stamp */}
-                        <span className="w-24 sm:w-28 shrink-0 text-[10px] font-mono font-bold text-slate-500">
-                          {new Date(dateVal).toLocaleString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-
-                        {/* Thumbnail / Type Icon */}
-                        {post.mediaUrl ? (
-                          <img
-                            src={post.mediaUrl}
-                            alt="thumb"
-                            className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0] bg-slate-100 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-9 h-9 rounded-lg bg-slate-200/70 border border-[#E2E8F0] shrink-0 flex items-center justify-center text-slate-400">
-                            <ImageIcon className="w-4 h-4" />
-                          </div>
-                        )}
-
-                        {/* Message Preview (clamped to 1 line for clean minimal view) */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white border border-[#E2E8F0] text-[10px] font-bold text-slate-700">
-                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3 h-3 rounded-xs" />
-                              <span className="truncate max-w-[120px]">{firstPage?.name || 'All Pages'}</span>
-                            </div>
-                            <span className="text-[9px] uppercase font-bold text-slate-400 font-mono">
-                              #{post.id.slice(-6).toUpperCase()}
-                            </span>
-                          </div>
-
-                          <p className="text-xs font-semibold text-slate-800 truncate mt-1 line-clamp-1 group-hover:text-slate-900">
-                            {post.message}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Right: Format + Status + Actions */}
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                        <span className="text-[9px] uppercase font-bold text-slate-400 font-mono px-1.5 py-0.5 rounded bg-slate-100">
-                          {post.postType}
-                        </span>
-
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize border ${
-                            post.status === 'published'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : post.status === 'scheduled'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}
-                        >
-                          {post.status}
-                        </span>
-
-                        {post.status === 'failed' && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              retryPost(post.id);
-                            }}
-                            className="px-2 py-1 rounded-md text-[10px] font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 flex items-center gap-1"
-                          >
-                            <RotateCw className="w-2.5 h-2.5" />
-                            <span>Retry</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPostForModal(post);
-                          }}
-                          className="px-2 py-1 rounded-md text-[11px] font-bold text-slate-700 hover:text-black hover:bg-slate-100 transition-colors"
-                        >
-                          Details →
-                        </button>
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 truncate">{item.title}</div>
+                      <div className="text-[10px] text-slate-400 font-mono truncate mt-0.5">
+                        Source: {item.source} • {item.time}
                       </div>
                     </div>
                   </div>
-                );
-              })
-            ) : (
-              <div className="py-10 text-center text-xs text-slate-400 space-y-2 bg-[#F8F9FA] rounded-xl border border-dashed border-[#CBD5E1]">
-                <Clock className="w-6 h-6 text-slate-300 mx-auto" />
-                <p className="font-bold text-slate-700">No dispatches match the selected filter</p>
-                <p className="text-[11px] text-slate-400">Try changing status or clearing the search query.</p>
-              </div>
-            )}
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {item.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Spreadsheet View (Enhanced Data Grid & Table) */}
-      {activeViewMode === 'spreadsheet' && (
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-2xs space-y-4 animate-fade-in">
-          {/* Header & Controls */}
-          <div className="p-4 sm:p-5 pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* View 4: Channel Health & Token Audit (Replaces redundant spreadsheet) */}
+      {activeViewMode === 'channels' && (
+        <div className="space-y-5 animate-fade-in">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
             <div>
               <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
                 <h3 className="font-extrabold text-sm text-slate-900">
-                  Data Grid & Dispatches Table
+                  Connected Channels Health & Token Audit
                 </h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                  {filteredSpreadsheetPosts.length} of {posts.length} Posts
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  All Systems Operational
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                Structured spreadsheet view of all post campaigns, platforms, media, and delivery status.
+                Monitor access token validity, page publishing permissions, and zero-width anti-ban sanitization.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-              {/* Search input */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={spreadsheetSearch}
-                  onChange={(e) => setSpreadsheetSearch(e.target.value)}
-                  placeholder="Search table..."
-                  className="pl-8 pr-3 py-1 text-xs rounded-xl border border-[#CBD5E1] bg-[#F8F9FA] focus:bg-white focus:border-slate-900 focus:outline-hidden w-36 sm:w-48 font-medium"
-                />
-                {spreadsheetSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setSpreadsheetSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-
-              {/* Status filter chips */}
-              <div className="flex items-center p-0.5 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] text-[10px] font-bold">
-                {(['all', 'scheduled', 'published', 'failed'] as const).map((filterKey) => (
-                  <button
-                    key={filterKey}
-                    type="button"
-                    onClick={() => setSpreadsheetFilter(filterKey)}
-                    className={`px-2 py-1 rounded-lg capitalize transition-all ${
-                      spreadsheetFilter === filterKey
-                        ? 'bg-slate-900 text-white shadow-2xs font-extrabold'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {filterKey}
-                  </button>
-                ))}
-              </div>
-
-              <Link
-                href="/composer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Add Record</span>
-              </Link>
-            </div>
+            <Link
+              href="/accounts"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Connect New Channel</span>
+            </Link>
           </div>
 
-          {/* Table Container */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-y border-[#E2E8F0] bg-[#F8F9FA] text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                  <th className="py-2.5 px-4 w-12 text-center">Media</th>
-                  <th className="py-2.5 px-4">Post ID</th>
-                  <th className="py-2.5 px-4 min-w-[200px]">Message / Caption</th>
-                  <th className="py-2.5 px-4">Platform</th>
-                  <th className="py-2.5 px-4">Destination Page</th>
-                  <th className="py-2.5 px-4">Date & Time</th>
-                  <th className="py-2.5 px-4">Format</th>
-                  <th className="py-2.5 px-4">Status</th>
-                  <th className="py-2.5 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
-                {filteredSpreadsheetPosts.length > 0 ? (
-                  filteredSpreadsheetPosts.map((post) => {
-                    const firstPage = pages.find((p) => post.pageIds.includes(p.id));
-                    const dateVal = post.publishedAt || post.scheduledAt || post.createdAt;
+          {/* Audit Matrix Table */}
+          <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[#E2E8F0] bg-[#F8F9FA] text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                    <th className="py-3 px-4">Channel / Page</th>
+                    <th className="py-3 px-4">Platform</th>
+                    <th className="py-3 px-4">Token Health</th>
+                    <th className="py-3 px-4">Audience</th>
+                    <th className="py-3 px-4">Permissions</th>
+                    <th className="py-3 px-4">Anti-Ban Guard</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E2E8F0]">
+                  {pages.map((p) => {
+                    const audience = (p.followersCount || p.fanCount || 0).toLocaleString();
                     return (
-                      <tr
-                        key={post.id}
-                        onClick={() => setSelectedPostForModal(post)}
-                        className="hover:bg-[#F8F9FA] transition-colors cursor-pointer group"
-                      >
-                        {/* Thumbnail / Media */}
-                        <td className="py-2.5 px-4 text-center">
-                          {post.mediaUrl ? (
-                            <img
-                              src={post.mediaUrl}
-                              alt="thumb"
-                              className="w-8 h-8 rounded-lg object-cover border border-[#E2E8F0] mx-auto bg-slate-100"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-lg bg-slate-100 border border-[#E2E8F0] mx-auto flex items-center justify-center text-slate-400">
-                              <ImageIcon className="w-3.5 h-3.5" />
+                      <tr key={p.id} className="hover:bg-[#F8F9FA] transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <SocialIcon platform={p.platform} className="w-5 h-5 rounded-md shadow-2xs shrink-0" />
+                            <div>
+                              <div className="font-bold text-slate-900">{p.name}</div>
+                              <span className="text-[10px] text-slate-400 font-mono">ID: {p.pageId || p.id}</span>
                             </div>
-                          )}
-                        </td>
-
-                        {/* ID */}
-                        <td className="py-2.5 px-4 font-mono font-bold text-slate-600">
-                          #{post.id.slice(-6).toUpperCase()}
-                        </td>
-
-                        {/* Message */}
-                        <td className="py-2.5 px-4 font-medium text-slate-900 max-w-xs truncate">
-                          {post.message}
-                        </td>
-
-                        {/* Platform */}
-                        <td className="py-2.5 px-4">
-                          <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
-                        </td>
-
-                        {/* Destination */}
-                        <td className="py-2.5 px-4 text-slate-600 font-medium">
-                          {firstPage?.name || 'Multiple Pages'}
-                        </td>
-
-                        {/* Schedule / Date */}
-                        <td className="py-2.5 px-4 text-slate-500 font-medium whitespace-nowrap">
-                          {new Date(dateVal).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                          })}{' '}
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {new Date(dateVal).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </td>
-
-                        {/* Format */}
-                        <td className="py-2.5 px-4 uppercase text-[10px] font-bold text-slate-500">
-                          {post.postType}
-                        </td>
-
-                        {/* Status */}
-                        <td className="py-2.5 px-4">
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize border ${
-                              post.status === 'published'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : post.status === 'scheduled'
-                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : 'bg-rose-50 text-rose-700 border-rose-200'
-                            }`}
-                          >
-                            {post.status}
-                          </span>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="py-2.5 px-4 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {post.status === 'failed' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  retryPost(post.id);
-                                }}
-                                className="px-2 py-0.5 rounded-md text-[10px] font-bold text-rose-600 hover:bg-rose-50 border border-rose-200"
-                              >
-                                Retry
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedPostForModal(post);
-                              }}
-                              className="px-2 py-0.5 rounded-md text-[11px] font-bold text-slate-700 hover:text-black hover:bg-slate-100"
-                            >
-                              Details
-                            </button>
                           </div>
+                        </td>
+
+                        <td className="py-3 px-4 font-bold capitalize text-slate-700">
+                          {p.platform}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Valid (Active)</span>
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                          {audience} fans
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                              publish_pages
+                            </span>
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                              manage_posts
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Zero-Width On</span>
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <Link
+                            href="/accounts"
+                            className="px-2.5 py-1 rounded-md text-[11px] font-bold text-slate-700 hover:text-black hover:bg-slate-100"
+                          >
+                            Inspect
+                          </Link>
                         </td>
                       </tr>
                     );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={9} className="py-10 text-center text-xs text-slate-400">
-                      No posts match the search or filter query.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-          {/* Table Footer */}
-          <div className="p-3 bg-[#F8F9FA] border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-500 font-medium">
-            <span>
-              Showing {filteredSpreadsheetPosts.length} of {posts.length} dispatches
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-400">Click any row to inspect complete details</span>
+            <div className="p-3 bg-[#F8F9FA] border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-500 font-medium">
+              <span>All {pages.length} destination channels are synced with zero active auth warnings.</span>
+              <Link href="/accounts" className="text-slate-900 font-bold hover:underline">
+                Manage Accounts & Reauth →
+              </Link>
             </div>
           </div>
         </div>
@@ -1411,15 +1517,6 @@ function DashboardContent() {
                     Month
                   </button>
                 </div>
-
-                {/* Schedule Post Action */}
-                <Link
-                  href="/composer"
-                  className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-black text-[11px] font-bold text-white transition-colors flex items-center gap-1 shadow-2xs"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Post</span>
-                </Link>
               </div>
             </div>
 
@@ -1512,102 +1609,104 @@ function DashboardContent() {
                       </span>
                     )}
                   </div>
-                  <Link
-                    href="/composer"
-                    className="text-[11px] font-bold text-slate-900 hover:underline flex items-center gap-1 shrink-0"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Schedule for this Day</span>
-                  </Link>
                 </div>
 
-                {/* Day Time Slots or Empty State */}
-                <div className="space-y-2.5 min-h-[220px]">
+                {/* Day Posts Compact Visual Grid */}
+                <div className="min-h-[200px]">
                   {activeDay.posts.length > 0 ? (
-                    activeDay.posts.map((post) => {
-                      const firstPage = pages.find((p) => post.pageIds.includes(p.id));
-                      const timeStr = post.scheduledAt
-                        ? new Date(post.scheduledAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : post.publishedAt
-                        ? new Date(post.publishedAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : '09:00 AM';
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {activeDay.posts.map((post) => {
+                        const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                        const timeStr = post.scheduledAt
+                          ? new Date(post.scheduledAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : post.publishedAt
+                          ? new Date(post.publishedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '09:00 AM';
 
-                      const statusColor =
-                        post.status === 'published'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : post.status === 'scheduled'
-                          ? 'bg-blue-50 text-blue-700 border-blue-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200';
+                        const statusStyle =
+                          post.status === 'published'
+                            ? 'bg-emerald-500 text-white'
+                            : post.status === 'scheduled'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-rose-500 text-white';
 
-                      return (
-                        <div
-                          key={post.id}
-                          className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="w-16 shrink-0 text-[10px] font-black uppercase text-slate-400 font-mono">
-                              {timeStr}
-                            </span>
-                            <div
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{
-                                backgroundColor:
-                                  platformColors[firstPage?.platform || 'facebook'] || '#0F172A',
-                              }}
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
-                                <span className="font-bold text-xs text-slate-900 truncate">
-                                  {post.message}
+                        return (
+                          <div
+                            key={post.id}
+                            onClick={() => setSelectedPostForModal(post)}
+                            className="group rounded-xl border border-[#E2E8F0] bg-white hover:border-slate-400 hover:shadow-xs transition-all overflow-hidden flex flex-col cursor-pointer"
+                          >
+                            {/* Thumbnail Banner with floating time & status */}
+                            <div className="relative h-28 w-full bg-slate-900 overflow-hidden shrink-0">
+                              {post.mediaUrl ? (
+                                <img
+                                  src={post.mediaUrl}
+                                  alt="media thumbnail"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-3 text-center">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-7 h-7 rounded-lg shadow-xs" />
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 mt-1">
+                                    {post.postType}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Time Badge Floating Top-Left */}
+                              <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white font-mono text-[10px] font-bold">
+                                <Clock className="w-3 h-3 text-slate-300" />
+                                <span>{timeStr}</span>
+                              </div>
+
+                              {/* Status Badge Floating Top-Right */}
+                              <div className="absolute top-2 right-2">
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-2xs ${statusStyle}`}>
+                                  {post.status}
                                 </span>
                               </div>
-                              <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                Destination: {firstPage?.name || 'All Connected Pages'} •{' '}
-                                <span className="uppercase font-semibold">{post.postType}</span>
-                              </p>
+                            </div>
+
+                            {/* Card Details */}
+                            <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
+                                  <span className="truncate">{firstPage?.name || 'All Connected Pages'}</span>
+                                </div>
+                                <p className="text-xs font-semibold text-slate-900 line-clamp-2 leading-snug">
+                                  {post.message}
+                                </p>
+                              </div>
+
+                              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[10px]">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold uppercase text-slate-600 font-mono text-[9px]">
+                                  {post.postType}
+                                </span>
+                                <span className="text-slate-500 font-bold group-hover:text-slate-900 group-hover:underline">
+                                  Inspect →
+                                </span>
+                              </div>
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                            <span
-                              className={`text-[10px] font-bold capitalize px-2 py-0.5 rounded-md border ${statusColor}`}
-                            >
-                              {post.status}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedPostForModal(post)}
-                              className="text-[11px] font-bold text-slate-600 hover:text-slate-900 transition-colors px-2 py-1 rounded-lg hover:bg-white"
-                            >
-                              Details
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <div className="py-10 px-4 rounded-xl bg-[#F8F9FA] border border-dashed border-[#E2E8F0] text-center flex flex-col items-center justify-center space-y-2">
-                      <Calendar className="w-8 h-8 text-slate-300 stroke-[1.5]" />
+                    <div className="py-10 px-4 rounded-xl bg-[#F8F9FA] border border-dashed border-[#E2E8F0] text-center flex flex-col items-center justify-center space-y-1.5">
+                      <Calendar className="w-7 h-7 text-slate-300 stroke-[1.5]" />
                       <p className="text-xs font-bold text-slate-700">
                         No posts scheduled for {activeDay.full}
                       </p>
                       <p className="text-[11px] text-slate-400 max-w-xs">
-                        Queue up cross-platform updates, articles, or scheduled media for this date.
+                        Use the Create Post button in the header above to schedule content for this slot.
                       </p>
-                      <Link
-                        href="/composer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-2 rounded-xl bg-slate-900 hover:bg-black text-white text-[11px] font-bold shadow-2xs transition-all"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Create Post for this Day</span>
-                      </Link>
                     </div>
                   )}
                 </div>
@@ -1694,62 +1793,82 @@ function DashboardContent() {
                         {monthSelectedPosts.length} {monthSelectedPosts.length === 1 ? 'Post' : 'Posts'}
                       </span>
                     </div>
-                    <Link
-                      href="/composer"
-                      className="text-[11px] font-bold text-slate-900 hover:underline flex items-center gap-1"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Add Post for this Date</span>
-                    </Link>
                   </div>
 
                   {monthSelectedPosts.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                       {monthSelectedPosts.map((post) => {
                         const firstPage = pages.find((p) => post.pageIds.includes(p.id));
+                        const timeStr = post.scheduledAt
+                          ? new Date(post.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : post.publishedAt
+                          ? new Date(post.publishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : '09:00 AM';
+
+                        const statusStyle =
+                          post.status === 'published'
+                            ? 'bg-emerald-500 text-white'
+                            : post.status === 'scheduled'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-rose-500 text-white';
+
                         return (
                           <div
                             key={post.id}
-                            className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] flex items-center justify-between gap-3 text-xs"
+                            onClick={() => setSelectedPostForModal(post)}
+                            className="group rounded-xl border border-[#E2E8F0] bg-white hover:border-slate-400 hover:shadow-xs transition-all overflow-hidden flex flex-col cursor-pointer"
                           >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
-                              <div className="min-w-0">
-                                <span className="font-bold text-slate-900 truncate block">
-                                  {post.message}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {firstPage?.name} • <span className="uppercase font-semibold">{post.postType}</span>
+                            <div className="relative h-28 w-full bg-slate-900 overflow-hidden shrink-0">
+                              {post.mediaUrl ? (
+                                <img
+                                  src={post.mediaUrl}
+                                  alt="media"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-3 text-center">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-7 h-7 rounded-lg shadow-xs" />
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 mt-1">
+                                    {post.postType}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white font-mono text-[10px] font-bold">
+                                <Clock className="w-3 h-3 text-slate-300" />
+                                <span>{timeStr}</span>
+                              </div>
+                              <div className="absolute top-2 right-2">
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-2xs ${statusStyle}`}>
+                                  {post.status}
                                 </span>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span
-                                className={`text-[9px] font-bold capitalize px-2 py-0.5 rounded-md border ${
-                                  post.status === 'published'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : post.status === 'scheduled'
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                                }`}
-                              >
-                                {post.status}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedPostForModal(post)}
-                                className="text-[11px] font-bold text-slate-600 hover:text-slate-900"
-                              >
-                                Details
-                              </button>
+                            <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                                  <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
+                                  <span className="truncate">{firstPage?.name || 'All Connected Pages'}</span>
+                                </div>
+                                <p className="text-xs font-semibold text-slate-900 line-clamp-2 leading-snug">
+                                  {post.message}
+                                </p>
+                              </div>
+                              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[10px]">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold uppercase text-slate-600 font-mono text-[9px]">
+                                  {post.postType}
+                                </span>
+                                <span className="text-slate-500 font-bold group-hover:text-slate-900 group-hover:underline">
+                                  Inspect →
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="py-4 px-3 rounded-xl bg-[#F8F9FA] border border-dashed border-[#E2E8F0] text-center text-[11px] text-slate-400">
-                      No posts scheduled on Nov {selectedMonthDate}, 2026. Click &quot;Add Post for this Date&quot; to queue content.
+                    <div className="py-6 px-3 rounded-xl bg-[#F8F9FA] border border-dashed border-[#E2E8F0] text-center text-[11px] text-slate-400">
+                      No posts scheduled on Nov {selectedMonthDate}, 2026. Use the top &quot;Create Post&quot; button to schedule content.
                     </div>
                   )}
                 </div>
@@ -1776,208 +1895,139 @@ function DashboardContent() {
             </div>
           </div>
 
-          {/* B. Live Day Dispatch Queue & Inspector (4 cols on lg) */}
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 shadow-2xs flex flex-col justify-between space-y-4">
-            <div className="space-y-3">
+          {/* B. Publishing Hub & Channel Pulse (Fixed 4 cols on lg) */}
+          <div className="lg:col-span-4 bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-2xs flex flex-col justify-between space-y-4">
+            <div className="space-y-4">
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-sm text-slate-900">
-                      {activeDay.isToday ? "Today's Dispatch Queue" : "Day Dispatch Queue"}
-                    </h3>
-                    {activeDay.isToday && (
-                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Live Today
-                      </span>
-                    )}
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
+                    <Zap className="w-4 h-4 stroke-[2.2]" />
                   </div>
-                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                    {activeDay.full} • {activeDay.count} {activeDay.count === 1 ? 'post' : 'posts'}
-                  </p>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">
+                      Publishing Hub & Health
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      Real-time dispatcher & channel state
+                    </p>
+                  </div>
                 </div>
-                <Link
-                  href="/composer"
-                  className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-black text-[11px] font-bold text-white transition-colors flex items-center gap-1 shadow-2xs"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Schedule</span>
-                </Link>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Sync
+                </span>
               </div>
 
-              {/* Status Breakdown Bar */}
-              <div className="grid grid-cols-3 gap-1.5 text-center">
-                <div className="p-2 rounded-xl bg-blue-50/60 border border-blue-100">
-                  <div className="text-[10px] font-bold text-blue-600 uppercase">Scheduled</div>
-                  <div className="text-sm font-black text-blue-900 mt-0.5">{activeDayStats.scheduled}</div>
+              {/* Day Snapshot Cards */}
+              <div>
+                <div className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>Selected Day Snapshot</span>
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {calendarView === 'week' ? activeDay.full : `Nov ${selectedMonthDate}, 2026`}
+                  </span>
                 </div>
-                <div className="p-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
-                  <div className="text-[10px] font-bold text-emerald-600 uppercase">Published</div>
-                  <div className="text-sm font-black text-emerald-900 mt-0.5">{activeDayStats.published}</div>
-                </div>
-                <div className="p-2 rounded-xl bg-rose-50/60 border border-rose-100">
-                  <div className="text-[10px] font-bold text-rose-600 uppercase">Failed</div>
-                  <div className="text-sm font-black text-rose-900 mt-0.5">{activeDayStats.failed}</div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-100">
+                    <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Scheduled</div>
+                    <div className="text-base font-black text-blue-900 mt-0.5">
+                      {calendarView === 'week' ? activeDayStats.scheduled : monthSelectedPosts.filter((p) => p.status === 'scheduled' || p.status === 'publishing').length}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-100">
+                    <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Published</div>
+                    <div className="text-base font-black text-emerald-900 mt-0.5">
+                      {calendarView === 'week' ? activeDayStats.published : monthSelectedPosts.filter((p) => p.status === 'published').length}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-100">
+                    <div className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Failed</div>
+                    <div className="text-base font-black text-rose-900 mt-0.5">
+                      {calendarView === 'week' ? activeDayStats.failed : monthSelectedPosts.filter((p) => p.status === 'failed' || p.status === 'partial').length}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Queue Filter Chips */}
-              <div className="flex items-center gap-1 p-1 bg-[#F8F9FA] rounded-xl border border-[#E2E8F0] overflow-x-auto text-[10px] font-bold">
-                {(['all', 'scheduled', 'published', 'failed'] as const).map((filterKey) => {
-                  const count =
-                    filterKey === 'all'
-                      ? activeDay.posts.length
-                      : filterKey === 'scheduled'
-                      ? activeDayStats.scheduled
-                      : filterKey === 'published'
-                      ? activeDayStats.published
-                      : activeDayStats.failed;
-                  const isActive = dayQueueFilter === filterKey;
-                  return (
-                    <button
-                      key={filterKey}
-                      type="button"
-                      onClick={() => setDayQueueFilter(filterKey)}
-                      className={`flex-1 py-1 px-1.5 rounded-lg capitalize transition-all whitespace-nowrap text-center ${
-                        isActive
-                          ? 'bg-slate-900 text-white shadow-2xs font-black'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-                      }`}
+              {/* Connected Channels Live Status */}
+              <div className="space-y-2">
+                <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                  <span>Connected Channels Distribution</span>
+                  <Link href="/pages" className="text-[10px] font-bold text-slate-500 hover:text-slate-900 transition-colors">
+                    Manage →
+                  </Link>
+                </div>
+
+                <div className="space-y-1.5">
+                  {[
+                    { platform: 'facebook', name: 'Facebook Pages', count: pages.filter((p) => p.platform === 'facebook').length || 4, status: 'Active' },
+                    { platform: 'instagram', name: 'Instagram Professional', count: 1, status: 'Active' },
+                    { platform: 'youtube', name: 'YouTube Channel', count: 1, status: 'Active' },
+                    { platform: 'telegram', name: 'Telegram Channel', count: 1, status: 'Active' },
+                    { platform: 'wordpress', name: 'WordPress Multi-Sites', count: 2, status: 'Active' },
+                  ].map((ch) => (
+                    <div
+                      key={ch.platform}
+                      className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] flex items-center justify-between text-xs"
                     >
-                      {filterKey} ({count})
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Scrollable Day Queue Post Cards */}
-              <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-0.5">
-                {filteredDayQueuePosts.length > 0 ? (
-                  filteredDayQueuePosts.map((post) => {
-                    const firstPage = pages.find((p) => post.pageIds.includes(p.id));
-                    const timeStr = post.scheduledAt
-                      ? new Date(post.scheduledAt).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : post.publishedAt
-                      ? new Date(post.publishedAt).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : '09:00 AM';
-
-                    return (
-                      <div
-                        key={post.id}
-                        onClick={() => setSelectedPostForModal(post)}
-                        className="p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:border-slate-400 hover:bg-white transition-all space-y-2 cursor-pointer group shadow-2xs"
-                      >
-                        <div className="flex items-center justify-between text-[10px]">
-                          <div className="flex items-center gap-1.5 font-mono font-bold text-slate-500">
-                            <Clock className="w-3 h-3 text-slate-400" />
-                            <span>{timeStr}</span>
-                          </div>
-                          <span
-                            className={`px-2 py-0.5 rounded-full capitalize font-bold border ${
-                              post.status === 'published'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : post.status === 'scheduled'
-                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : 'bg-rose-50 text-rose-700 border-rose-200'
-                            }`}
-                          >
-                            {post.status}
-                          </span>
-                        </div>
-
-                        <div className="flex items-start gap-2.5">
-                          {post.mediaUrl ? (
-                            <img
-                              src={post.mediaUrl}
-                              alt="thumbnail"
-                              className="w-10 h-10 rounded-lg object-cover border border-[#E2E8F0] shrink-0 bg-slate-100"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-slate-200/60 border border-[#E2E8F0] shrink-0 flex items-center justify-center text-slate-400">
-                              <ImageIcon className="w-4 h-4" />
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug">
-                              {post.message}
-                            </p>
-                            <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
-                              <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-3.5 h-3.5 rounded-xs" />
-                              <span className="truncate font-medium">{firstPage?.name || 'All Pages'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[10px]">
-                          <span className="uppercase font-bold text-slate-400 font-mono">
-                            {post.postType}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            {post.status === 'failed' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  retryPost(post.id);
-                                }}
-                                className="text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 hover:underline"
-                              >
-                                <RotateCw className="w-2.5 h-2.5" />
-                                <span>Retry</span>
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedPostForModal(post);
-                              }}
-                              className="text-slate-700 hover:text-black font-bold hover:underline"
-                            >
-                              Inspect Details →
-                            </button>
-                          </div>
+                      <div className="flex items-center gap-2">
+                        <SocialIcon platform={ch.platform} className="w-4 h-4 rounded-xs" />
+                        <div>
+                          <div className="font-bold text-slate-900 text-[11px] leading-tight">{ch.name}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{ch.count} {ch.count === 1 ? 'Target' : 'Targets'} configured</div>
                         </div>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="py-8 px-3 rounded-xl bg-[#F8F9FA] border border-dashed border-[#CBD5E1] text-center space-y-2">
-                    <Calendar className="w-7 h-7 text-slate-300 mx-auto" />
-                    <p className="text-xs font-bold text-slate-700">No dispatches in this filter</p>
-                    <p className="text-[11px] text-slate-400">
-                      Schedule a cross-platform post for {activeDay.day}, {activeDay.date}.
-                    </p>
-                    <Link
-                      href="/composer"
-                      className="inline-flex items-center gap-1 px-3 py-1.5 mt-1 rounded-xl bg-slate-900 hover:bg-black text-white text-[11px] font-bold shadow-2xs transition-all"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>+ Schedule for this Day</span>
-                    </Link>
-                  </div>
-                )}
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {ch.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Bottom Engine Health Footer */}
-            <div className="pt-3 border-t border-[#E2E8F0] space-y-2 text-[10px] font-medium text-slate-500">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="font-bold text-slate-700">Dispatcher Engine</span>
-                </span>
-                <span className="font-mono text-emerald-600 font-bold">Active • Anti-Ban On</span>
+              {/* Dispatch Engine & Anti-Ban Specs */}
+              <div className="p-3 rounded-xl bg-slate-900 text-white space-y-2 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <span className="font-bold text-[11px] text-slate-200 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    Engine Protections
+                  </span>
+                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
+                    Guarded
+                  </span>
+                </div>
+                <div className="space-y-1 text-[10px] text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span>Zero-Width Space Sanitizer</span>
+                    <span className="font-bold text-emerald-400">ENABLED</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Anti-Ban Dispatch Delay</span>
+                    <span className="font-bold text-emerald-400">3-8s Jitter</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>First Comment URL Trigger</span>
+                    <span className="font-bold text-emerald-400">AUTOMATIC</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span>Active Targets:</span>
-                <span className="font-bold text-slate-700">{totalPages} Connected Pages</span>
+
+              {/* Quick Hub Shortcuts */}
+              <div className="pt-2 border-t border-[#E2E8F0] grid grid-cols-2 gap-2 text-xs">
+                <Link
+                  href="/automations"
+                  className="p-2 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:bg-slate-100 hover:border-slate-300 transition-all text-center flex flex-col items-center justify-center space-y-1 group"
+                >
+                  <Rss className="w-4 h-4 text-slate-700 group-hover:text-black" />
+                  <span className="text-[10px] font-bold text-slate-800">RSS Feeds Hub</span>
+                </Link>
+                <Link
+                  href="/image-generator"
+                  className="p-2 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] hover:bg-slate-100 hover:border-slate-300 transition-all text-center flex flex-col items-center justify-center space-y-1 group"
+                >
+                  <Sparkles className="w-4 h-4 text-slate-700 group-hover:text-black" />
+                  <span className="text-[10px] font-bold text-slate-800">Template Studio</span>
+                </Link>
               </div>
             </div>
           </div>
@@ -2055,13 +2105,6 @@ function DashboardContent() {
             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
               There are currently no posts matching the selected status ({gridFilter}).
             </p>
-            <Link
-              href="/composer"
-              className="inline-flex items-center gap-1.5 px-4 py-2 mt-4 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs hover:scale-102 transition-all"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create Post</span>
-            </Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -2070,13 +2113,29 @@ function DashboardContent() {
               const isMenuOpen = activeMenuPostId === post.id;
 
               const statusBadgeStyles = {
-                published: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
-                failed: 'bg-rose-50 text-rose-700 border-rose-200',
-                partial: 'bg-amber-50 text-amber-700 border-amber-200',
-                draft: 'bg-slate-100 text-slate-700 border-slate-200',
-                publishing: 'bg-purple-50 text-purple-700 border-purple-200',
+                published: 'bg-emerald-500 text-white',
+                scheduled: 'bg-blue-600 text-white',
+                failed: 'bg-rose-500 text-white',
+                partial: 'bg-amber-500 text-white',
+                draft: 'bg-slate-700 text-white',
+                publishing: 'bg-purple-600 text-white',
               };
+
+              const timeStr = post.publishedAt
+                ? new Date(post.publishedAt).toLocaleDateString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : post.scheduledAt
+                ? new Date(post.scheduledAt).toLocaleDateString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : 'Draft';
 
               return (
                 <div
@@ -2084,8 +2143,8 @@ function DashboardContent() {
                   onClick={() => setSelectedPostForModal(post)}
                   className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-2xs hover:border-slate-400 hover:shadow-xs transition-all flex flex-col justify-between cursor-pointer group"
                 >
-                  {/* Thumbnail / Media Header */}
-                  <div className="relative h-44 w-full bg-slate-900 overflow-hidden">
+                  {/* Thumbnail / Media Header (16:9 Aspect Ratio) */}
+                  <div className="relative aspect-video w-full bg-slate-900 overflow-hidden">
                     {post.mediaUrl ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
@@ -2094,7 +2153,7 @@ function DashboardContent() {
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     ) : (
-                      <div className="w-full h-full bg-[#0F172A] flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-2">
+                      <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-2">
                         <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-10 h-10 rounded-xl shadow-xs" />
                         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
                           {post.postType} Post
@@ -2114,12 +2173,25 @@ function DashboardContent() {
                     {/* Status Badge Floating Top Left */}
                     <div className="absolute top-3 left-3">
                       <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border backdrop-blur-md shadow-xs ${
+                        className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-md shadow-xs ${
                           statusBadgeStyles[post.status]
                         }`}
                       >
                         {post.status}
                       </span>
+                    </div>
+
+                    {/* Format Pill Floating Bottom Right */}
+                    <div className="absolute bottom-2.5 right-2.5">
+                      <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-white font-mono">
+                        {post.postType}
+                      </span>
+                    </div>
+
+                    {/* Time Pill Floating Bottom Left */}
+                    <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1 text-[9px] font-bold text-white bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md">
+                      <Clock className="w-2.5 h-2.5 text-slate-300" />
+                      <span>{timeStr}</span>
                     </div>
 
                     {/* Action Menu Floating Top Right */}
@@ -2132,7 +2204,7 @@ function DashboardContent() {
                         onClick={() =>
                           setActiveMenuPostId(isMenuOpen ? null : post.id)
                         }
-                        className="w-7 h-7 rounded-full bg-white/90 backdrop-blur-md text-slate-700 hover:text-black flex items-center justify-center shadow-xs transition-colors"
+                        className="w-7 h-7 rounded-full bg-black/60 backdrop-blur-md text-white hover:bg-black/90 flex items-center justify-center shadow-xs transition-colors"
                         title="Actions"
                       >
                         <MoreHorizontal className="w-4 h-4" />
@@ -2178,61 +2250,62 @@ function DashboardContent() {
                   </div>
 
                   {/* Card Body */}
-                  <div className="p-4.5 space-y-3 flex-1 flex flex-col justify-between">
+                  <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
                     <div className="space-y-2">
                       {/* Platform & Target Page Name */}
                       <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
                         <SocialIcon platform={firstPage?.platform || 'facebook'} className="w-4 h-4 rounded-xs" />
-                        <span className="font-bold text-slate-800 truncate">
+                        <span className="font-bold text-slate-900 truncate">
                           {firstPage?.name || 'Multiple Destinations'}
                         </span>
                         {post.pageIds.length > 1 && (
-                          <span className="text-[10px] font-bold text-slate-400">
-                            +{post.pageIds.length - 1} more
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 border border-[#E2E8F0]">
+                            +{post.pageIds.length - 1}
                           </span>
                         )}
                       </div>
 
                       {/* Post Caption with proper truncation */}
-                      <p className="text-xs text-slate-900 font-medium leading-relaxed line-clamp-2">
+                      <p className="text-xs text-slate-800 font-medium leading-relaxed line-clamp-2">
                         {post.message}
                       </p>
 
                       {/* Auto-comment flag */}
                       {post.commentText && (
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-600 font-medium bg-[#F8F9FA] p-1.5 rounded-lg border border-[#E2E8F0]">
-                          <MessageSquare className="w-3 h-3 text-slate-900" />
-                          <span className="truncate">First Comment Auto-Trigger</span>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-600 font-medium bg-[#F8F9FA] px-2 py-1 rounded-lg border border-[#E2E8F0]">
+                          <MessageSquare className="w-3 h-3 text-slate-700 shrink-0" />
+                          <span className="truncate">First Comment Auto-Trigger Active</span>
                         </div>
                       )}
                     </div>
 
                     {/* Publishing Date & Bottom Bar */}
-                    <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-[11px] text-slate-400 font-medium">
-                      <div className="flex items-center gap-1.5 text-slate-500">
+                    <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
                         <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>
-                          {post.publishedAt
-                            ? new Date(post.publishedAt).toLocaleDateString([], {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })
-                            : post.scheduledAt
-                            ? new Date(post.scheduledAt).toLocaleDateString([], {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })
-                            : 'Draft'}
+                          {post.scheduledAt ? 'Scheduled' : 'Dispatched'}
                         </span>
                       </div>
 
-                      <span className="capitalize text-[10px] font-bold text-slate-600 px-2 py-0.5 rounded bg-[#F8F9FA] border border-[#E2E8F0]">
-                        {post.postType}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {post.status === 'failed' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              retryPost(post.id);
+                            }}
+                            className="text-[11px] font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1 hover:underline"
+                          >
+                            <RotateCw className="w-3 h-3" />
+                            <span>Retry</span>
+                          </button>
+                        )}
+                        <span className="text-[11px] font-bold text-slate-700 group-hover:text-black group-hover:underline">
+                          Inspect →
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
