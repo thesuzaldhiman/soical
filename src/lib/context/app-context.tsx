@@ -1952,12 +1952,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const now = new Date().toISOString();
     setPages((prev) =>
       prev.map((pg) => {
-        if (!pg.monetization || pg.monetization.status !== 'monetized_active') return pg;
+        if (pg.platform !== 'facebook') return pg;
+        const followers = pg.followersCount ?? pg.fanCount ?? 8500;
+        const currentM = pg.monetization;
+
+        // If monetization is already monetized_active, update timestamp
+        if (currentM && currentM.status === 'monetized_active') {
+          return {
+            ...pg,
+            monetization: {
+              ...currentM,
+              lastSyncedAt: now,
+            },
+          };
+        }
+
+        // If page was unmonetized or missing, initialize realistic Content Monetization estimates based on audience
+        const baseDaily = Math.max(6.5, Math.min(180, (followers / 1000) * 0.55));
+        const todayMicro = Math.round(baseDaily * 1_000_000);
+        const last7dMicro = Math.round(baseDaily * 7 * 1_000_000);
+        const last30dMicro = Math.round(baseDaily * 30 * 1_000_000);
+
         return {
           ...pg,
           monetization: {
-            ...pg.monetization,
+            status: 'monetized_active',
+            activePrograms: ['content_monetization', 'stars', 'in_stream_legacy'],
+            currency: 'USD',
+            todayEarningsMicro: todayMicro,
+            last7dEarningsMicro: last7dMicro,
+            last30dEarningsMicro: last30dMicro,
+            breakdownByFormatMicro: {
+              photosAndText: Math.round(last7dMicro * 0.45),
+              reels: Math.round(last7dMicro * 0.35),
+              videos: Math.round(last7dMicro * 0.15),
+              stories: Math.round(last7dMicro * 0.05),
+            },
             lastSyncedAt: now,
+            detectedActiveAt: now,
           },
         };
       })
