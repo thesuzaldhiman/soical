@@ -21,6 +21,7 @@ import {
   SubscriptionTier,
   UserSubscription,
   WordPressCategory,
+  MetaAppConfig,
 } from '@/types';
 import {
   INITIAL_ALL_USERS,
@@ -96,6 +97,8 @@ interface AppContextType {
     },
     newPages: SocialPage[]
   ) => SocialAccount;
+  renameMetaApp: (appId: string, newName: string) => void;
+  resolveMetaAppName: (metaAppId?: string, fallbackName?: string) => string;
   addPages: (pagesToAdd: SocialPage[]) => void;
   updatePage: (id: string, pageData: Partial<SocialPage>) => void;
   removeAccount: (id: string) => void;
@@ -222,6 +225,8 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
     status: 'active',
     lastCheckedAt: new Date().toISOString(),
   }),
+  renameMetaApp: noop,
+  resolveMetaAppName: (_metaAppId, fallbackName) => fallbackName || 'Meta App',
   addPages: noop,
   updatePage: noop,
   removeAccount: noop,
@@ -474,8 +479,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.accounts) setAccounts(sanitizeAccounts(parsed.accounts));
-          if (parsed.pages) setPages(sanitizePages(parsed.pages));
+          const localMetaApps: MetaAppConfig[] = Array.isArray(parsed.settings?.metaApps) ? parsed.settings.metaApps : [];
+
+          if (parsed.accounts) {
+            let sanitizedAccs = sanitizeAccounts(parsed.accounts);
+            if (localMetaApps.length > 0) {
+              sanitizedAccs = sanitizedAccs.map((a) => {
+                if (a.platform === 'facebook') {
+                  const matched = localMetaApps.find((m) => m.id === a.metaAppId || m.appId === a.metaAppId || (a.metaAppName && m.name === a.metaAppName));
+                  if (matched) {
+                    const baseName = a.name.replace(/\s*\([^)]*\)$/, '');
+                    return { ...a, metaAppId: matched.id, metaAppName: matched.name, name: `${baseName} (${matched.name})` };
+                  }
+                }
+                return a;
+              });
+            }
+            setAccounts(sanitizedAccs);
+          }
+
+          if (parsed.pages) {
+            let sanitizedPgs = sanitizePages(parsed.pages);
+            if (localMetaApps.length > 0) {
+              sanitizedPgs = sanitizedPgs.map((p) => {
+                if (p.platform === 'facebook') {
+                  const matched = localMetaApps.find((m) => m.id === p.metaAppId || m.appId === p.metaAppId || (p.metaAppName && m.name === p.metaAppName));
+                  if (matched) {
+                    return { ...p, metaAppId: matched.id, metaAppName: matched.name };
+                  }
+                }
+                return p;
+              });
+            }
+            setPages(sanitizedPgs);
+          }
           if (parsed.categories) setCategories(parsed.categories);
           if (parsed.posts) setPosts(parsed.posts);
           if (parsed.sigTemplates) setSigTemplates(parsed.sigTemplates);
@@ -535,23 +572,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => {
           if (res.success && res.data) {
             const db = res.data;
+            const dbMetaApps: MetaAppConfig[] = Array.isArray(db.settings?.metaApps) ? db.settings.metaApps : [];
+
             if (Array.isArray(db.accounts)) {
-              const cleanedAccs = sanitizeAccounts(db.accounts).filter((a) => {
+              let cleanedAccs = sanitizeAccounts(db.accounts).filter((a) => {
                 if (a.platform === 'facebook' && !a.metaAppId) {
                   return !db.accounts.some((other: any) => other.platform === 'facebook' && other.metaAppId && other.accountId === a.accountId);
                 }
                 return true;
               });
+
+              if (dbMetaApps.length > 0) {
+                cleanedAccs = cleanedAccs.map((a) => {
+                  if (a.platform === 'facebook') {
+                    const matched = dbMetaApps.find((m) => m.id === a.metaAppId || m.appId === a.metaAppId || (a.metaAppName && m.name === a.metaAppName));
+                    if (matched) {
+                      const baseName = a.name.replace(/\s*\([^)]*\)$/, '');
+                      return { ...a, metaAppId: matched.id, metaAppName: matched.name, name: `${baseName} (${matched.name})` };
+                    }
+                  }
+                  return a;
+                });
+              }
+
               setAccounts(cleanedAccs);
             }
             if (Array.isArray(db.pages)) {
               const validAccountIds = new Set((db.accounts || []).map((a: any) => a.id));
-              const healedPages = sanitizePages(db.pages).filter((p) => {
+              let healedPages = sanitizePages(db.pages).filter((p) => {
                 if (p.platform === 'facebook' && !p.metaAppId) {
                   if (p.accountId && !validAccountIds.has(p.accountId)) return false;
                 }
                 return true;
               });
+
+              if (dbMetaApps.length > 0) {
+                healedPages = healedPages.map((p) => {
+                  if (p.platform === 'facebook') {
+                    const matched = dbMetaApps.find((m) => m.id === p.metaAppId || m.appId === p.metaAppId || (p.metaAppName && m.name === p.metaAppName));
+                    if (matched) {
+                      return { ...p, metaAppId: matched.id, metaAppName: matched.name };
+                    }
+                  }
+                  return p;
+                });
+              }
+
               setPages(healedPages);
               if (healedPages.length > 0) {
                 setTimeout(() => syncPageLiveFollowers(), 400);
@@ -1473,9 +1539,170 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { success: true };
   };
 
+  const resolveMetaAppName = useCallback(
+    (metaAppId?: string, fallbackName?: string): string => {
+      const allApps = settings?.metaApps || [];
+      if (metaAppId) {
+        const found = allApps.find((a) => a.id === metaAppId || a.appId === metaAppId);
+        if (found && found.name) return found.name;
+      }
+      if (fallbackName) {
+        const foundByName = allApps.find(
+          (a) => a.name === fallbackName || a.id === fallbackName || a.appId === fallbackName
+        );
+        if (foundByName && foundByName.name) return foundByName.name;
+        return fallbackName;
+      }
+      const defaultApp = allApps.find((a) => a.isDefault);
+      return defaultApp?.name || 'Meta App';
+    },
+    [settings?.metaApps]
+  );
+
+  const renameMetaApp = useCallback(
+    (appId: string, newName: string) => {
+      const trimmed = newName.trim();
+      if (!appId || !trimmed) return;
+
+      const currentApps = settings?.metaApps || [];
+      const targetApp = currentApps.find((a) => a.id === appId || a.appId === appId);
+      const oldName = targetApp?.name;
+
+      const updatedApps = currentApps.map((a) => {
+        if (a.id === appId || a.appId === appId) {
+          return { ...a, name: trimmed };
+        }
+        return a;
+      });
+
+      const nextSettings: AppSettings = {
+        ...(settings || INITIAL_SETTINGS),
+        metaApps: updatedApps,
+      };
+      setSettings(nextSettings);
+
+      let nextPages: SocialPage[] = [];
+      setPages((prevPages) => {
+        nextPages = prevPages.map((p) => {
+          const isMatch =
+            p.metaAppId === appId ||
+            (targetApp && (p.metaAppId === targetApp.appId || p.metaAppId === targetApp.id)) ||
+            (oldName && p.metaAppName === oldName);
+          if (isMatch) {
+            return {
+              ...p,
+              metaAppId: targetApp?.id || appId,
+              metaAppName: trimmed,
+            };
+          }
+          return p;
+        });
+        if (typeof localStorage !== 'undefined') {
+          try {
+            localStorage.setItem('sap_social_pages', JSON.stringify(nextPages));
+          } catch {}
+        }
+        return nextPages;
+      });
+
+      let nextAccounts: SocialAccount[] = [];
+      setAccounts((prevAccounts) => {
+        nextAccounts = prevAccounts.map((acc) => {
+          const isMatch =
+            acc.metaAppId === appId ||
+            (targetApp && (acc.metaAppId === targetApp.appId || acc.metaAppId === targetApp.id)) ||
+            (oldName && acc.metaAppName === oldName);
+          if (isMatch) {
+            const baseName = acc.name.replace(/\s*\([^)]*\)$/, '');
+            return {
+              ...acc,
+              metaAppId: targetApp?.id || appId,
+              metaAppName: trimmed,
+              name: `${baseName} (${trimmed})`,
+            };
+          }
+          return acc;
+        });
+        if (typeof localStorage !== 'undefined') {
+          try {
+            localStorage.setItem('sap_social_accounts', JSON.stringify(nextAccounts));
+          } catch {}
+        }
+        return nextAccounts;
+      });
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem('sap_app_settings', JSON.stringify(nextSettings));
+          if (user?.email) {
+            const userKey = getStorageKeyForEmail(user.email);
+            const userStored = localStorage.getItem(userKey);
+            const userPayload = userStored ? JSON.parse(userStored) : {};
+            userPayload.settings = nextSettings;
+            userPayload.pages = nextPages;
+            userPayload.accounts = nextAccounts;
+            localStorage.setItem(userKey, JSON.stringify(userPayload));
+            syncToCloud(user.email, userPayload, user);
+          }
+        } catch (e) {
+          console.warn('[renameMetaApp] Storage sync error:', e);
+        }
+      }
+    },
+    [settings, user, getStorageKeyForEmail, syncToCloud]
+  );
+
   const updateSettings = (newSettings: Partial<AppSettings>) => {
     setSettings((prev) => {
       const updated = { ...prev, ...newSettings };
+
+      // Cascade update pages and accounts if metaApps names changed
+      if (Array.isArray(newSettings.metaApps) && newSettings.metaApps.length > 0) {
+        const appConfigs = newSettings.metaApps;
+        setPages((prevPages) => {
+          let hasDiff = false;
+          const nextPgs = prevPages.map((p) => {
+            if (p.platform === 'facebook') {
+              const matched = appConfigs.find(
+                (a) => a.id === p.metaAppId || a.appId === p.metaAppId || (p.metaAppName && a.name !== p.metaAppName && (a.id === p.metaAppId || a.appId === p.metaAppId))
+              );
+              if (matched && p.metaAppName !== matched.name) {
+                hasDiff = true;
+                return { ...p, metaAppName: matched.name, metaAppId: matched.id };
+              }
+            }
+            return p;
+          });
+          if (hasDiff && typeof localStorage !== 'undefined') {
+            try {
+              localStorage.setItem('sap_social_pages', JSON.stringify(nextPgs));
+            } catch {}
+          }
+          return hasDiff ? nextPgs : prevPages;
+        });
+
+        setAccounts((prevAccounts) => {
+          let hasDiff = false;
+          const nextAccs = prevAccounts.map((a) => {
+            if (a.platform === 'facebook') {
+              const matched = appConfigs.find((app) => app.id === a.metaAppId || app.appId === a.metaAppId);
+              if (matched && (a.metaAppName !== matched.name || !a.name.includes(`(${matched.name})`))) {
+                hasDiff = true;
+                const baseName = a.name.replace(/\s*\([^)]*\)$/, '');
+                return { ...a, metaAppName: matched.name, metaAppId: matched.id, name: `${baseName} (${matched.name})` };
+              }
+            }
+            return a;
+          });
+          if (hasDiff && typeof localStorage !== 'undefined') {
+            try {
+              localStorage.setItem('sap_social_accounts', JSON.stringify(nextAccs));
+            } catch {}
+          }
+          return hasDiff ? nextAccs : prevAccounts;
+        });
+      }
+
       if (typeof localStorage !== 'undefined') {
         try {
           localStorage.setItem('sap_app_settings', JSON.stringify(updated));
@@ -2570,6 +2797,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isHydrated,
         addAccount,
         syncFacebookPages,
+        renameMetaApp,
+        resolveMetaAppName,
         addPages,
         updatePage,
         removeAccount,

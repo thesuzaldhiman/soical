@@ -84,7 +84,7 @@ export default function ComposerPage() {
 function ComposerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { pages, accounts, categories, settings, createPost, posts } = useApp();
+  const { pages, accounts, categories, settings, createPost, posts, resolveMetaAppName } = useApp();
 
   // Selected Destinations (Page IDs)
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>(
@@ -282,7 +282,11 @@ function ComposerContent() {
     filteredPages.forEach((page) => {
       const acc = accounts.find((a) => a.id === page.accountId);
       const key = acc ? acc.id : `other_${page.platform}`;
-      const accountName = acc ? acc.name : `${page.platform} channels`;
+      let accountName = acc ? acc.name : `${page.platform} channels`;
+      if (acc && acc.platform === 'facebook') {
+        const baseName = accountName.replace(/\s*\([^)]*\)$/, '');
+        accountName = `${baseName} (${resolveMetaAppName(acc.metaAppId, acc.metaAppName)})`;
+      }
       if (!groups.has(key)) {
         groups.set(key, { accountName, platform: acc?.platform || page.platform, pages: [] });
       }
@@ -290,7 +294,7 @@ function ComposerContent() {
     });
 
     return Array.from(groups.entries()).map(([id, data]) => ({ id, ...data }));
-  }, [filteredPages, accounts]);
+  }, [filteredPages, accounts, resolveMetaAppName]);
 
   // Category quick-select helpers
   const categoriesWithCounts = useMemo(() => {
@@ -537,7 +541,7 @@ function ComposerContent() {
               chatId: p.chatId || p.pageId,
               accessToken: p.accessToken || acc?.accessToken,
               metaAppId: p.metaAppId || acc?.metaAppId,
-              metaAppName: p.metaAppName || acc?.metaAppName,
+              metaAppName: resolveMetaAppName(p.metaAppId || acc?.metaAppId, p.metaAppName || acc?.metaAppName),
             };
           }),
         }),

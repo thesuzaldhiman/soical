@@ -58,7 +58,7 @@ function isPageForPlatform(p: SocialPage, targetPlat: string): boolean {
 }
 
 function PagesContent() {
-  const { pages, togglePageActive, disconnectPage } = useApp();
+  const { pages, togglePageActive, disconnectPage, resolveMetaAppName } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
@@ -422,10 +422,10 @@ function PagesContent() {
                           <div className="text-[10px] text-slate-400 font-mono">
                             ID: {page.pageId}
                           </div>
-                          {page.metaAppName && (
+                          {(page.platform === 'facebook' || page.metaAppName || page.metaAppId) && (
                             <div className="mt-0.5">
                               <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 rounded">
-                                App: {page.metaAppName}
+                                App: {resolveMetaAppName(page.metaAppId, page.metaAppName)}
                               </span>
                             </div>
                           )}

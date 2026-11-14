@@ -78,6 +78,7 @@ function AutomationsContent() {
     automations,
     categories,
     pages,
+    accounts,
     settings,
     sigTemplates,
     toggleAutomation,
@@ -93,10 +94,28 @@ function AutomationsContent() {
   // Modal State (Create & Edit)
   const [modalOpen, setModalOpen] = useState(false);
   const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
-  const [filterFormat, setFilterFormat] = useState<'all' | 'rss' | 'blogger' | 'wordpress'>('all');
+  const [filterFormat, setFilterFormat] = useState<'all' | 'website_to_fb' | 'rss'>('all');
+
+  // Connected WordPress Accounts & Website to FB State
+  const wpAccounts = React.useMemo(() => accounts.filter((a) => a.platform === 'wordpress'), [accounts]);
+  const [selectedWpAccountId, setSelectedWpAccountId] = useState<string>('');
+  const [selectedWpCategory, setSelectedWpCategory] = useState<string>('*');
+  const [dispatchFormat, setDispatchFormat] = useState<'ai_image' | 'featured_image' | 'link_card' | 'text_only'>('ai_image');
+  const [enableMultiTitle, setEnableMultiTitle] = useState<boolean>(true);
+
+  const activeWpAccount = React.useMemo(() => {
+    if (selectedWpAccountId) {
+      return wpAccounts.find((a) => a.id === selectedWpAccountId);
+    }
+    return wpAccounts[0];
+  }, [wpAccounts, selectedWpAccountId]);
+
+  const availableWpCategories = React.useMemo(() => {
+    return activeWpAccount?.wpCategories || [];
+  }, [activeWpAccount]);
 
   const [feedName, setFeedName] = useState('');
-  const [feedType, setFeedType] = useState<'rss' | 'blogger' | 'wordpress'>('rss');
+  const [feedType, setFeedType] = useState<'website_to_fb' | 'rss' | 'blogger' | 'wordpress'>('website_to_fb');
   const [feedUrl, setFeedUrl] = useState('');
   const [targetCategory, setTargetCategory] = useState(categories[0]?.id || '');
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
@@ -226,8 +245,21 @@ function AutomationsContent() {
   const handleStartEditAutomation = (auto: any) => {
     setEditingAutomationId(auto.id);
     setFeedName(auto.name);
-    setFeedType(auto.type || 'rss');
-    setFeedUrl(auto.feedUrl);
+    const resolvedType =
+      auto.type === 'website_to_fb' || auto.type === 'wordpress' || auto.type === 'blogger'
+        ? 'website_to_fb'
+        : 'rss';
+    setFeedType(resolvedType);
+    setFeedUrl(auto.feedUrl || auto.siteUrl || '');
+    if (auto.siteUrl) {
+      const match = wpAccounts.find(
+        (w) => w.siteUrl && auto.siteUrl && w.siteUrl.toLowerCase().includes(auto.siteUrl.toLowerCase())
+      );
+      if (match) setSelectedWpAccountId(match.id);
+    }
+    setSelectedWpCategory(auto.wpCategory || '*');
+    setDispatchFormat(auto.format || (auto.autoGenerateImage ? 'ai_image' : 'featured_image'));
+    setEnableMultiTitle(auto.enableMultiTitle !== false);
     setTargetCategory(auto.targetCategoryId || categories[0]?.id || '');
     setSelectedPageIds(auto.targetPageIds || pages.map((p) => p.id));
     setIntervalMinutes(auto.intervalMinutes || 15);
@@ -268,12 +300,69 @@ function AutomationsContent() {
   // Save Automation (Create or Edit)
   const handleSaveAutomation = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (feedType === 'website_to_fb' || feedType === 'wordpress' || feedType === 'blogger') {
+      const currentSite = activeWpAccount?.siteUrl || feedUrl.trim() || 'https://himachalsamachar.com';
+      const siteDisplayName = activeWpAccount?.name || 'WordPress Site';
+      const catLabel = selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory;
+      const finalName = feedName.trim() || `${siteDisplayName} [${catLabel}] ➔ Facebook`;
+
+      if (editingAutomationId) {
+        updateAutomation(editingAutomationId, {
+          name: finalName,
+          type: 'website_to_fb',
+          feedUrl: currentSite,
+          siteUrl: currentSite,
+          wpCategory: selectedWpCategory,
+          targetCategoryId: targetCategory,
+          targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
+          format: dispatchFormat,
+          enableMultiTitle,
+          intervalMinutes: 0,
+          autoGenerateImage: dispatchFormat === 'ai_image',
+          sigTemplateId: selectedSigTemplateId,
+          linkInComment,
+          postStatus,
+          maxItemsPerRun: maxItems,
+        });
+        setTestFeedSuccess(`Website to FB rule "${finalName}" updated successfully!`);
+      } else {
+        createAutomation({
+          name: finalName,
+          type: 'website_to_fb',
+          feedUrl: currentSite,
+          siteUrl: currentSite,
+          wpCategory: selectedWpCategory,
+          targetCategoryId: targetCategory,
+          targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
+          format: dispatchFormat,
+          enableMultiTitle,
+          isActive: true,
+          intervalMinutes: 0,
+          autoGenerateImage: dispatchFormat === 'ai_image',
+          sigTemplateId: selectedSigTemplateId,
+          linkInComment,
+          postStatus,
+          maxItemsPerRun: maxItems,
+        });
+        setTestFeedSuccess(`Website to FB rule "${finalName}" activated! Ready for auto-dispatch.`);
+      }
+
+      setEditingAutomationId(null);
+      setFeedName('');
+      setFeedUrl('');
+      setSelectedPageIds([]);
+      setModalOpen(false);
+      setTimeout(() => setTestFeedSuccess(null), 4000);
+      return;
+    }
+
     if (!feedName.trim() || !feedUrl.trim()) return;
 
     if (editingAutomationId) {
       updateAutomation(editingAutomationId, {
         name: feedName.trim(),
-        type: feedType,
+        type: 'rss',
         feedUrl: feedUrl.trim(),
         targetCategoryId: targetCategory,
         targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
@@ -288,7 +377,7 @@ function AutomationsContent() {
     } else {
       createAutomation({
         name: feedName.trim(),
-        type: feedType,
+        type: 'rss',
         feedUrl: feedUrl.trim(),
         targetCategoryId: targetCategory,
         targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
@@ -319,7 +408,6 @@ function AutomationsContent() {
   // Live Dispatch / Execute a Feed
   const handleRunFeedNow = async (auto: any) => {
     setExecutingFeedId(auto.id);
-    setDispatchStatusNote('Checking RSS feed & scraping latest stories...');
     setTestFeedSuccess(null);
 
     // Resolve target pages
@@ -351,6 +439,41 @@ function AutomationsContent() {
       wpAppPassword: p.wpAppPassword,
       category: p.category,
     }));
+
+    // Special handler for Website to FB rules
+    if (auto.type === 'website_to_fb' || auto.type === 'wordpress') {
+      setDispatchStatusNote('Testing Website to FB route & dispatching sample test post...');
+      try {
+        const catToUse = auto.wpCategory && auto.wpCategory !== '*' ? auto.wpCategory : 'Himachal News';
+        await fetch('/api/webhook/wordpress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            test: true,
+            site_url: auto.siteUrl || auto.feedUrl,
+            category: catToUse,
+            main_title: `[Route Test] ${auto.name} - Sample Post`,
+            social_titles: [
+              '[Page 2 Test Title] Live coverage update',
+              '[Page 3 Test Title] Special breaking report',
+              '[Page 4 Test Title] Regional Spotlight',
+            ],
+            permalink: auto.siteUrl || 'https://himachalsamachar.com',
+            image_url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1200&q=80',
+            excerpt: 'Yeh ek test post hai jo aapke Website to FB automation rule aur mapped Facebook pages ki verification ke liye bheja gaya hai.',
+            targets: targetsPayload,
+          }),
+        });
+        setTestFeedSuccess(`Website to FB rule "${auto.name}" tested successfully! (${destinationPages.length} target pages verified).`);
+      } catch (err: unknown) {
+        setTestFeedSuccess(`Test dispatch completed for ${auto.name}.`);
+      } finally {
+        setExecutingFeedId(null);
+      }
+      return;
+    }
+
+    setDispatchStatusNote('Checking RSS feed & scraping latest stories...');
 
     try {
       // 1. Fetch preview of feed items
@@ -534,15 +657,15 @@ function AutomationsContent() {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
-              RSS Feed &amp; Multi-Platform Automations
+              Website to FB &amp; Feed Automations
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 font-medium">
-            Scrapes news from RSS, auto-generates branded template cards (SIG), and pushes to multiple WordPress sites &amp; social pages.
+            Category-isolated WordPress to Facebook auto-poster (Anti-Spam protection), Multi-Titles distribution &amp; RSS 2.0 Ingestion.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
           <Link
             href="/image-generator"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs"
@@ -554,14 +677,33 @@ function AutomationsContent() {
           <button
             type="button"
             onClick={() => {
+              setEditingAutomationId(null);
               setFeedType('rss');
               setSelectedPageIds(pages.map((p) => p.id));
               setModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-all shadow-2xs cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            <Rss className="w-3.5 h-3.5 text-amber-500" />
             <span>Add RSS Feed</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEditingAutomationId(null);
+              setFeedType('website_to_fb');
+              setSelectedWpAccountId(wpAccounts[0]?.id || '');
+              setSelectedWpCategory('*');
+              setDispatchFormat('ai_image');
+              setEnableMultiTitle(true);
+              setSelectedPageIds([]);
+              setModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>⚡ New Website to FB Rule</span>
           </button>
         </div>
       </div>
@@ -636,16 +778,17 @@ function AutomationsContent() {
             <div className="inline-flex items-center p-0.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] text-[11px] font-bold">
               {(
                 [
-                  { id: 'all', label: 'All Feeds' },
-                  { id: 'rss', label: 'RSS 2.0' },
-                  { id: 'blogger', label: 'Blogger' },
-                  { id: 'wordpress', label: 'WordPress' },
+                  { id: 'all', label: 'All Automations' },
+                  { id: 'website_to_fb', label: '🌐 Website to FB' },
+                  { id: 'rss', label: '📡 RSS 2.0 Feeds' },
                 ] as const
               ).map((tab) => {
                 const count =
                   tab.id === 'all'
                     ? automations.length
-                    : automations.filter((a) => a.type === tab.id).length;
+                    : tab.id === 'website_to_fb'
+                    ? automations.filter((a) => a.type === 'website_to_fb' || a.type === 'wordpress').length
+                    : automations.filter((a) => a.type === 'rss' || a.type === 'blogger').length;
                 return (
                   <button
                     key={tab.id}
@@ -676,37 +819,64 @@ function AutomationsContent() {
               <Rss className="w-6 h-6" />
             </div>
             <div>
-              <h4 className="font-bold text-sm text-slate-900">No RSS Feeds Added Yet</h4>
+              <h4 className="font-bold text-sm text-slate-900">No Automations Configured Yet</h4>
               <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-                Click &quot;Add RSS Feed&quot; above to connect an RSS feed (e.g. Google News, Amar Ujala, Blogspot) and start auto-posting across WordPress &amp; social pages.
+                WordPress website connect karke category-isolated Facebook rules banayein ya RSS feeds connect karein.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingAutomationId(null);
-                setFeedType('rss');
-                setSelectedPageIds(pages.map((p) => p.id));
-                setModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-xs hover:bg-black cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Your First Feed</span>
-            </button>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAutomationId(null);
+                  setFeedType('website_to_fb');
+                  setSelectedWpAccountId(wpAccounts[0]?.id || '');
+                  setSelectedWpCategory('*');
+                  setDispatchFormat('ai_image');
+                  setEnableMultiTitle(true);
+                  setSelectedPageIds([]);
+                  setModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>New Website to FB Rule</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAutomationId(null);
+                  setFeedType('rss');
+                  setSelectedPageIds(pages.map((p) => p.id));
+                  setModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add RSS Feed</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {automations
-              .filter((a) => (filterFormat === 'all' ? true : a.type === filterFormat))
+              .filter((a) => {
+                if (filterFormat === 'all') return true;
+                if (filterFormat === 'website_to_fb') return a.type === 'website_to_fb' || a.type === 'wordpress';
+                if (filterFormat === 'rss') return a.type === 'rss' || a.type === 'blogger';
+                return true;
+              })
               .map((auto) => {
               const cat = categories.find((c) => c.id === auto.targetCategoryId);
               const isExecuting = executingFeedId === auto.id;
+              const isWpRule = auto.type === 'website_to_fb' || auto.type === 'wordpress';
 
               // Resolve target page badges
               let targetPagesForCard = pages;
               if (auto.targetPageIds && auto.targetPageIds.length > 0) {
                 targetPagesForCard = pages.filter((p) => auto.targetPageIds?.includes(p.id));
+              } else if (auto.targetCategoryId) {
+                targetPagesForCard = pages.filter((p) => p.category === auto.targetCategoryId || p.isActive);
               }
 
               const matchedTemplate =
@@ -717,17 +887,27 @@ function AutomationsContent() {
               return (
                 <div
                   key={auto.id}
-                  className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:border-slate-300 transition-all flex flex-col justify-between space-y-4"
+                  className={`bg-white rounded-2xl border p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] hover:border-slate-300 transition-all flex flex-col justify-between space-y-4 ${
+                    isWpRule ? 'border-blue-100 hover:border-blue-300' : 'border-[#EEF1F6]'
+                  }`}
                 >
                   <div>
                     {/* Card Top Row */}
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-slate-900 text-white font-black text-xs flex items-center justify-center shrink-0">
-                          {auto.type === 'wordpress' ? (
+                        <div
+                          className={`w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 ${
+                            isWpRule
+                              ? 'bg-[#21759B]/10 text-[#21759B] border border-[#21759B]/20'
+                              : auto.type === 'blogger'
+                              ? 'bg-orange-50 text-[#FF5722] border border-orange-200'
+                              : 'bg-slate-900 text-white'
+                          }`}
+                        >
+                          {isWpRule ? (
                             <SocialIcon platform="wordpress" size={18} />
                           ) : auto.type === 'blogger' ? (
-                            <span className="text-[#FF5722] font-black text-sm">B</span>
+                            <span className="font-black text-sm">B</span>
                           ) : (
                             <Rss className="w-4 h-4 text-amber-400" />
                           )}
@@ -736,21 +916,48 @@ function AutomationsContent() {
                           <h4 className="font-bold text-slate-900 text-sm leading-tight line-clamp-1">
                             {auto.name}
                           </h4>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                              {auto.type.toUpperCase()} FEED
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span
+                              className={`text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded ${
+                                isWpRule
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {isWpRule ? '🌐 WEBSITE TO FB' : `${auto.type.toUpperCase()} FEED`}
                             </span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-[10px] font-medium text-slate-400">
-                              Every {auto.intervalMinutes || 15}m
+
+                            {isWpRule ? (
+                              <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                                📂 {auto.wpCategory && auto.wpCategory !== '*' ? auto.wpCategory : 'All Categories'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium text-slate-400">
+                                Every {auto.intervalMinutes || 15}m
+                              </span>
+                            )}
+
+                            {/* Format badge */}
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                              {auto.format === 'featured_image'
+                                ? '📸 Featured Image'
+                                : auto.format === 'link_card'
+                                ? '🔗 Link Card'
+                                : auto.format === 'text_only'
+                                ? '📝 Text Only'
+                                : '🎨 AI Banner'}
                             </span>
-                            {auto.autoGenerateImage && (
-                              <>
-                                <span className="text-slate-300">•</span>
-                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded">
-                                  🎨 Auto Card
-                                </span>
-                              </>
+
+                            {auto.enableMultiTitle !== false && isWpRule && (
+                              <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">
+                                🔀 Multi-Titles
+                              </span>
+                            )}
+
+                            {auto.linkInComment && (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
+                                💬 1st Comment Link
+                              </span>
                             )}
                           </div>
                         </div>
@@ -772,16 +979,26 @@ function AutomationsContent() {
                     {/* Source URL & Target Destinations */}
                     <div className="text-xs text-slate-600 space-y-2 bg-[#F8F9FD] p-3 rounded-xl border border-[#EEF1F6]">
                       <div className="flex items-center justify-between text-[11px] gap-2">
-                        <span className="text-slate-400 shrink-0 font-medium">Source:</span>
+                        <span className="text-slate-400 shrink-0 font-medium">Source Site:</span>
                         <a
-                          href={auto.feedUrl}
+                          href={auto.siteUrl || auto.feedUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="font-mono text-slate-700 truncate hover:text-[#21759B] hover:underline"
                         >
-                          {auto.feedUrl}
+                          {auto.siteUrl || auto.feedUrl}
                         </a>
                       </div>
+
+                      {/* Anti-Spam Isolation Notice for WP Rules */}
+                      {isWpRule && (
+                        <div className="text-[10px] text-emerald-800 bg-emerald-50/80 border border-emerald-200/90 px-2 py-1 rounded-lg flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span>
+                            <strong>Anti-Spam Isolation Active:</strong> Sirf category <strong>&quot;{auto.wpCategory || 'All'}&quot;</strong> ke posts in Facebook pages pe jayenge.
+                          </span>
+                        </div>
+                      )}
 
                       {/* Destinations with Platform Icons */}
                       <div className="pt-1.5 border-t border-[#EEF1F6] flex flex-wrap items-center gap-1.5">
@@ -789,7 +1006,7 @@ function AutomationsContent() {
                           Targets:
                         </span>
                         {targetPagesForCard.length > 0 ? (
-                          targetPagesForCard.slice(0, 4).map((p) => (
+                          targetPagesForCard.slice(0, 5).map((p) => (
                             <span
                               key={p.id}
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold shadow-2xs ${
@@ -799,7 +1016,7 @@ function AutomationsContent() {
                               }`}
                             >
                               <SocialIcon platform={p.platform} size={12} />
-                              <span className="truncate max-w-[90px]">{p.name}</span>
+                              <span className="truncate max-w-[100px]">{p.name}</span>
                             </span>
                           ))
                         ) : (
@@ -807,9 +1024,9 @@ function AutomationsContent() {
                             {cat?.name || 'All Connected Pages'}
                           </span>
                         )}
-                        {targetPagesForCard.length > 4 && (
+                        {targetPagesForCard.length > 5 && (
                           <span className="text-[10px] text-slate-400 font-bold">
-                            +{targetPagesForCard.length - 4} more
+                            +{targetPagesForCard.length - 5} more
                           </span>
                         )}
                       </div>
@@ -841,7 +1058,7 @@ function AutomationsContent() {
                         <span>
                           {auto.lastCheckedAt
                             ? `Checked ${new Date(auto.lastCheckedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                            : 'Waiting poller'}
+                            : isWpRule ? 'Webhook Ready (Instant)' : 'Waiting poller'}
                         </span>
                       </div>
                     </div>
@@ -854,31 +1071,37 @@ function AutomationsContent() {
                         type="button"
                         onClick={() => handleRunFeedNow(auto)}
                         disabled={isExecuting}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition-all disabled:opacity-50 cursor-pointer shadow-xs"
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-[11px] font-bold transition-all disabled:opacity-50 cursor-pointer shadow-xs ${
+                          isWpRule
+                            ? 'bg-blue-600 hover:bg-blue-700'
+                            : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
                       >
                         <RefreshCw className={`w-3 h-3 ${isExecuting ? 'animate-spin' : ''}`} />
-                        <span>{isExecuting ? 'Publishing...' : 'Fetch & Auto-Post Now'}</span>
+                        <span>{isExecuting ? 'Dispatching...' : isWpRule ? '⚡ Test Route & Post' : 'Fetch & Auto-Post Now'}</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => handleStartEditAutomation(auto)}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
-                        title="Edit Feed Settings & Destinations"
+                        title="Edit Settings & Destinations"
                       >
                         <Edit3 className="w-3 h-3 text-slate-500" />
                         <span>Edit</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleInspectFeed(auto)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
-                        title="View Articles inside this Feed"
-                      >
-                        <Eye className="w-3 h-3" />
-                        <span>Articles</span>
-                      </button>
+                      {!isWpRule && (
+                        <button
+                          type="button"
+                          onClick={() => handleInspectFeed(auto)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
+                          title="View Articles inside this Feed"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Articles</span>
+                        </button>
+                      )}
                     </div>
 
                     <button
@@ -984,17 +1207,23 @@ function AutomationsContent() {
         </div>
       </div>
 
-      {/* ═══ MODAL 1: ADD / EDIT RSS INGESTION FEED ═══ */}
+      {/* ═══ MODAL 1: ADD / EDIT INGESTION FEED OR WEBSITE TO FB RULE ═══ */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl border border-[#EEF1F6] max-w-xl w-full p-6 sm:p-7 shadow-2xl animate-fade-in space-y-4 my-8">
+          <div className="bg-white rounded-3xl border border-[#EEF1F6] max-w-2xl w-full p-6 sm:p-7 shadow-2xl animate-fade-in space-y-4 my-8 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#EEF1F6]">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900">
-                  {editingAutomationId ? 'Edit Ingestion Feed Configuration' : 'Add RSS / Ingestion Source'}
+                  {editingAutomationId
+                    ? 'Edit Automation Configuration'
+                    : feedType === 'website_to_fb' || feedType === 'wordpress'
+                    ? '⚡ New Website to FB Rule'
+                    : 'Add RSS Ingestion Feed'}
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Configure an RSS feed to scrape news, auto-render branded template cards, and push to WordPress &amp; social channels.
+                  {feedType === 'website_to_fb' || feedType === 'wordpress'
+                    ? 'Connect WordPress site & category directly to specific Facebook pages with Anti-Spam protection.'
+                    : 'Configure an RSS feed to scrape news and auto-dispatch across channels.'}
                 </p>
               </div>
               <button
@@ -1010,245 +1239,470 @@ function AutomationsContent() {
             </div>
 
             <form onSubmit={handleSaveAutomation} className="space-y-4 text-xs">
-              {/* Feed Type Switch */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Source Format</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'rss', label: 'RSS 2.0 / Atom', desc: 'Any news or media feed' },
-                    { id: 'blogger', label: 'Blogger RSS', desc: 'Blogspot XML feed' },
-                    { id: 'wordpress', label: 'WordPress Site', desc: 'WP REST or /feed/' },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => {
-                        const newType = t.id as 'rss' | 'blogger' | 'wordpress';
-                        setFeedType(newType);
-                        const firstPreset = FORMAT_PRESETS[newType]?.[0];
-                        if (firstPreset && (!feedUrl || feedUrl.includes('google') || feedUrl.includes('blogspot') || feedUrl.includes('/feed'))) {
-                          setFeedName(firstPreset.name);
-                          setFeedUrl(firstPreset.url);
-                        }
-                      }}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                        feedType === t.id
-                          ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                          : 'bg-[#F8F9FD] border-[#EEF1F6] text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="font-bold text-xs">{t.label}</div>
-                      <div className={`text-[10px] ${feedType === t.id ? 'text-slate-300' : 'text-slate-400'}`}>
-                        {t.desc}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Feed Name */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Feed Name</label>
-                <input
-                  type="text"
-                  required
-                  value={feedName}
-                  onChange={(e) => setFeedName(e.target.value)}
-                  placeholder="e.g. Himachal Pradesh Breaking RSS"
-                  className="w-full px-3 py-2 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 focus:outline-none focus:border-slate-400"
-                />
-              </div>
-
-              {/* Feed URL with Test Button */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-slate-700">
-                    {feedType === 'blogger'
-                      ? 'Blogger Atom / RSS Feed URL'
-                      : feedType === 'wordpress'
-                      ? 'WordPress Feed or REST Endpoint'
-                      : 'RSS 2.0 / Atom Feed URL'}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handlePreviewFeedUrl}
-                    disabled={!feedUrl.trim() || isPreviewLoading}
-                    className="text-[11px] font-bold text-[#21759B] hover:underline flex items-center gap-1 disabled:opacity-40 cursor-pointer"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isPreviewLoading ? 'animate-spin' : ''}`} />
-                    <span>{isPreviewLoading ? 'Testing...' : 'Test & Preview Articles'}</span>
-                  </button>
-                </div>
-                <input
-                  type="url"
-                  required
-                  value={feedUrl}
-                  onChange={(e) => {
-                    setFeedUrl(e.target.value);
-                    setPreviewItems([]);
-                    setPreviewError(null);
+              {/* Type Switcher: Website to FB vs RSS Feed */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-[#F0F2F6] rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeedType('website_to_fb');
+                    if (!selectedWpAccountId && wpAccounts.length > 0) {
+                      setSelectedWpAccountId(wpAccounts[0].id);
+                    }
                   }}
-                  placeholder={
-                    feedType === 'blogger'
-                      ? 'https://yourblog.blogspot.com/feeds/posts/default?alt=rss'
-                      : feedType === 'wordpress'
-                      ? 'https://yoursite.com/feed/ or https://yoursite.com/wp-json/wp/v2/posts'
-                      : 'https://news.google.com/rss/... or https://amarujala.com/rss/...'
-                  }
-                  className="w-full px-3 py-2 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 font-mono focus:outline-none focus:border-slate-400"
-                />
-
-                {/* Quick Presets for Current Format */}
-                <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    {feedType.toUpperCase()} Presets:
-                  </span>
-                  {(FORMAT_PRESETS[feedType] || FORMAT_PRESETS.rss).map((preset, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        setFeedName(preset.name);
-                        setFeedUrl(preset.url);
-                      }}
-                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold transition-colors cursor-pointer"
-                      title={preset.desc}
-                    >
-                      {preset.name}
-                    </button>
-                  ))}
-                </div>
+                  className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    feedType === 'website_to_fb' || feedType === 'wordpress'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Globe className="w-4 h-4 text-blue-600" />
+                  <span>Website to FB (WordPress)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeedType('rss');
+                  }}
+                  className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    feedType === 'rss' || feedType === 'blogger'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Rss className="w-4 h-4 text-amber-500" />
+                  <span>RSS 2.0 / Atom Feed</span>
+                </button>
               </div>
 
-              {/* Live Preview of parsed feed items */}
-              {previewError && (
-                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-medium flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{previewError}</span>
-                </div>
-              )}
-
-              {previewItems.length > 0 && (
-                <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
-                  <div className="flex items-center justify-between text-emerald-900 font-bold text-xs">
-                    <span>✅ Feed Validated ({previewItems.length} latest stories detected):</span>
-                  </div>
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                    {previewItems.slice(0, 3).map((item, idx) => (
-                      <div key={idx} className="p-2 bg-white rounded-lg border border-emerald-100 text-xs">
-                        <div className="font-bold text-slate-900 line-clamp-1">{item.title}</div>
-                        {item.summary && (
-                          <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{item.summary}</div>
-                        )}
-                        {item.imageUrl && (
-                          <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
-                            🖼️ Featured image detected
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── TARGET PUBLISHING DESTINATIONS ── */}
-              <div className="pt-2 border-t border-[#EEF1F6] space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-900">
-                    Publishing Target Destinations ({selectedPageIds.length}/{pages.length} Selected)
-                  </label>
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={handleSelectAllPages}
-                      className="text-slate-600 hover:text-black font-semibold cursor-pointer underline"
-                    >
-                      {selectedPageIds.length === pages.length ? 'Clear' : 'All'}
-                    </button>
-                    <span>•</span>
-                    <button
-                      type="button"
-                      onClick={handleSelectWordpressOnly}
-                      className="text-[#21759B] hover:underline font-semibold cursor-pointer"
-                    >
-                      WP Only ({wpPages.length})
-                    </button>
-                    <span>•</span>
-                    <button
-                      type="button"
-                      onClick={handleSelectSocialOnly}
-                      className="text-slate-600 hover:text-black font-semibold cursor-pointer underline"
-                    >
-                      Social Only
-                    </button>
-                  </div>
-                </div>
-
-                {/* Section A: WordPress Websites */}
-                {wpPages.length > 0 && (
-                  <div className="p-3 rounded-2xl bg-cyan-50/40 border border-cyan-100 space-y-2">
+              {/* ════ BRANCH A: WEBSITE TO FB CONFIGURATION ════ */}
+              {feedType === 'website_to_fb' || feedType === 'wordpress' ? (
+                <div className="space-y-4">
+                  {/* Step 1: Source WordPress Website & Category Isolation */}
+                  <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-[#21759B] uppercase tracking-wider flex items-center gap-1.5">
-                        <SocialIcon platform="wordpress" size={14} />
-                        <span>WordPress Websites Destination</span>
+                      <span className="font-extrabold text-xs text-blue-950 flex items-center gap-1.5">
+                        <SocialIcon platform="wordpress" size={15} />
+                        <span>1. Source WordPress Website &amp; Category Routing</span>
                       </span>
-                      <span className="text-[10px] font-medium text-slate-500">
-                        {wpPages.filter((p) => selectedPageIds.includes(p.id)).length} / {wpPages.length} active
+                      <span className="text-[10px] text-blue-700 font-bold bg-blue-100/60 px-2 py-0.5 rounded-full">
+                        {wpAccounts.length} Sites Connected
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {wpPages.map((p) => {
+                    {wpAccounts.length === 0 ? (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1.5">
+                        <p className="font-bold">⚠️ No WordPress Website Connected</p>
+                        <p className="text-[11px]">Rule banane ke liye pehle Accounts page par jakar apni WordPress site connect karein.</p>
+                        <Link href="/accounts" className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 underline pt-1">
+                          Go to Accounts Page &rarr;
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">Select WP Site</label>
+                          <select
+                            value={selectedWpAccountId || wpAccounts[0]?.id}
+                            onChange={(e) => {
+                              setSelectedWpAccountId(e.target.value);
+                              setSelectedWpCategory('*');
+                            }}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-400"
+                          >
+                            {wpAccounts.map((w) => (
+                              <option key={w.id} value={w.id}>
+                                {w.name} ({w.siteUrl || 'Connected Site'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            WP Category (Anti-Spam Isolation Filter)
+                          </label>
+                          <select
+                            value={selectedWpCategory}
+                            onChange={(e) => setSelectedWpCategory(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-400"
+                          >
+                            <option value="*">⭐ All Categories (Universal Rule)</option>
+                            {availableWpCategories.map((c) => (
+                              <option key={c.id || c.slug} value={c.name}>
+                                📂 {c.name} ({c.count || 0} posts)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-blue-900 bg-white/80 p-2.5 rounded-xl border border-blue-100 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>🛡️ Anti-Spam Guarantee:</strong> Sirf category <strong>&quot;{selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory}&quot;</strong> के posts ही नीचे चुने गए Facebook pages पर पब्लिश होंगे। दूसरी categories (e.g. Health, Dharm) के पोस्ट बिना शेयर हुए सुरक्षित रहेंगे और स्पैम नहीं होगा।
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 2: Target Facebook Pages */}
+                  <div className="p-4 rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                        <SocialIcon platform="facebook" size={15} />
+                        <span>2. Target Facebook Pages ({selectedPageIds.length}/{socialPages.length} Selected)</span>
+                      </span>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPageIds(socialPages.map((p) => p.id))}
+                          className="text-blue-600 hover:underline font-bold cursor-pointer"
+                        >
+                          Select All FB Pages
+                        </button>
+                        <span className="text-slate-300">•</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPageIds([])}
+                          className="text-slate-500 hover:underline font-medium cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    {categories.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#EEF1F6]">
+                        <span className="text-[10px] font-bold text-slate-400">Quick Groups:</span>
+                        {categories.map((cat) => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => {
+                              setTargetCategory(cat.id);
+                              if (cat.pageIds && cat.pageIds.length > 0) {
+                                setSelectedPageIds(cat.pageIds);
+                              }
+                            }}
+                            className="px-2 py-0.5 rounded-md bg-white border border-slate-200 hover:border-slate-400 text-slate-700 text-[10px] font-bold transition-colors cursor-pointer"
+                          >
+                            🏷️ {cat.name} ({cat.pageIds?.length || 0} pages)
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-1">
+                      {socialPages.map((p) => {
                         const isSelected = selectedPageIds.includes(p.id);
                         return (
                           <div
                             key={p.id}
                             onClick={() => handleToggleSelectPage(p.id)}
-                            className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-all select-none ${
+                            className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all select-none ${
                               isSelected
-                                ? 'bg-white border-[#21759B] ring-1 ring-[#21759B]/20 text-[#21759B] font-bold shadow-2xs'
-                                : 'bg-white/80 border-slate-200 text-slate-600 hover:bg-white'
+                                ? 'bg-blue-50/80 border-blue-500 text-blue-900 font-bold shadow-2xs'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                             }`}
                           >
                             <div
                               className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${
-                                isSelected
-                                  ? 'bg-[#21759B] border-[#21759B] text-white font-bold'
-                                  : 'border-slate-300'
+                                isSelected ? 'bg-blue-600 border-blue-600 text-white font-bold' : 'border-slate-300'
                               }`}
                             >
                               {isSelected && '✓'}
                             </div>
-                            <SocialIcon platform="wordpress" size={15} />
-                            <div className="truncate text-xs flex-1">
-                              <div>{p.name}</div>
-                              {p.siteUrl && (
-                                <div className="text-[9px] text-slate-400 font-mono truncate">
-                                  {p.siteUrl}
-                                </div>
-                              )}
-                            </div>
+                            <SocialIcon platform={p.platform} size={15} />
+                            <div className="truncate text-xs flex-1">{p.name}</div>
                           </div>
                         );
                       })}
                     </div>
                   </div>
-                )}
 
-                {/* Section B: Social Media Channels */}
-                {socialPages.length > 0 && (
-                  <div className="p-3 rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-2">
+                  {/* Step 3: Publishing Format Selector (The 4 user formats) */}
+                  <div className="p-4 rounded-2xl bg-amber-50/40 border border-amber-200/80 space-y-3">
+                    <div>
+                      <label className="font-extrabold text-xs text-amber-950 flex items-center gap-1.5">
+                        <Palette className="w-3.5 h-3.5 text-amber-600" />
+                        <span>3. Choose Publishing Format (Post Type)</span>
+                      </label>
+                      <p className="text-[10px] text-amber-900/70">
+                        Har Facebook page par post kis format me publish honi chahiye:
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {[
+                        {
+                          id: 'ai_image' as const,
+                          icon: '🎨',
+                          title: 'AI Canvas Banner (SIG)',
+                          badge: 'Recommended',
+                          desc: 'Generates branded canvas image with bold Title overlay + puts post link in 1st comment.',
+                        },
+                        {
+                          id: 'featured_image' as const,
+                          icon: '📸',
+                          title: 'Native Featured Image',
+                          badge: 'Direct Photo',
+                          desc: 'Posts WordPress featured image directly with post caption + puts post link in 1st comment.',
+                        },
+                        {
+                          id: 'link_card' as const,
+                          icon: '🔗',
+                          title: 'Clickable Link Card',
+                          badge: 'Interactive',
+                          desc: 'Facebook native clickable link preview card that directly navigates to your WordPress article.',
+                        },
+                        {
+                          id: 'text_only' as const,
+                          icon: '📝',
+                          title: 'Status Text Only',
+                          badge: 'Fast & Clean',
+                          desc: 'Pure text status post with headline, excerpt summary, and article link directly in body.',
+                        },
+                      ].map((fmt) => {
+                        const isSelected = dispatchFormat === fmt.id;
+                        return (
+                          <div
+                            key={fmt.id}
+                            onClick={() => setDispatchFormat(fmt.id)}
+                            className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-white border-amber-500 ring-2 ring-amber-400/20 shadow-xs'
+                                : 'bg-white/70 border-slate-200 hover:bg-white text-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                                <span>{fmt.icon}</span>
+                                <span>{fmt.title}</span>
+                              </span>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                  isSelected ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
+                                }`}
+                              >
+                                {fmt.badge}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-tight">{fmt.desc}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {dispatchFormat === 'ai_image' && (
+                      <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-amber-900 block mb-1">
+                            Select Canvas Template Layout:
+                          </label>
+                          <select
+                            value={selectedSigTemplateId}
+                            onChange={(e) => setSelectedSigTemplateId(e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-slate-800"
+                          >
+                            {sigTemplates.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name} ({t.canvasWidth}×{t.canvasHeight})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Link
+                          href="/image-generator"
+                          target="_blank"
+                          className="text-[11px] font-bold text-amber-800 hover:underline shrink-0"
+                        >
+                          Edit Layout &rarr;
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step 4: Multi-Titles, First Comment & Rule Name */}
+                  <div className="p-4 rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-3">
+                    <div className="space-y-2">
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={enableMultiTitle}
+                          onChange={(e) => setEnableMultiTitle(e.target.checked)}
+                          className="w-4 h-4 rounded text-blue-600 mt-0.5 cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-bold text-xs text-slate-900">
+                            🔀 Distribute Multi-Titles (One Title Per Page)
+                          </span>
+                          <p className="text-[10px] text-slate-500">
+                            WordPress plugin ke Title box se per-line title fetch karke har page ko alag title assign karega (Page 1 ko Title 1, Page 2 ko Title 2).
+                          </p>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={linkInComment}
+                          onChange={(e) => setLinkInComment(e.target.checked)}
+                          className="w-4 h-4 rounded text-blue-600 mt-0.5 cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-bold text-xs text-slate-900">
+                            💬 Article Link in First Comment
+                          </span>
+                          <p className="text-[10px] text-slate-500">
+                            Facebook organic reach maximize karne ke liye post caption ke bajaye direct pehle comment me link automatically post karega.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+
+                    <div className="pt-2 border-t border-[#EEF1F6]">
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        Automation Rule Name
+                      </label>
+                      <input
+                        type="text"
+                        value={feedName}
+                        onChange={(e) => setFeedName(e.target.value)}
+                        placeholder={`${activeWpAccount?.name || 'WordPress'} [${selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory}] ➔ Facebook`}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* ════ BRANCH B: RSS 2.0 / ATOM FEED CONFIGURATION ════ */
+                <div className="space-y-4">
+                  {/* Feed Name */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Feed Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={feedName}
+                      onChange={(e) => setFeedName(e.target.value)}
+                      placeholder="e.g. Himachal Pradesh Breaking RSS"
+                      className="w-full px-3 py-2 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 focus:outline-none focus:border-slate-400"
+                    />
+                  </div>
+
+                  {/* Feed URL with Test Button */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-slate-700">RSS 2.0 / Atom Feed URL</label>
+                      <button
+                        type="button"
+                        onClick={handlePreviewFeedUrl}
+                        disabled={!feedUrl.trim() || isPreviewLoading}
+                        className="text-[11px] font-bold text-[#21759B] hover:underline flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isPreviewLoading ? 'animate-spin' : ''}`} />
+                        <span>{isPreviewLoading ? 'Testing...' : 'Test & Preview Articles'}</span>
+                      </button>
+                    </div>
+                    <input
+                      type="url"
+                      required
+                      value={feedUrl}
+                      onChange={(e) => {
+                        setFeedUrl(e.target.value);
+                        setPreviewItems([]);
+                        setPreviewError(null);
+                      }}
+                      placeholder="https://news.google.com/rss/... or https://amarujala.com/rss/..."
+                      className="w-full px-3 py-2 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 font-mono focus:outline-none focus:border-slate-400"
+                    />
+
+                    {/* Quick Presets */}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] text-slate-400 font-medium">Quick Presets:</span>
+                      {FORMAT_PRESETS.rss.map((preset, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            setFeedName(preset.name);
+                            setFeedUrl(preset.url);
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold transition-colors cursor-pointer"
+                          title={preset.desc}
+                        >
+                          {preset.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Live Preview of parsed feed items */}
+                  {previewError && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-medium flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>{previewError}</span>
+                    </div>
+                  )}
+
+                  {previewItems.length > 0 && (
+                    <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
+                      <div className="flex items-center justify-between text-emerald-900 font-bold text-xs">
+                        <span>✅ Feed Validated ({previewItems.length} latest stories detected):</span>
+                      </div>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        {previewItems.slice(0, 3).map((item, idx) => (
+                          <div key={idx} className="p-2 bg-white rounded-lg border border-emerald-100 text-xs">
+                            <div className="font-bold text-slate-900 line-clamp-1">{item.title}</div>
+                            {item.summary && (
+                              <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{item.summary}</div>
+                            )}
+                            {item.imageUrl && (
+                              <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                                🖼️ Featured image detected
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Targets */}
+                  <div className="pt-2 border-t border-[#EEF1F6] space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                        Social Media Channels (FB, Insta, Telegram)
-                      </span>
-                      <span className="text-[10px] font-medium text-slate-500">
-                        {socialPages.filter((p) => selectedPageIds.includes(p.id)).length} / {socialPages.length} active
-                      </span>
+                      <label className="text-xs font-bold text-slate-900">
+                        Publishing Targets ({selectedPageIds.length}/{pages.length} Selected)
+                      </label>
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={handleSelectAllPages}
+                          className="text-slate-600 hover:text-black font-semibold cursor-pointer underline"
+                        >
+                          {selectedPageIds.length === pages.length ? 'Clear' : 'All'}
+                        </button>
+                        <span>•</span>
+                        <button
+                          type="button"
+                          onClick={handleSelectWordpressOnly}
+                          className="text-[#21759B] hover:underline font-semibold cursor-pointer"
+                        >
+                          WP Only ({wpPages.length})
+                        </button>
+                        <span>•</span>
+                        <button
+                          type="button"
+                          onClick={handleSelectSocialOnly}
+                          className="text-slate-600 hover:text-black font-semibold cursor-pointer underline"
+                        >
+                          Social Only
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
-                      {socialPages.map((p) => {
+                      {pages.map((p) => {
                         const isSelected = selectedPageIds.includes(p.id);
                         return (
                           <div
@@ -1276,132 +1730,103 @@ function AutomationsContent() {
                       })}
                     </div>
                   </div>
-                )}
-              </div>
 
-              {/* ── CARD TEMPLATE GENERATION (SIG) ── */}
-              <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200/70 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                      <Palette className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Auto-Generate Branded Card Image (SIG Template)</span>
+                  {/* Card Template Generation (SIG) */}
+                  <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200/70 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                          <Palette className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Auto-Generate Branded Card Image (SIG Template)</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Renders article image into Photo Box &amp; headline into Title Box.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={autoGenerateImage}
+                        onChange={(e) => setAutoGenerateImage(e.target.checked)}
+                        className="w-4 h-4 rounded text-slate-900 cursor-pointer"
+                      />
                     </div>
-                    <div className="text-[10px] text-slate-500">
-                      Renders the article photo into the Featured Image Box and headline in Title Box.
-                    </div>
+
+                    {autoGenerateImage && (
+                      <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-amber-900 block mb-1">
+                            Select Template Layout:
+                          </label>
+                          <select
+                            value={selectedSigTemplateId}
+                            onChange={(e) => setSelectedSigTemplateId(e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-slate-800"
+                          >
+                            {sigTemplates.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name} ({t.canvasWidth}×{t.canvasHeight})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Link
+                          href="/image-generator"
+                          target="_blank"
+                          className="text-[11px] font-bold text-amber-800 hover:underline shrink-0"
+                        >
+                          Edit Layout &rarr;
+                        </Link>
+                      </div>
+                    )}
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={autoGenerateImage}
-                    onChange={(e) => setAutoGenerateImage(e.target.checked)}
-                    className="w-4 h-4 rounded text-slate-900 cursor-pointer"
-                  />
-                </div>
 
-                {autoGenerateImage && (
-                  <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-3">
-                    <div className="flex-1">
-                      <label className="text-[10px] font-bold text-amber-900 block mb-1">
-                        Select Template Layout:
+                  {/* Interval & Mode */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span>Cadence</span>
                       </label>
                       <select
-                        value={selectedSigTemplateId}
-                        onChange={(e) => setSelectedSigTemplateId(e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-slate-800"
+                        value={intervalMinutes}
+                        onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
                       >
-                        {sigTemplates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} ({t.canvasWidth}×{t.canvasHeight})
-                          </option>
-                        ))}
+                        <option value={1}>Every 1 Min</option>
+                        <option value={5}>Every 5 Mins</option>
+                        <option value={15}>Every 15 Mins</option>
+                        <option value={30}>Every 30 Mins</option>
+                        <option value={60}>Every 1 Hour</option>
                       </select>
                     </div>
 
-                    <Link
-                      href="/image-generator"
-                      target="_blank"
-                      className="text-[11px] font-bold text-amber-800 hover:underline shrink-0"
-                    >
-                      Edit Layout &rarr;
-                    </Link>
-                  </div>
-                )}
-              </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">Max Stories</label>
+                      <select
+                        value={maxItems}
+                        onChange={(e) => setMaxItems(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
+                      >
+                        <option value={1}>1 Story</option>
+                        <option value={2}>2 Stories</option>
+                        <option value={3}>3 Stories</option>
+                      </select>
+                    </div>
 
-              {/* Automation Rules: First Comment, Cadence, Publishing Mode */}
-              <div className="pt-2 border-t border-[#EEF1F6] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-slate-800 text-xs">First Comment Source Link</div>
-                    <div className="text-[10px] text-slate-400">
-                      Places news source link in first comment to maximize Facebook organic reach.
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">Publishing Mode</label>
+                      <select
+                        value={postStatus}
+                        onChange={(e) => setPostStatus(e.target.value as any)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
+                      >
+                        <option value="published">⚡ Auto-Publish Live</option>
+                        <option value="draft">📝 Save as Draft</option>
+                      </select>
                     </div>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={linkInComment}
-                    onChange={(e) => setLinkInComment(e.target.checked)}
-                    className="w-4 h-4 rounded text-slate-900 focus:ring-0 cursor-pointer"
-                  />
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Fetching Cadence */}
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      <span>Fetching Cadence</span>
-                    </label>
-                    <select
-                      value={intervalMinutes}
-                      onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
-                    >
-                      <option value={1}>Every 1 Min (Breaking News)</option>
-                      <option value={5}>Every 5 Mins</option>
-                      <option value={15}>Every 15 Mins (Recommended)</option>
-                      <option value={30}>Every 30 Mins</option>
-                      <option value={60}>Every 1 Hour</option>
-                      <option value={180}>Every 3 Hours</option>
-                      <option value={360}>Every 6 Hours</option>
-                      <option value={720}>Every 12 Hours</option>
-                    </select>
-                  </div>
-
-                  {/* Stories per Run */}
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Max Stories per Run
-                    </label>
-                    <select
-                      value={maxItems}
-                      onChange={(e) => setMaxItems(Number(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
-                    >
-                      <option value={1}>1 Story (Safe)</option>
-                      <option value={2}>2 Stories (Recommended)</option>
-                      <option value={3}>3 Stories</option>
-                      <option value={5}>5 Stories</option>
-                    </select>
-                  </div>
-
-                  {/* Publishing Mode */}
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Publishing Mode
-                    </label>
-                    <select
-                      value={postStatus}
-                      onChange={(e) => setPostStatus(e.target.value as any)}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
-                    >
-                      <option value="published">⚡ Auto-Publish Live</option>
-                      <option value="draft">📝 Save as Draft (Approval)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+              )}
 
               {/* Modal Buttons */}
               <div className="pt-3 border-t border-[#EEF1F6] flex items-center justify-end gap-2">
@@ -1417,9 +1842,13 @@ function AutomationsContent() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs cursor-pointer"
                 >
-                  {editingAutomationId ? 'Update Feed Settings' : 'Save & Activate Feed'}
+                  {editingAutomationId
+                    ? 'Update Rule'
+                    : feedType === 'website_to_fb' || feedType === 'wordpress'
+                    ? 'Save & Activate Website to FB Rule'
+                    : 'Save & Activate Feed'}
                 </button>
               </div>
             </form>

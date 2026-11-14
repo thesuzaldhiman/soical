@@ -1,5 +1,73 @@
 [
   {
+    "id": "post_wp_1794678086822_8j4qf",
+    "workspaceId": "ws_default",
+    "postType": "image",
+    "title": "शिमला में ताज़ा बर्फबारी अलर्ट",
+    "message": "शिमला में ताज़ा बर्फबारी अलर्ट",
+    "linkUrl": "https://himachalsamachar.com/shimla-snowfall-alert",
+    "commentText": "👉 पूरी खबर यहाँ पढ़ें: https://himachalsamachar.com/shimla-snowfall-alert",
+    "pageIds": [
+      "pg_1",
+      "pg_2",
+      "pg_3",
+      "pg_6"
+    ],
+    "status": "failed",
+    "scheduledAt": "2026-11-14T17:41:26.822Z",
+    "publishedAt": "2026-11-14T17:41:26.822Z",
+    "results": [
+      {
+        "pageId": "pg_1",
+        "platform": "facebook",
+        "pageName": "Khabar Monkey (Official)",
+        "status": "failed",
+        "error": "Missing Facebook Page Access Token.",
+        "timestamp": "2026-11-14T17:41:26.822Z"
+      },
+      {
+        "pageId": "pg_2",
+        "platform": "facebook",
+        "pageName": "Kheloge Sports & Gaming",
+        "status": "failed",
+        "error": "Missing Facebook Page Access Token.",
+        "timestamp": "2026-11-14T17:41:26.822Z"
+      },
+      {
+        "pageId": "pg_3",
+        "platform": "facebook",
+        "pageName": "Happy Hub Store",
+        "status": "failed",
+        "error": "Missing Facebook Page Access Token.",
+        "timestamp": "2026-11-14T17:41:26.822Z"
+      },
+      {
+        "pageId": "pg_6",
+        "platform": "telegram",
+        "pageName": "Telegram: Himachal News Channel",
+        "status": "failed",
+        "error": "Missing Telegram Bot Token or Channel Chat ID.",
+        "timestamp": "2026-11-14T17:41:26.822Z"
+      }
+    ],
+    "createdAt": "2026-11-14T17:41:26.822Z",
+    "updatedAt": "2026-11-14T17:41:26.822Z"
+  },
+  {
+    "id": "post_wp_unmapped_1794678081731",
+    "workspaceId": "ws_default",
+    "postType": "text",
+    "title": "Test Unmapped Article",
+    "message": "Test Unmapped Article",
+    "linkUrl": "https://himachalsamachar.com/test-unmapped",
+    "commentText": "👉 पूरी खबर यहाँ पढ़ें: https://himachalsamachar.com/test-unmapped",
+    "pageIds": [],
+    "status": "draft",
+    "createdAt": "2026-11-14T17:41:21.731Z",
+    "updatedAt": "2026-11-14T17:41:21.731Z",
+    "results": []
+  },
+  {
     "id": "post_wp_1794662578500_37obr",
     "workspaceId": "ws_default",
     "postType": "image",

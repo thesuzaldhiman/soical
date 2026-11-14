@@ -72,6 +72,8 @@ function SettingsContent() {
     pages,
     addAccount,
     addPages,
+    renameMetaApp,
+    resolveMetaAppName,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'facebook' | 'youtube' | 'retry' | 'words' | 'cron' | 'profile'>('facebook');
@@ -395,6 +397,10 @@ function SettingsContent() {
     e.preventDefault();
     if (!metaAppNameInput.trim() || !metaAppIdInput.trim() || !metaAppSecretInput.trim()) return;
 
+    const trimmedNewName = metaAppNameInput.trim();
+    const existingApp = editingMetaAppId ? metaApps.find((a) => a.id === editingMetaAppId) : null;
+    const oldName = existingApp?.name;
+
     let updatedApps: MetaAppConfig[];
 
     if (editingMetaAppId) {
@@ -402,7 +408,7 @@ function SettingsContent() {
         if (a.id === editingMetaAppId) {
           return {
             ...a,
-            name: metaAppNameInput.trim(),
+            name: trimmedNewName,
             appId: metaAppIdInput.trim(),
             appSecret: metaAppSecretInput.trim(),
             notes: metaAppNotes.trim() || undefined,
@@ -414,7 +420,7 @@ function SettingsContent() {
     } else {
       const newApp: MetaAppConfig = {
         id: `meta_app_${Date.now()}`,
-        name: metaAppNameInput.trim(),
+        name: trimmedNewName,
         appId: metaAppIdInput.trim(),
         appSecret: metaAppSecretInput.trim(),
         isDefault: metaAppIsDefault || metaApps.length === 0,
@@ -449,16 +455,56 @@ function SettingsContent() {
 
     updateSettings(newSettings);
 
+    // If an existing app was renamed, trigger rename cascade
+    if (editingMetaAppId && oldName && oldName !== trimmedNewName) {
+      renameMetaApp(editingMetaAppId, trimmedNewName);
+    }
+
+    // Cascade update pages and accounts for direct sync
+    const updatedPages = (pages || []).map((p) => {
+      if (
+        editingMetaAppId &&
+        (p.metaAppId === editingMetaAppId ||
+          (existingApp && p.metaAppId === existingApp.appId) ||
+          (oldName && p.metaAppName === oldName))
+      ) {
+        return { ...p, metaAppId: editingMetaAppId, metaAppName: trimmedNewName };
+      }
+      return p;
+    });
+
+    const updatedAccounts = (accounts || []).map((acc) => {
+      if (
+        editingMetaAppId &&
+        (acc.metaAppId === editingMetaAppId ||
+          (existingApp && acc.metaAppId === existingApp.appId) ||
+          (oldName && acc.metaAppName === oldName))
+      ) {
+        const baseName = acc.name.replace(/\s*\([^)]*\)$/, '');
+        return {
+          ...acc,
+          metaAppId: editingMetaAppId,
+          metaAppName: trimmedNewName,
+          name: `${baseName} (${trimmedNewName})`,
+        };
+      }
+      return acc;
+    });
+
     // Direct instant cloud sync
     if (user?.email) {
       try {
         const cleanEmail = user.email.toLowerCase().trim();
         const userKey = `sap_user_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}_v1`;
         const userStored = localStorage.getItem(userKey);
-        const payload = userStored ? JSON.parse(userStored) : { accounts, pages, workspace };
+        const payload = userStored ? JSON.parse(userStored) : { accounts: updatedAccounts, pages: updatedPages, workspace };
         payload.settings = newSettings;
+        payload.pages = updatedPages;
+        payload.accounts = updatedAccounts;
         localStorage.setItem(userKey, JSON.stringify(payload));
         localStorage.setItem('sap_app_settings', JSON.stringify(newSettings));
+        localStorage.setItem('sap_social_pages', JSON.stringify(updatedPages));
+        localStorage.setItem('sap_social_accounts', JSON.stringify(updatedAccounts));
 
         fetch('/api/user/sync', {
           method: 'POST',
@@ -953,9 +999,9 @@ function SettingsContent() {
                       >
                         <SocialIcon platform="facebook" className="w-4 h-4 rounded-xs" />
                         <span>{pg.name}</span>
-                        {pg.metaAppName && (
+                        {(pg.metaAppName || pg.metaAppId) && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold">
-                            {pg.metaAppName}
+                            {resolveMetaAppName(pg.metaAppId, pg.metaAppName)}
                           </span>
                         )}
                         <span className="text-[10px] text-slate-400 font-mono">({pg.pageId})</span>

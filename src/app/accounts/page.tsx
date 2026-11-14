@@ -61,6 +61,7 @@ function AccountsContent() {
     categories,
     createCategory,
     settings,
+    resolveMetaAppName,
     addAccount,
     syncFacebookPages,
     addPages,
@@ -815,7 +816,11 @@ function AccountsContent() {
                       </h2>
                       <p className="text-[11px] text-slate-400 font-medium mt-0.5 truncate max-w-[150px]">
                         {isConnected
-                          ? platformAccount?.name || `${platformPages.length} Destination(s)`
+                          ? (platformAccount
+                              ? (platformAccount.platform === 'facebook'
+                                  ? `${platformAccount.name.replace(/\s*\([^)]*\)$/, '')} (${resolveMetaAppName(platformAccount.metaAppId, platformAccount.metaAppName)})`
+                                  : platformAccount.name)
+                              : `${platformPages.length} Destination(s)`)
                           : 'Not connected'}
                       </p>
                     </div>
@@ -985,11 +990,11 @@ function AccountsContent() {
                           </span>
                           <span>•</span>
                           <span className="font-mono text-[10px] text-slate-400">ID: {page.pageId}</span>
-                          {page.platform === 'facebook' && page.metaAppName && (
+                          {page.platform === 'facebook' && (page.metaAppName || page.metaAppId) && (
                             <>
                               <span>•</span>
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 rounded-md">
-                                App: {page.metaAppName}
+                                App: {resolveMetaAppName(page.metaAppId, page.metaAppName)}
                               </span>
                             </>
                           )}
