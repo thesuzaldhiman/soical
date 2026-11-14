@@ -9,13 +9,24 @@ import {
 
 const APP_URL = (process.env.APP_API_URL || 'https://game.khabarmonkey.com').replace(/\/+$/, '');
 const MCP_SECRET = process.env.MCP_SECRET_KEY || 'sap_mcp_live_secret_99x8a7b6c5d4e3';
+const DEFAULT_USER_EMAIL = (process.env.USER_EMAIL || 'suzaldhiman@gmail.com').toLowerCase().trim();
 
 /**
- * Helper to call the Social Auto Poster MCP API endpoint
+ * Helper to call the Social Auto Poster MCP API endpoint scoped to a specific user account email
  */
-async function callAppApi(endpoint: string, method: 'GET' | 'POST' = 'GET', bodyData?: any) {
+async function callAppApi(
+  endpoint: string,
+  method: 'GET' | 'POST' = 'GET',
+  bodyData?: any,
+  emailOverride?: string
+) {
   const url = new URL(`${APP_URL}${endpoint}`);
   url.searchParams.set('secret', MCP_SECRET);
+
+  const targetEmail = (emailOverride || DEFAULT_USER_EMAIL).toLowerCase().trim();
+  if (!url.searchParams.has('email')) {
+    url.searchParams.set('email', targetEmail);
+  }
 
   const options: RequestInit = {
     method,
@@ -25,8 +36,12 @@ async function callAppApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body
     },
   };
 
-  if (method === 'POST' && bodyData) {
-    options.body = JSON.stringify(bodyData);
+  if (method === 'POST') {
+    const payload = {
+      email: targetEmail,
+      ...(bodyData || {}),
+    };
+    options.body = JSON.stringify(payload);
   }
 
   try {
@@ -38,7 +53,7 @@ async function callAppApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body
     return data;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`Failed to communicate with Social Auto Poster App (${APP_URL}): ${msg}`);
+    throw new Error(`Failed to communicate with Social Auto Poster App (${APP_URL}) for user [${targetEmail}]: ${msg}`);
   }
 }
 
@@ -54,17 +69,22 @@ const server = new Server(
   }
 );
 
-// Define MCP Tools
+// Define MCP Tools with User Account Scoping
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
         name: 'list_targets',
         description:
-          'Lists all connected destinations (WordPress sites, Facebook Pages, Telegram channels) and configured Page Categories. Shows which pages belong to which category so you can target by Category name, by WordPress only, or by specific page IDs.',
+          'Lists all connected destinations (WordPress sites, Facebook Pages, Telegram channels) and configured Page Categories belonging to the connected user account. Shows which pages belong to which category so you can target by Category name, by WordPress only, or by specific page IDs.',
         inputSchema: {
           type: 'object',
           properties: {
+            email: {
+              type: 'string',
+              description: 'User account email (defaults to the currently authenticated account: suzaldhiman@gmail.com). Allows multi-tenant account isolation.',
+              default: DEFAULT_USER_EMAIL,
+            },
             filterMode: {
               type: 'string',
               enum: ['all', 'wordpress_only', 'social_only'],
@@ -77,10 +97,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'schedule_posts',
         description:
-          'Schedules single or bulk posts (up to 150 posts) across WordPress websites, Facebook Pages, or whole Categories. Supports automated interval spacing (e.g. every 45 mins), start times, rich HTML content for WordPress, featured images, and Facebook first comment links.',
+          'Schedules single or bulk posts (up to 150 posts) across WordPress websites, Facebook Pages, or whole Categories for the user account. Supports automated interval spacing (e.g. every 45 mins), start times, rich HTML content for WordPress, featured images, and Facebook first comment links.',
         inputSchema: {
           type: 'object',
           properties: {
+            email: {
+              type: 'string',
+              description: 'User account email (defaults to suzaldhiman@gmail.com).',
+              default: DEFAULT_USER_EMAIL,
+            },
             targetMode: {
               type: 'string',
               enum: ['wordpress_only', 'social_only', 'all'],
@@ -91,7 +116,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'array',
               items: { type: 'string' },
               description:
-                'Names of Page Categories to target (e.g. ["News & Alerts", "Technology"]). All pages belonging to these categories will receive the post automatically.',
+                'Names of Page Categories to target (e.g. ["Breaking News & Alerts", "Technology"]). All pages belonging to these categories will receive the post automatically.',
             },
             targetPageIds: {
               type: 'array',
@@ -179,13 +204,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'get_queue_status',
-        description: 'Checks current scheduled queue, count of pending dispatches, and next available publishing time slot.',
+        description: 'Checks current scheduled queue, count of pending dispatches, and next available publishing time slot for the user account.',
         inputSchema: {
           type: 'object',
           properties: {
             email: {
               type: 'string',
-              description: 'User email account to inspect (defaults to owner).',
+              description: 'User email account to inspect (defaults to suzaldhiman@gmail.com).',
+              default: DEFAULT_USER_EMAIL,
             },
           },
         },
@@ -196,6 +222,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: 'object',
           properties: {
+            email: { type: 'string', description: 'User account email (defaults to suzaldhiman@gmail.com)', default: DEFAULT_USER_EMAIL },
             title: { type: 'string', description: 'Title or headline' },
             message: { type: 'string', description: 'Post caption or text' },
             contentHtml: { type: 'string', description: 'Rich HTML body for WordPress' },
@@ -215,10 +242,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Tool Handlers
 server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   const { name, arguments: args } = request.params;
+  const userEmail = (args?.email as string) || DEFAULT_USER_EMAIL;
 
   try {
     if (name === 'list_targets') {
-      const data = await callAppApi('/api/mcp?action=targets');
+      const data = await callAppApi(
+        `/api/mcp?action=targets&email=${encodeURIComponent(userEmail)}`,
+        'GET',
+        undefined,
+        userEmail
+      );
       const filter = (args?.filterMode as string) || 'all';
 
       let wp = data.wordpressSites || [];
@@ -233,7 +266,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             type: 'text',
             text: JSON.stringify(
               {
-                summary: `Found ${wp.length} WordPress site(s), ${social.length} social page(s), and ${data.categories?.length || 0} category groups.`,
+                userEmail,
+                summary: `Account [${userEmail}]: Found ${wp.length} WordPress site(s), ${social.length} social page(s), and ${data.categories?.length || 0} category groups.`,
                 wordpressSites: wp,
                 socialPages: social,
                 categories: data.categories || [],
@@ -247,7 +281,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     }
 
     if (name === 'schedule_posts') {
-      const data = await callAppApi('/api/mcp', 'POST', args);
+      const payload = {
+        ...args,
+        email: userEmail,
+      };
+      const data = await callAppApi('/api/mcp', 'POST', payload, userEmail);
       return {
         content: [
           {
@@ -259,9 +297,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     }
 
     if (name === 'get_queue_status') {
-      const email = (args?.email as string) || '';
-      const endpoint = email ? `/api/mcp?action=queue&email=${encodeURIComponent(email)}` : '/api/mcp?action=queue';
-      const data = await callAppApi(endpoint);
+      const endpoint = `/api/mcp?action=queue&email=${encodeURIComponent(userEmail)}`;
+      const data = await callAppApi(endpoint, 'GET', undefined, userEmail);
       return {
         content: [
           {
@@ -276,6 +313,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       const payload = {
         action: 'schedule',
         publishNow: true,
+        email: userEmail,
         targetMode: args?.targetMode || 'all',
         targetCategoryNames: args?.targetCategoryNames || [],
         targetPageIds: args?.targetPageIds || [],
@@ -289,7 +327,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
           },
         ],
       };
-      const data = await callAppApi('/api/mcp', 'POST', payload);
+      const data = await callAppApi('/api/mcp', 'POST', payload, userEmail);
       return {
         content: [
           {
@@ -308,7 +346,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       content: [
         {
           type: 'text',
-          text: `Error executing tool "${name}": ${errorMsg}`,
+          text: `Error executing tool "${name}" for account [${userEmail}]: ${errorMsg}`,
         },
       ],
     };
@@ -318,7 +356,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Social Poster MCP Server running on stdio');
+  console.error(`Social Poster MCP Server running on stdio for user [${DEFAULT_USER_EMAIL}]`);
 }
 
 main().catch((err) => {

@@ -56,15 +56,16 @@ function saveLocalPosts(posts: Post[]) {
   }
 }
 
-async function getUserState(email: string = 'suzal@khabarmonkey.com') {
+async function getUserState(email: string = 'suzaldhiman@gmail.com') {
+  const cleanEmail = email.toLowerCase().trim();
   const pool = getDbPool();
   if (!pool) {
     return {
       source: 'local' as const,
-      pages: DEMO_PAGES,
-      categories: DEMO_CATEGORIES,
+      pages: [],
+      categories: [],
       posts: getLocalPosts(),
-      workspace: { id: 'ws_default', monthlyPostsUsed: 0 },
+      workspace: { id: `ws_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`, monthlyPostsUsed: 0 },
     };
   }
 
@@ -72,34 +73,17 @@ async function getUserState(email: string = 'suzal@khabarmonkey.com') {
     await initDbTables();
     const [rows] = await pool.query<any[]>(
       'SELECT email, workspace, pages, categories, posts FROM app_user_data WHERE email = ? LIMIT 1',
-      [email.toLowerCase().trim()]
+      [cleanEmail]
     );
 
     if (rows && rows.length > 0) {
       const row = rows[0];
-      const parsedPages = parseJsonSafe(row.pages, DEMO_PAGES) as SocialPage[];
-      const parsedCats = parseJsonSafe(row.categories, DEMO_CATEGORIES) as PageCategory[];
+      const parsedPages = parseJsonSafe(row.pages, []) as SocialPage[];
+      const parsedCats = parseJsonSafe(row.categories, []) as PageCategory[];
       return {
         source: 'mysql' as const,
-        pages: parsedPages.length > 0 ? parsedPages : DEMO_PAGES,
-        categories: parsedCats.length > 0 ? parsedCats : DEMO_CATEGORIES,
-        posts: parseJsonSafe(row.posts, []) as Post[],
-        workspace: parseJsonSafe(row.workspace, { id: 'ws_default', monthlyPostsUsed: 0 }),
-      };
-    }
-
-    // Fallback: check any user
-    const [allRows] = await pool.query<any[]>(
-      'SELECT email, workspace, pages, categories, posts FROM app_user_data LIMIT 1'
-    );
-    if (allRows && allRows.length > 0) {
-      const row = allRows[0];
-      const parsedPages = parseJsonSafe(row.pages, DEMO_PAGES) as SocialPage[];
-      const parsedCats = parseJsonSafe(row.categories, DEMO_CATEGORIES) as PageCategory[];
-      return {
-        source: 'mysql' as const,
-        pages: parsedPages.length > 0 ? parsedPages : DEMO_PAGES,
-        categories: parsedCats.length > 0 ? parsedCats : DEMO_CATEGORIES,
+        pages: parsedPages,
+        categories: parsedCats,
         posts: parseJsonSafe(row.posts, []) as Post[],
         workspace: parseJsonSafe(row.workspace, { id: 'ws_default', monthlyPostsUsed: 0 }),
       };
@@ -110,14 +94,14 @@ async function getUserState(email: string = 'suzal@khabarmonkey.com') {
 
   return {
     source: 'fallback' as const,
-    pages: DEMO_PAGES,
-    categories: DEMO_CATEGORIES,
+    pages: [],
+    categories: [],
     posts: getLocalPosts(),
-    workspace: { id: 'ws_default', monthlyPostsUsed: 0 },
+    workspace: { id: `ws_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`, monthlyPostsUsed: 0 },
   };
 }
 
-async function persistPosts(newPosts: Post[], email: string = 'suzal@khabarmonkey.com') {
+async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail.com') {
   // Always update local cache
   const localCurrent = getLocalPosts();
   saveLocalPosts([...newPosts, ...localCurrent]);
@@ -163,7 +147,7 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const action = searchParams.get('action') || 'targets';
-  const email = searchParams.get('email') || 'suzal@khabarmonkey.com';
+  const email = searchParams.get('email') || 'suzaldhiman@gmail.com';
 
   const state = await getUserState(email);
 
@@ -267,7 +251,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       action = 'schedule',
-      email = 'suzal@khabarmonkey.com',
+      email = 'suzaldhiman@gmail.com',
       // Target Selection Options
       targetMode = 'all', // 'wordpress_only' | 'social_only' | 'all'
       targetPageIds = [],
