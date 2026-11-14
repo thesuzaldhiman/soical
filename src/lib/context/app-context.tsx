@@ -99,6 +99,7 @@ interface AppContextType {
   ) => SocialAccount;
   renameMetaApp: (appId: string, newName: string) => void;
   resolveMetaAppName: (metaAppId?: string, fallbackName?: string) => string;
+  syncWordPressCategories: (siteUrl: string, newCategories: WordPressCategory[]) => void;
   addPages: (pagesToAdd: SocialPage[]) => void;
   updatePage: (id: string, pageData: Partial<SocialPage>) => void;
   removeAccount: (id: string) => void;
@@ -227,6 +228,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   }),
   renameMetaApp: noop,
   resolveMetaAppName: (_metaAppId, fallbackName) => fallbackName || 'Meta App',
+  syncWordPressCategories: noop,
   addPages: noop,
   updatePage: noop,
   removeAccount: noop,
@@ -463,6 +465,59 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }).catch((e) => console.warn('[Cloud MySQL Sync] Failed background sync:', e));
   };
 
+  const syncWordPressCategories = useCallback(
+    (siteUrl: string, newCategories: WordPressCategory[]) => {
+      if (!siteUrl || !Array.isArray(newCategories) || newCategories.length === 0) return;
+      const cleanUrl = siteUrl.trim().toLowerCase().replace(/\/+$/, '');
+
+      setAccounts((prev) =>
+        prev.map((a) => {
+          if (a.platform === 'wordpress') {
+            const accUrl = (a.siteUrl || '').trim().toLowerCase().replace(/\/+$/, '');
+            if (accUrl.includes(cleanUrl) || cleanUrl.includes(accUrl)) {
+              return { ...a, wpCategories: newCategories };
+            }
+          }
+          return a;
+        })
+      );
+
+      setPages((prev) =>
+        prev.map((p) => {
+          if (p.platform === 'wordpress') {
+            const pUrl = (p.siteUrl || '').trim().toLowerCase().replace(/\/+$/, '');
+            if (pUrl.includes(cleanUrl) || cleanUrl.includes(pUrl)) {
+              return { ...p, wpCategories: newCategories };
+            }
+          }
+          return p;
+        })
+      );
+
+      // Auto-populate SaaS broadcast categories
+      setCategories((prev) => {
+        const nextCats = [...prev];
+        newCategories.forEach((cat) => {
+          const catName = String(cat?.name || '').trim();
+          const catSlug = String(cat?.slug || catName).toLowerCase();
+          if (!catName) return;
+          const exists = nextCats.some((c) => c.name.toLowerCase().trim() === catName.toLowerCase());
+          if (!exists) {
+            nextCats.push({
+              id: `cat_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              name: catName,
+              color: '#3B82F6',
+              pageIds: [],
+              tags: [`#${catSlug.replace(/[^a-zA-Z0-9]/g, '')}`, '#news'],
+            });
+          }
+        });
+        return nextCats;
+      });
+    },
+    []
+  );
+
   // Helper to load user-isolated data
   const loadUserDataForEmail = (email: string, name?: string) => {
     if (!email) return;
@@ -517,6 +572,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               });
             }
             setPages(sanitizedPgs);
+
+            // Auto-heal missing WordPress categories from local storage cache
+            const localWpSite = (sanitizedPgs || []).find(
+              (p: any) => p.platform === 'wordpress' && p.siteUrl && (!p.wpCategories || p.wpCategories.length === 0)
+            );
+            if (localWpSite && localWpSite.siteUrl && typeof window !== 'undefined') {
+              fetch(`/api/wordpress/sync-categories?siteUrl=${encodeURIComponent(localWpSite.siteUrl)}`)
+                .then((r) => r.json())
+                .then((d) => {
+                  if (d.success && Array.isArray(d.categories) && d.categories.length > 0) {
+                    syncWordPressCategories(localWpSite.siteUrl!, d.categories);
+                  }
+                })
+                .catch(() => {});
+            }
           }
           if (parsed.categories) setCategories(parsed.categories);
           if (parsed.posts) setPosts(parsed.posts);
@@ -728,6 +798,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const hadOrphanedWp = Array.isArray(db.accounts) && db.accounts.some((a: any) => a.platform === 'wordpress') && !healedPages.some((p) => p.platform === 'wordpress');
             if (hasCustomMetaName || hadOrphanedWp) {
               syncToCloud(cleanEmail, authoritativePayload, user);
+            }
+
+            // Auto-heal missing WordPress categories from cloud database sync
+            const cloudWpSite = (healedPages || []).find(
+              (p: any) => p.platform === 'wordpress' && p.siteUrl && (!p.wpCategories || p.wpCategories.length === 0)
+            );
+            if (cloudWpSite && cloudWpSite.siteUrl && typeof window !== 'undefined') {
+              fetch(`/api/wordpress/sync-categories?siteUrl=${encodeURIComponent(cloudWpSite.siteUrl)}`)
+                .then((r) => r.json())
+                .then((d) => {
+                  if (d.success && Array.isArray(d.categories) && d.categories.length > 0) {
+                    syncWordPressCategories(cloudWpSite.siteUrl!, d.categories);
+                  }
+                })
+                .catch(() => {});
             }
           } else if (res.success && !res.data) {
             // First time on MySQL: Seed DB with current local data
@@ -2926,6 +3011,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         syncFacebookPages,
         renameMetaApp,
         resolveMetaAppName,
+        syncWordPressCategories,
         addPages,
         updatePage,
         removeAccount,

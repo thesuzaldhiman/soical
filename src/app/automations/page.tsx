@@ -86,6 +86,7 @@ function AutomationsContent() {
     createAutomation,
     updateAutomation,
     createPost,
+    syncWordPressCategories,
   } = useApp();
 
   // Hidden off-screen canvas for composite card generation
@@ -124,8 +125,37 @@ function AutomationsContent() {
   }, [wpAccounts, selectedWpAccountId]);
 
   const availableWpCategories = React.useMemo(() => {
-    return activeWpAccount?.wpCategories || [];
-  }, [activeWpAccount]);
+    if (activeWpAccount?.wpCategories && activeWpAccount.wpCategories.length > 0) {
+      return activeWpAccount.wpCategories;
+    }
+    const matchingPage = wpPages.find(
+      (p) =>
+        p.accountId === activeWpAccount?.id ||
+        (p.siteUrl && activeWpAccount?.siteUrl && p.siteUrl.toLowerCase() === activeWpAccount.siteUrl.toLowerCase())
+    );
+    if (matchingPage?.wpCategories && matchingPage.wpCategories.length > 0) {
+      return matchingPage.wpCategories;
+    }
+    return [];
+  }, [activeWpAccount, wpPages]);
+
+  const [isSyncingModalCats, setIsSyncingModalCats] = useState(false);
+  const handleSyncModalCategories = React.useCallback(async () => {
+    const siteUrl = activeWpAccount?.siteUrl || wpPages[0]?.siteUrl;
+    if (!siteUrl) return;
+    setIsSyncingModalCats(true);
+    try {
+      const res = await fetch(`/api/wordpress/sync-categories?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.categories) && data.categories.length > 0) {
+        syncWordPressCategories(siteUrl, data.categories);
+      }
+    } catch {
+      // Ignore background sync errors
+    } finally {
+      setIsSyncingModalCats(false);
+    }
+  }, [activeWpAccount?.siteUrl, wpPages, syncWordPressCategories]);
 
   const [feedName, setFeedName] = useState('');
   const [feedType, setFeedType] = useState<'website_to_fb' | 'rss' | 'wordpress'>('website_to_fb');
@@ -136,6 +166,16 @@ function AutomationsContent() {
   const [maxItems, setMaxItems] = useState(2);
   const [intervalMinutes, setIntervalMinutes] = useState(15);
   const [postStatus, setPostStatus] = useState<'published' | 'draft'>('published');
+
+  // Auto-sync missing categories when opening Website to FB modal
+  React.useEffect(() => {
+    if (modalOpen && (feedType === 'website_to_fb' || feedType === 'wordpress')) {
+      const targetSite = activeWpAccount?.siteUrl || wpPages[0]?.siteUrl;
+      if (targetSite && availableWpCategories.length === 0) {
+        handleSyncModalCategories();
+      }
+    }
+  }, [modalOpen, feedType, activeWpAccount?.siteUrl, wpPages, availableWpCategories.length, handleSyncModalCategories]);
 
   // Advanced Scraper & SIG Template Options
   const [autoGenerateImage, setAutoGenerateImage] = useState(true);
@@ -1210,9 +1250,21 @@ function AutomationsContent() {
                         </div>
 
                         <div>
-                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                            WP Category (Anti-Spam Isolation Filter)
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-bold text-slate-700">
+                              WP Category (Anti-Spam Isolation Filter)
+                            </label>
+                            <button
+                              type="button"
+                              onClick={handleSyncModalCategories}
+                              disabled={isSyncingModalCats}
+                              className="text-[10px] font-bold text-blue-700 hover:text-blue-900 underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              title="Fetch/refresh categories from WordPress"
+                            >
+                              <RefreshCw className={`w-2.5 h-2.5 ${isSyncingModalCats ? 'animate-spin' : ''}`} />
+                              <span>{isSyncingModalCats ? 'Syncing...' : 'Fetch Categories'}</span>
+                            </button>
+                          </div>
                           <select
                             value={selectedWpCategory}
                             onChange={(e) => setSelectedWpCategory(e.target.value)}

@@ -69,6 +69,7 @@ function AccountsContent() {
     removeAccount,
     togglePageActive,
     disconnectPage,
+    syncWordPressCategories,
     clearAllData,
     loadDemoData,
   } = useApp();
@@ -573,6 +574,35 @@ function AccountsContent() {
     }
   };
 
+  const [isSyncingWpCats, setIsSyncingWpCats] = useState(false);
+  const handleSyncWpCategories = async (acc?: any) => {
+    const siteUrl = acc?.siteUrl || wpSiteUrl || (accounts.find((a) => a.platform === 'wordpress')?.siteUrl) || (pages.find((p) => p.platform === 'wordpress')?.siteUrl);
+    if (!siteUrl) {
+      setConnectError('Koi WordPress site URL nahi mila.');
+      setTimeout(() => setConnectError(null), 3000);
+      return;
+    }
+    setIsSyncingWpCats(true);
+    setConnectError(null);
+    try {
+      const res = await fetch(`/api/wordpress/sync-categories?siteUrl=${encodeURIComponent(siteUrl)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.categories) && data.categories.length > 0) {
+        syncWordPressCategories(siteUrl, data.categories);
+        setConnectSuccess(`✅ Successfully fetched ${data.categories.length} WordPress categories from ${data.siteUrl}!`);
+        setTimeout(() => setConnectSuccess(null), 4000);
+      } else {
+        setConnectError('Categories fetch nahi ho payi. Please make sure plugin activated hai.');
+        setTimeout(() => setConnectError(null), 4000);
+      }
+    } catch {
+      setConnectError('Network error while syncing categories.');
+      setTimeout(() => setConnectError(null), 4000);
+    } finally {
+      setIsSyncingWpCats(false);
+    }
+  };
+
   const platformsConfig: {
     id: Platform;
     name: string;
@@ -865,28 +895,55 @@ function AccountsContent() {
                 )}
 
                 {/* WordPress Synced Categories display */}
-                {isConnected && plat.id === 'wordpress' && (platformAccount?.wpCategories?.length || 0) > 0 && (
+                {isConnected && plat.id === 'wordpress' && (
                   <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-100 text-[11px] text-sky-900 space-y-1.5">
                     <div className="flex items-center justify-between font-bold">
                       <span className="flex items-center gap-1">
-                        📁 {platformAccount?.wpCategories?.length} Categories Synced:
+                        📁 {(platformAccount?.wpCategories?.length || 0)} Categories Synced:
                       </span>
-                      <Link href="/categories" className="underline text-sky-700 hover:text-sky-900 font-semibold">
-                        Map to Groups →
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSyncWpCategories(platformAccount)}
+                          disabled={isSyncingWpCats}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-700 hover:text-sky-950 underline cursor-pointer disabled:opacity-50"
+                          title="Refresh categories from WordPress site"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isSyncingWpCats ? 'animate-spin' : ''}`} />
+                          <span>{isSyncingWpCats ? 'Syncing...' : 'Re-sync'}</span>
+                        </button>
+                        <Link href="/categories" className="underline text-sky-700 hover:text-sky-900 font-semibold text-[10px]">
+                          Map Groups →
+                        </Link>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {platformAccount?.wpCategories?.slice(0, 5).map((cat) => (
-                        <span key={cat.id} className="px-1.5 py-0.5 bg-white rounded border border-sky-200 text-[10px] font-medium text-slate-800">
-                          {cat.name} ({cat.count})
-                        </span>
-                      ))}
-                      {(platformAccount?.wpCategories?.length || 0) > 5 && (
-                        <span className="text-[10px] text-sky-600 font-bold self-center">
-                          +{ (platformAccount?.wpCategories?.length || 0) - 5 } more
-                        </span>
-                      )}
-                    </div>
+                    {(platformAccount?.wpCategories?.length || 0) > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {platformAccount?.wpCategories?.slice(0, 5).map((cat) => (
+                          <span key={cat.id} className="px-1.5 py-0.5 bg-white rounded border border-sky-200 text-[10px] font-medium text-slate-800">
+                            {cat.name} ({cat.count})
+                          </span>
+                        ))}
+                        {(platformAccount?.wpCategories?.length || 0) > 5 && (
+                          <span className="text-[10px] text-sky-600 font-bold self-center">
+                            +{ (platformAccount?.wpCategories?.length || 0) - 5 } more
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] text-amber-800 font-medium">⚠️ No categories found yet</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSyncWpCategories(platformAccount)}
+                          disabled={isSyncingWpCats}
+                          className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] shadow-2xs cursor-pointer flex items-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isSyncingWpCats ? 'animate-spin' : ''}`} />
+                          <span>{isSyncingWpCats ? 'Fetching...' : 'Fetch Categories Now'}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

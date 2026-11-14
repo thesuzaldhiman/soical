@@ -116,6 +116,11 @@ export async function POST(request: NextRequest) {
 
         // If plugin ping succeeded or categories were extracted
         if (pingData || categories.length > 0) {
+          // If ping succeeded but categories array was empty, run robust category extraction
+          if (categories.length === 0) {
+            categories = await extractAllWordPressCategories(normalizedUrl, requestHeaders);
+          }
+
           return NextResponse.json({
             verified: true,
             siteName: detectedSiteName || hostname,
@@ -130,7 +135,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // If direct REST call timed out or was blocked by Cloudflare/WAF, check if the website itself is alive
+        // If direct candidate endpoints timed out or were blocked by WAF, check if the website itself is alive
         const testSiteRes = await fetch(normalizedUrl, {
           method: 'GET',
           headers: requestHeaders,
@@ -138,13 +143,8 @@ export async function POST(request: NextRequest) {
         }).catch(() => null);
 
         if (testSiteRes && (testSiteRes.status < 500 || testSiteRes.status === 403)) {
-          // The website is online and valid!
-          // Outbound webhooks from WordPress to SaaS work regardless of inbound REST API blocks.
-          const defaultCategories = [
-            { id: 101, name: 'General', slug: 'general', count: 12 },
-            { id: 102, name: 'Himachal News', slug: 'himachal-news', count: 48 },
-            { id: 103, name: 'Breaking News', slug: 'breaking-news', count: 65 },
-          ];
+          // Attempt category extraction from RSS feed and HTML
+          categories = await extractAllWordPressCategories(normalizedUrl, requestHeaders);
 
           return NextResponse.json({
             verified: true,
@@ -152,11 +152,11 @@ export async function POST(request: NextRequest) {
             siteUrl: normalizedUrl,
             pluginVersion: '1.2.0',
             bridgeVersion: '2.0',
-            categories: defaultCategories,
+            categories,
             supportsMultiTitles: true,
             supportsPublishing: true,
             supportsFetching: true,
-            message: `Connected to ${hostname}! Social Auto Poster Connector is ready to receive auto-published posts with multi-titles.`,
+            message: `Connected to ${hostname}! Fetched ${categories.length} categories.`,
           });
         }
 
@@ -247,4 +247,84 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : 'Internal Server Error';
     return NextResponse.json({ verified: false, error: message }, { status: 500 });
   }
+}
+
+async function extractAllWordPressCategories(
+  normalizedUrl: string,
+  requestHeaders: Record<string, string>
+) {
+  let categories: Array<{ id: string | number; name: string; slug: string; count: number }> = [];
+
+  const endpoints = [
+    `${normalizedUrl}/wp-json/social-poster/v1/categories`,
+    `${normalizedUrl}/?rest_route=/social-poster/v1/categories`,
+    `${normalizedUrl}/index.php?rest_route=/social-poster/v1/categories`,
+    `${normalizedUrl}/wp-json/wp/v2/categories?per_page=100`,
+    `${normalizedUrl}/?rest_route=/wp/v2/categories&per_page=100`,
+    `${normalizedUrl}/index.php?rest_route=/wp/v2/categories&per_page=100`,
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const res = await fetch(ep, {
+        method: 'GET',
+        headers: requestHeaders,
+        redirect: 'follow',
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const data = JSON.parse(text);
+        let list: any[] = [];
+        if (Array.isArray(data)) {
+          list = data;
+        } else if (data && Array.isArray(data.categories)) {
+          list = data.categories;
+        }
+
+        if (list.length > 0) {
+          categories = list
+            .filter((c: any) => c && (c.name || c.slug))
+            .map((c: any) => ({
+              id: c.id || c.term_id || `cat_${Date.now()}_${Math.random()}`,
+              name: String(c.name || c.slug || '').trim(),
+              slug: String(c.slug || c.name || '').toLowerCase().trim(),
+              count: typeof c.count === 'number' ? c.count : 0,
+            }))
+            .filter((c) => c.name);
+
+          if (categories.length > 0) return categories;
+        }
+      }
+    } catch {
+      // Continue to next candidate
+    }
+  }
+
+  // Fallback: Parse categories directly from WordPress RSS XML feed (/feed/)
+  try {
+    const feedRes = await fetch(`${normalizedUrl}/feed/`, {
+      method: 'GET',
+      headers: { 'User-Agent': requestHeaders['User-Agent'] || 'CreatorFlow-SaaS/1.0' },
+      redirect: 'follow',
+    });
+    if (feedRes.ok) {
+      const xml = await feedRes.text();
+      const catMatches = xml.matchAll(/<category>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/category>/gi);
+      const found = new Set<string>();
+      for (const m of catMatches) {
+        const name = (m[1] || '').trim();
+        if (name && !found.has(name.toLowerCase())) {
+          found.add(name.toLowerCase());
+          categories.push({
+            id: `cat_rss_${found.size}`,
+            name,
+            slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            count: 1,
+          });
+        }
+      }
+    }
+  } catch {}
+
+  return categories;
 }
