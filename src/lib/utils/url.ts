@@ -13,15 +13,19 @@ export function getBaseUrl(request?: NextRequest): string {
 
   // 2. Check incoming request headers
   if (request) {
-    // Reverse proxy forwarded headers
-    const forwardedHost = request.headers.get('x-forwarded-host');
-    const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+    // Reverse proxy forwarded headers (safe for comma-separated proxies)
+    const rawForwardedHost = request.headers.get('x-forwarded-host');
+    const forwardedHost = rawForwardedHost ? rawForwardedHost.split(',')[0].trim() : null;
+    const rawForwardedProto = request.headers.get('x-forwarded-proto');
+    const forwardedProto = (rawForwardedProto ? rawForwardedProto.split(',')[0].trim() : 'https') || 'https';
+
     if (forwardedHost && !forwardedHost.includes('0.0.0.0') && !forwardedHost.includes('127.0.0.1')) {
       return `${forwardedProto}://${forwardedHost}`;
     }
 
     // Host header
-    const host = request.headers.get('host');
+    const rawHost = request.headers.get('host');
+    const host = rawHost ? rawHost.split(',')[0].trim() : null;
     if (host && !host.includes('0.0.0.0') && !host.includes('127.0.0.1')) {
       const proto = host.includes('localhost') ? 'http' : 'https';
       return `${proto}://${host}`;

@@ -108,8 +108,10 @@ function ComposerContent() {
   const [libraryStatusFilter, setLibraryStatusFilter] = useState<'all' | 'published' | 'scheduled' | 'draft'>('all');
   const [libraryPreviewPost, setLibraryPreviewPost] = useState<Post | null>(null);
 
+  const hasLoadedCloneRef = useRef<string | null>(null);
+
   // Load a post from Library into the composer
-  const handleLoadPostFromLibrary = (postToLoad: Post) => {
+  const handleLoadPostFromLibrary = (postToLoad: Post, isReschedule = false) => {
     setMessage(postToLoad.message || '');
     setPostType(postToLoad.postType || 'text');
     if (postToLoad.mediaUrl) {
@@ -118,32 +120,60 @@ function ComposerContent() {
     }
     if (postToLoad.linkUrl) setLinkUrl(postToLoad.linkUrl);
     if (postToLoad.commentText) setFirstComment(postToLoad.commentText);
-    if (postToLoad.pageIds && postToLoad.pageIds.length > 0) {
+
+    // STRICTLY set ONLY the exact target pages from the post
+    if (Array.isArray(postToLoad.pageIds) && postToLoad.pageIds.length > 0) {
       const validIds = postToLoad.pageIds.filter((pid) => pages.some((p) => p.id === pid));
-      if (validIds.length > 0) {
-        setSelectedPageIds(validIds);
+      setSelectedPageIds(validIds.length > 0 ? validIds : postToLoad.pageIds);
+    }
+
+    if (isReschedule || postToLoad.status === 'scheduled') {
+      setIsScheduleMode(true);
+      if (postToLoad.scheduledAt && new Date(postToLoad.scheduledAt).getTime() > Date.now()) {
+        const d = new Date(postToLoad.scheduledAt);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        setScheduledDateTime(
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+        );
+      } else {
+        setScheduledDateTime(getLocalDateTimeOffset(2));
       }
     }
+
     setShowLibraryModal(false);
     setStatusBanner({
       type: 'success',
-      text: `Loaded content from Post Library (#${postToLoad.id.slice(-6)})! You can now review, edit, or broadcast.`,
+      text: isReschedule
+        ? `Rescheduling post (#${postToLoad.id.slice(-6)})! Target pages, caption & media loaded.`
+        : `Loaded content from Post Library (#${postToLoad.id.slice(-6)})! You can now review, edit, or broadcast.`,
     });
   };
 
   // Check URL search parameters or session storage on mount
   useEffect(() => {
-    const cloneId = searchParams?.get('clone') || searchParams?.get('fromLibrary');
+    const cloneId = searchParams?.get('clone') || searchParams?.get('fromLibrary') || searchParams?.get('reschedule');
+    const isReschedule = searchParams?.get('mode') === 'reschedule' || Boolean(searchParams?.get('reschedule'));
     const targetPageId = searchParams?.get('pageId');
 
     if (targetPageId && pages.some((p) => p.id === targetPageId)) {
       setSelectedPageIds([targetPageId]);
     }
 
-    if (cloneId && posts.length > 0) {
-      const match = posts.find((p) => p.id === cloneId);
+    if (cloneId && hasLoadedCloneRef.current !== cloneId) {
+      let match = posts.find((p) => p.id === cloneId);
+      if (!match && typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sap_posts');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) match = parsed.find((p: any) => p.id === cloneId);
+          }
+        } catch {}
+      }
+
       if (match) {
-        handleLoadPostFromLibrary(match);
+        hasLoadedCloneRef.current = cloneId;
+        handleLoadPostFromLibrary(match, isReschedule);
       }
     }
 

@@ -144,6 +144,7 @@ export interface PostResult {
   pageName: string;
   status: 'success' | 'failed' | 'draft';
   externalPostId?: string;
+  postUrl?: string;
   commentId?: string;
   error?: string;
   timestamp: string;
@@ -153,6 +154,8 @@ export interface Post {
   id: string;
   workspaceId: string;
   postType: PostType;
+  title?: string;
+  contentHtml?: string;
   message: string;
   mediaUrl?: string;
   thumbnailUrl?: string;

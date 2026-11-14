@@ -3,28 +3,31 @@ import { getBaseUrl } from '@/lib/utils/url';
 import { getDbPool } from '@/lib/db/mysql';
 
 export async function GET(request: NextRequest) {
-  const baseUrl = getBaseUrl(request);
-  const searchParams = request.nextUrl.searchParams;
-
-  const code = searchParams.get('code');
-  const error = searchParams.get('error');
-  const errorDescription = searchParams.get('error_description');
-  const state = searchParams.get('state');
-
-  console.log('[Facebook Auth Callback] Initiated. Code present:', Boolean(code), 'Error:', error);
-
-  if (error) {
-    const msg = errorDescription || error || 'Facebook authentication was cancelled';
-    console.warn('[Facebook Auth Callback] Meta returned error:', msg);
-    return NextResponse.redirect(new URL(`/accounts?error=${encodeURIComponent(msg)}`, baseUrl));
-  }
-
-  if (!code) {
-    console.warn('[Facebook Auth Callback] No authorization code found in request.');
-    return NextResponse.redirect(new URL('/accounts?error=no_auth_code_received', baseUrl));
-  }
+  let baseUrl = 'https://game.khabarmonkey.com';
+  try {
+    baseUrl = getBaseUrl(request);
+  } catch {}
 
   try {
+    const searchParams = request.nextUrl.searchParams;
+
+    const code = searchParams.get('code');
+    const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+    const state = searchParams.get('state');
+
+    console.log('[Facebook Auth Callback] Initiated. Code present:', Boolean(code), 'Error:', error);
+
+    if (error) {
+      const msg = errorDescription || error || 'Facebook authentication was cancelled';
+      console.warn('[Facebook Auth Callback] Meta returned error:', msg);
+      return NextResponse.redirect(new URL(`/accounts?error=${encodeURIComponent(msg)}`, baseUrl));
+    }
+
+    if (!code) {
+      console.warn('[Facebook Auth Callback] No authorization code found in request.');
+      return NextResponse.redirect(new URL('/accounts?error=no_auth_code_received', baseUrl));
+    }
     let appId = (
       process.env.FACEBOOK_APP_ID ||
       process.env.NEXT_PUBLIC_FACEBOOK_APP_ID ||
@@ -417,8 +420,12 @@ export async function GET(request: NextRequest) {
   } catch (fatalErr: unknown) {
     const errorMsg = fatalErr instanceof Error ? fatalErr.message : 'Internal OAuth error';
     console.error('[Facebook Auth Callback] Fatal error caught:', fatalErr);
-    return NextResponse.redirect(
-      new URL(`/accounts?error=${encodeURIComponent(errorMsg)}`, baseUrl)
-    );
+    try {
+      return NextResponse.redirect(
+        new URL(`/accounts?error=${encodeURIComponent(errorMsg)}`, baseUrl)
+      );
+    } catch {
+      return NextResponse.redirect(`https://game.khabarmonkey.com/accounts?error=${encodeURIComponent(errorMsg)}`);
+    }
   }
 }

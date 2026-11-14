@@ -1,0 +1,38 @@
+[
+  {
+    "id": "pst_mcp_1794659971969_0_542",
+    "workspaceId": "ws_default",
+    "postType": "image",
+    "title": "Himachal Tourism Records High Inflow",
+    "message": "Over 50,000 tourists visited Himachal Pradesh this weekend.",
+    "contentHtml": "<p>Over 50,000 tourists visited Himachal Pradesh this weekend following fresh snowfall in Manali and Kufri.</p><h2>Key Highlights</h2><ul><li>High hotel occupancy</li><li>Traffic advisories in place</li></ul>",
+    "mediaUrl": "https://images.unsplash.com/photo-1506744038136-46273834b3fb",
+    "pageIds": [
+      "pg_wp_1",
+      "pg_wp_2"
+    ],
+    "status": "scheduled",
+    "scheduledAt": "2026-11-15T04:30:00.000Z",
+    "results": [],
+    "createdAt": "2026-11-14T12:39:31.969Z",
+    "updatedAt": "2026-11-14T12:39:31.969Z"
+  },
+  {
+    "id": "pst_mcp_1794659971969_1_430",
+    "workspaceId": "ws_default",
+    "postType": "image",
+    "title": "Shimla Smart City Project Nears Completion",
+    "message": "New pedestrian corridors opened for public in Shimla.",
+    "contentHtml": "<p>The administration has officially inaugurated new eco-friendly walkways in the Mall Road zone.</p>",
+    "mediaUrl": "https://images.unsplash.com/photo-1519681393784-d120267933ba",
+    "pageIds": [
+      "pg_wp_1",
+      "pg_wp_2"
+    ],
+    "status": "scheduled",
+    "scheduledAt": "2026-11-15T05:15:00.000Z",
+    "results": [],
+    "createdAt": "2026-11-14T12:39:31.969Z",
+    "updatedAt": "2026-11-14T12:39:31.969Z"
+  }
+]

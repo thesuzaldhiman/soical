@@ -1,0 +1,21 @@
+{
+  "name": "social-poster-mcp",
+  "version": "1.0.0",
+  "description": "Antigravity Model Context Protocol (MCP) Server for Social Auto Poster & WordPress Engine",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "social-poster-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3"
+  }
+}
