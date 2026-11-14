@@ -722,7 +722,7 @@ function AutomationsContent() {
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold border border-sky-200 transition-colors shrink-0"
           >
             <Download className="w-3.5 h-3.5 text-sky-600" />
-            <span>Download Multi-Title Plugin (.zip)</span>
+            <span>Download Multi-Title Plugin v1.2.0 (.zip)</span>
           </a>
         </div>
 
