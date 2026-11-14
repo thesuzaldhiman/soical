@@ -28,6 +28,7 @@ import {
   Globe,
   Loader2,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 
@@ -41,7 +42,7 @@ export default function LibraryPage() {
 
 function LibraryContent() {
   const router = useRouter();
-  const { posts, pages, retryPost, approvePost, deletePost } = useApp();
+  const { posts, pages, retryPost, approvePost, deletePost, isQueueProcessing, processScheduledQueueNow } = useApp();
 
   const [activeTab, setActiveTab] = useState<'all' | PostStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,6 +56,21 @@ function LibraryContent() {
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [approvingPostId, setApprovingPostId] = useState<string | null>(null);
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+
+  const handleRunQueue = async () => {
+    try {
+      const res = await processScheduledQueueNow();
+      if (res.dispatched > 0) {
+        setActionSuccessMessage(`Successfully published ${res.dispatched} scheduled post${res.dispatched > 1 ? 's' : ''} to destination channels!`);
+      } else {
+        setActionSuccessMessage('Auto-Scheduler checked: No scheduled posts are currently due.');
+      }
+      setTimeout(() => setActionSuccessMessage(null), 4000);
+    } catch {
+      setActionSuccessMessage('Error processing scheduled queue.');
+      setTimeout(() => setActionSuccessMessage(null), 4000);
+    }
+  };
 
   // Filter posts
   const filteredPosts = posts.filter((post) => {
@@ -160,12 +176,31 @@ function LibraryContent() {
           </p>
         </div>
 
-        <Link
-          href="/composer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto shrink-0"
-        >
-          <span>+ Create New Post</span>
-        </Link>
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+            <span className={`w-2 h-2 rounded-full ${isQueueProcessing ? 'bg-amber-500 animate-ping' : 'bg-emerald-500 animate-pulse'}`} />
+            <span className="hidden sm:inline">{isQueueProcessing ? 'Publishing Due Posts...' : 'Auto-Scheduler Active (8s)'}</span>
+            <span className="sm:hidden">{isQueueProcessing ? 'Publishing...' : 'Scheduler Active'}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRunQueue}
+            disabled={isQueueProcessing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-all shadow-2xs hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            title="Instantly process any scheduled posts that have reached their target time"
+          >
+            <Zap className={`w-3.5 h-3.5 text-amber-500 ${isQueueProcessing ? 'animate-spin' : ''}`} />
+            <span>{isQueueProcessing ? 'Running...' : `⚡ Run Due Posts (${tabCounts.scheduled})`}</span>
+          </button>
+
+          <Link
+            href="/composer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <span>+ Create New Post</span>
+          </Link>
+        </div>
       </div>
 
       {/* Tabs and Search Bar */}
@@ -275,6 +310,11 @@ function LibraryContent() {
                             ? `Scheduled ${new Date(post.scheduledAt).toLocaleString()}`
                             : `Created ${new Date(post.createdAt).toLocaleDateString()}`}
                         </span>
+                        {post.status === 'scheduled' && post.scheduledAt && new Date(post.scheduledAt).getTime() <= Date.now() && (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                            ⚡ Due Now (Publishing...)
+                          </span>
+                        )}
                       </div>
 
                       <p className="text-sm text-slate-900 font-bold leading-relaxed line-clamp-3">
@@ -310,6 +350,24 @@ function LibraryContent() {
                           <CheckCircle2 className="w-3.5 h-3.5" />
                         )}
                         <span>{isApproving ? 'Publishing...' : 'Approve & Publish'}</span>
+                      </button>
+                    )}
+
+                    {/* Publish Now for Scheduled Posts */}
+                    {post.status === 'scheduled' && (
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(post.id)}
+                        disabled={isApproving}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                        title="Publish this scheduled post live immediately without waiting"
+                      >
+                        {isApproving ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Zap className="w-3.5 h-3.5 text-amber-300" />
+                        )}
+                        <span>{isApproving ? 'Publishing...' : 'Publish Now'}</span>
                       </button>
                     )}
 

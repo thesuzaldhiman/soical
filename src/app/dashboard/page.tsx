@@ -57,7 +57,25 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
-  const { user, workspace, posts, pages, accounts, retryPost, deletePost, approvePost } = useApp();
+  const { user, workspace, posts, pages, accounts, retryPost, deletePost, approvePost, isQueueProcessing, processScheduledQueueNow } = useApp();
+
+  // Queue runner toast state
+  const [queueNotification, setQueueNotification] = useState<string | null>(null);
+
+  const handleRunQueue = async () => {
+    try {
+      const res = await processScheduledQueueNow();
+      if (res.dispatched > 0) {
+        setQueueNotification(`Dispatched ${res.dispatched} due post${res.dispatched > 1 ? 's' : ''} live!`);
+      } else {
+        setQueueNotification('Auto-Scheduler checked: No scheduled posts are currently due.');
+      }
+      setTimeout(() => setQueueNotification(null), 4000);
+    } catch {
+      setQueueNotification('Error triggering queue check');
+      setTimeout(() => setQueueNotification(null), 4000);
+    }
+  };
 
   // Selected Post for detail modal
   const [selectedPostForModal, setSelectedPostForModal] = useState<Post | null>(null);
@@ -1950,15 +1968,33 @@ function DashboardContent() {
         {/* Header & Filter Controls */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-              Recent Posts & Dispatch Queue
-            </h2>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                Recent Posts & Dispatch Queue
+              </h2>
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                <span className={`w-2 h-2 rounded-full ${isQueueProcessing ? 'bg-amber-500 animate-ping' : 'bg-emerald-500 animate-pulse'}`} />
+                <span>{isQueueProcessing ? 'Publishing Due Posts...' : 'Auto-Scheduler Active (8s pulse)'}</span>
+              </div>
+            </div>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
               Review published updates, scheduled posts, and manage cross-platform dispatches.
             </p>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Quick Process Queue Trigger */}
+            <button
+              type="button"
+              onClick={handleRunQueue}
+              disabled={isQueueProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              title="Instantly process any scheduled posts that have reached their target time"
+            >
+              <Zap className={`w-3.5 h-3.5 text-amber-400 ${isQueueProcessing ? 'animate-spin' : ''}`} />
+              <span>{isQueueProcessing ? 'Processing Queue...' : '⚡ Run Due Queue'}</span>
+            </button>
+
             {/* Filter Pills */}
             <div className="inline-flex items-center p-1 rounded-xl bg-white border border-[#E2E8F0] shadow-2xs">
               {(['all', 'published', 'scheduled', 'draft', 'failed'] as const).map((status) => {
@@ -2009,6 +2045,22 @@ function DashboardContent() {
             </Link>
           </div>
         </div>
+
+        {queueNotification && (
+          <div className="p-3 rounded-xl bg-slate-900 text-white text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>{queueNotification}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setQueueNotification(null)}
+              className="text-slate-400 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-slate-800"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* 3-Column Grid on Desktop, 2 on Tablet, 1 on Mobile */}
         {filteredGridPosts.length === 0 ? (
