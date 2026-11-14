@@ -46,6 +46,16 @@ export interface Workspace {
   connectedChannelsLimit: number;
 }
 
+export interface MetaAppConfig {
+  id: string;
+  name: string;
+  appId: string;
+  appSecret: string;
+  isDefault?: boolean;
+  createdAt?: string;
+  notes?: string;
+}
+
 export interface SocialAccount {
   id: string;
   platform: Platform;
@@ -64,6 +74,16 @@ export interface SocialAccount {
   wpAppPassword?: string;
   bridgeApiKey?: string;
   bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
+  wpCategories?: WordPressCategory[];
+  metaAppId?: string;
+  metaAppName?: string;
+}
+
+export interface WordPressCategory {
+  id: number | string;
+  name: string;
+  slug?: string;
+  count?: number;
 }
 
 export type MonetizationProgramType =
@@ -128,6 +148,9 @@ export interface SocialPage {
   wpAppPassword?: string;
   bridgeApiKey?: string;
   bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
+  wpCategories?: WordPressCategory[];
+  metaAppId?: string;
+  metaAppName?: string;
 }
 
 export interface PageCategory {
@@ -315,6 +338,7 @@ export interface AutomationFeed {
 export interface AppSettings {
   metaAppId: string;
   metaAppSecret: string;
+  metaApps?: MetaAppConfig[];
   ytClientId: string;
   ytClientSecret: string;
   ytApiKey?: string;

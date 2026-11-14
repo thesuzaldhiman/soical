@@ -123,6 +123,8 @@ async function handleProcessQueue(request: NextRequest) {
           wpUsername: pg.wpUsername,
           wpAppPassword: pg.wpAppPassword,
           category: pg.category,
+          metaAppId: pg.metaAppId,
+          metaAppName: pg.metaAppName,
         }));
 
         try {

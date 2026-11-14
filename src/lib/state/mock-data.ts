@@ -110,7 +110,13 @@ export const DEMO_ACCOUNTS: SocialAccount[] = [
     avatarUrl: '/icons/social/wordpress.png',
     status: 'active',
     siteUrl: 'https://himachalsamachar.com',
-    bridgeType: 'auto-engine',
+    bridgeType: 'plugin-connector',
+    wpCategories: [
+      { id: 101, name: 'Himachal News', slug: 'himachal-news', count: 142 },
+      { id: 102, name: 'Weather Alerts', slug: 'weather-alerts', count: 68 },
+      { id: 103, name: 'Breaking News', slug: 'breaking-news', count: 215 },
+      { id: 104, name: 'Tourism & Travel', slug: 'tourism-travel', count: 47 },
+    ],
     lastCheckedAt: '2026-11-12T12:00:00.000Z',
   },
   {
@@ -121,7 +127,12 @@ export const DEMO_ACCOUNTS: SocialAccount[] = [
     avatarUrl: '/icons/social/wordpress.png',
     status: 'active',
     siteUrl: 'https://dailyhimachal.in',
-    bridgeType: 'auto-engine',
+    bridgeType: 'plugin-connector',
+    wpCategories: [
+      { id: 201, name: 'Top Headlines', slug: 'top-headlines', count: 89 },
+      { id: 202, name: 'Viral Updates', slug: 'viral-updates', count: 112 },
+      { id: 203, name: 'Entertainment', slug: 'entertainment', count: 54 },
+    ],
     lastCheckedAt: '2026-11-12T12:00:00.000Z',
   },
 ];
@@ -429,8 +440,14 @@ export const DEMO_PAGES: SocialPage[] = [
     followersCount: 52400,
     followersDeltaToday: 180,
     siteUrl: 'https://himachalsamachar.com',
-    bridgeType: 'auto-engine',
+    bridgeType: 'plugin-connector',
     category: 'Breaking News',
+    wpCategories: [
+      { id: 101, name: 'Himachal News', slug: 'himachal-news', count: 142 },
+      { id: 102, name: 'Weather Alerts', slug: 'weather-alerts', count: 68 },
+      { id: 103, name: 'Breaking News', slug: 'breaking-news', count: 215 },
+      { id: 104, name: 'Tourism & Travel', slug: 'tourism-travel', count: 47 },
+    ],
     isActive: true,
   },
   {
@@ -444,8 +461,13 @@ export const DEMO_PAGES: SocialPage[] = [
     followersCount: 31200,
     followersDeltaToday: 95,
     siteUrl: 'https://dailyhimachal.in',
-    bridgeType: 'auto-engine',
+    bridgeType: 'plugin-connector',
     category: 'Viral / Trending',
+    wpCategories: [
+      { id: 201, name: 'Top Headlines', slug: 'top-headlines', count: 89 },
+      { id: 202, name: 'Viral Updates', slug: 'viral-updates', count: 112 },
+      { id: 203, name: 'Entertainment', slug: 'entertainment', count: 54 },
+    ],
     isActive: true,
   },
 ];
@@ -752,6 +774,7 @@ export const DEMO_AUTOMATIONS: AutomationFeed[] = [
 export const INITIAL_SETTINGS: AppSettings = {
   metaAppId: '',
   metaAppSecret: '',
+  metaApps: [],
   ytClientId: '',
   ytClientSecret: '',
   ytApiKey: '',

@@ -34,6 +34,8 @@ export async function GET(request: NextRequest) {
       ''
     ).trim();
     let appSecret = (process.env.FACEBOOK_APP_SECRET || '').trim();
+    let metaAppConfigId = '';
+    let metaAppName = '';
 
     // 1. Recover App credentials from state parameter (passed safely through Meta OAuth Dialog)
     if (state) {
@@ -41,11 +43,15 @@ export async function GET(request: NextRequest) {
         const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
         if (decoded.appId && !appId) appId = decoded.appId.trim();
         if (decoded.appSecret && !appSecret) appSecret = decoded.appSecret.trim();
+        if (decoded.metaAppConfigId) metaAppConfigId = String(decoded.metaAppConfigId).trim();
+        if (decoded.metaAppName) metaAppName = String(decoded.metaAppName).trim();
       } catch {
         try {
           const decoded = JSON.parse(Buffer.from(decodeURIComponent(state), 'base64').toString('utf-8'));
           if (decoded.appId && !appId) appId = decoded.appId.trim();
           if (decoded.appSecret && !appSecret) appSecret = decoded.appSecret.trim();
+          if (decoded.metaAppConfigId) metaAppConfigId = String(decoded.metaAppConfigId).trim();
+          if (decoded.metaAppName) metaAppName = String(decoded.metaAppName).trim();
         } catch {}
       }
     }
@@ -59,6 +65,8 @@ export async function GET(request: NextRequest) {
         const parsed = JSON.parse(cookieVal);
         if (parsed.appId && !appId) appId = parsed.appId.trim();
         if (parsed.appSecret && !appSecret) appSecret = parsed.appSecret.trim();
+        if (parsed.metaAppConfigId && !metaAppConfigId) metaAppConfigId = String(parsed.metaAppConfigId).trim();
+        if (parsed.metaAppName && !metaAppName) metaAppName = String(parsed.metaAppName).trim();
       } catch {}
     }
 
@@ -74,7 +82,7 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    if ((!appId || !appSecret) && loggedInEmail) {
+    if (loggedInEmail) {
       try {
         const pool = getDbPool();
         if (pool) {
@@ -86,8 +94,27 @@ export async function GET(request: NextRequest) {
             const userSettings = typeof rows[0].settings === 'string'
               ? JSON.parse(rows[0].settings)
               : rows[0].settings;
+            const metaApps: any[] = Array.isArray(userSettings?.metaApps) ? userSettings.metaApps : [];
+
+            if (metaAppConfigId && metaApps.length > 0) {
+              const matched = metaApps.find((a: any) => a.id === metaAppConfigId || a.appId === metaAppConfigId);
+              if (matched) {
+                if (!appId) appId = matched.appId.trim();
+                if (!appSecret) appSecret = matched.appSecret.trim();
+                if (!metaAppName) metaAppName = matched.name;
+              }
+            } else if (appId && metaApps.length > 0) {
+              const matched = metaApps.find((a: any) => a.appId.trim() === appId.trim());
+              if (matched) {
+                if (!appSecret) appSecret = matched.appSecret.trim();
+                if (!metaAppConfigId) metaAppConfigId = matched.id;
+                if (!metaAppName) metaAppName = matched.name;
+              }
+            }
+
             if (!appId && userSettings?.metaAppId) appId = userSettings.metaAppId.trim();
             if (!appSecret && userSettings?.metaAppSecret) appSecret = userSettings.metaAppSecret.trim();
+            if (!metaAppName && appId) metaAppName = 'Meta App';
           }
         }
       } catch (dbErr) {
@@ -155,6 +182,9 @@ export async function GET(request: NextRequest) {
     }
 
     // 6. Normalize page objects with explicit platform: 'facebook' and fanCount/followersCount
+    const effectiveMetaAppId = metaAppConfigId || appId;
+    const effectiveMetaAppName = metaAppName || 'Meta App';
+
     const normalizedPages = rawPages.map((p: any, idx: number) => {
       const count = Number(p.fan_count ?? p.followers_count ?? 0) || 0;
       return {
@@ -171,6 +201,8 @@ export async function GET(request: NextRequest) {
         targetUrl: `https://facebook.com/${p.id}`,
         permissions: Array.isArray(p.tasks) ? p.tasks : ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list'],
         lastFollowerSyncAt: new Date().toISOString(),
+        metaAppId: effectiveMetaAppId,
+        metaAppName: effectiveMetaAppName,
       };
     });
 
@@ -182,6 +214,8 @@ export async function GET(request: NextRequest) {
       },
       userAccessToken,
       userToken: userAccessToken,
+      metaAppId: effectiveMetaAppId,
+      metaAppName: effectiveMetaAppName,
       pages: normalizedPages,
       importedAt: new Date().toISOString(),
     };
@@ -213,23 +247,30 @@ export async function GET(request: NextRequest) {
             id: newAccountId,
             platform: 'facebook',
             accountId: payload.user.id,
-            name: `${normalizedPages[0]?.name || payload.user.name} (Meta Account)`,
+            name: `${normalizedPages[0]?.name || payload.user.name} (${effectiveMetaAppName})`,
             avatarUrl: normalizedPages[0]?.avatarUrl || payload.user.avatarUrl || '/icons/social/facebook.png',
             status: 'active',
             accessToken: userAccessToken,
             tokenExpiresAt: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
             lastCheckedAt: new Date().toISOString(),
+            metaAppId: effectiveMetaAppId,
+            metaAppName: effectiveMetaAppName,
           };
 
           const newPagesToAdd = normalizedPages.map((np: any) => ({
             ...np,
             accountId: newAccountId,
+            metaAppId: effectiveMetaAppId,
+            metaAppName: effectiveMetaAppName,
           }));
 
           const existingPageIds = new Set(newPagesToAdd.map((p: any) => p.pageId));
           const filteredCurrentPages = currentPages.filter((p: any) => !existingPageIds.has(p.pageId));
           const updatedPages = [...newPagesToAdd, ...filteredCurrentPages];
-          const updatedAccounts = [newAccount, ...currentAccounts.filter((a: any) => a.platform !== 'facebook' || a.accountId !== payload.user.id)];
+          const updatedAccounts = [
+            newAccount,
+            ...currentAccounts.filter((a: any) => !(a.platform === 'facebook' && a.accountId === payload.user.id && (a.metaAppId === effectiveMetaAppId)))
+          ];
 
           // Generate baseline analytics snapshot so /analytics is never 0/blank
           normalizedPages.forEach((p: any) => {

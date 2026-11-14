@@ -20,6 +20,7 @@ import {
   AppSettings,
   SubscriptionTier,
   UserSubscription,
+  WordPressCategory,
 } from '@/types';
 import {
   INITIAL_ALL_USERS,
@@ -78,6 +79,9 @@ interface AppContextType {
       wpAppPassword?: string;
       bridgeApiKey?: string;
       bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
+      wpCategories?: WordPressCategory[];
+      metaAppId?: string;
+      metaAppName?: string;
     }
   ) => SocialAccount;
   addPages: (pagesToAdd: SocialPage[]) => void;
@@ -725,6 +729,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       wpAppPassword?: string;
       bridgeApiKey?: string;
       bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
+      wpCategories?: WordPressCategory[];
+      metaAppId?: string;
+      metaAppName?: string;
     }
   ): SocialAccount => {
     const newAcc: SocialAccount = {
@@ -741,6 +748,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       wpAppPassword: extra?.wpAppPassword,
       bridgeApiKey: extra?.bridgeApiKey,
       bridgeType: extra?.bridgeType,
+      wpCategories: extra?.wpCategories || [],
+      metaAppId: extra?.metaAppId,
+      metaAppName: extra?.metaAppName,
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
       lastCheckedAt: new Date().toISOString(),
     };
@@ -765,7 +775,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         wpUsername: extra?.wpUsername,
         wpAppPassword: extra?.wpAppPassword,
         bridgeApiKey: extra?.bridgeApiKey,
+        metaAppId: extra?.metaAppId,
+        metaAppName: extra?.metaAppName,
         bridgeType: extra?.bridgeType,
+        wpCategories: extra?.wpCategories || [],
         targetUrl: extra?.siteUrl || (extra?.chatId?.startsWith('@') ? `https://t.me/${extra.chatId.replace('@', '')}` : undefined),
         permissions:
           platform === 'telegram'

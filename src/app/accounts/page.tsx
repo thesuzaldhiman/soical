@@ -98,7 +98,7 @@ function AccountsContent() {
 
   // WordPress Connect State
   const [wpSiteUrl, setWpSiteUrl] = useState('');
-  const [wpConnectionMode, setWpConnectionMode] = useState<'plugin-connector' | 'auto-engine' | 'rest-api'>('plugin-connector');
+  const [wpConnectionMode, setWpConnectionMode] = useState<'plugin-connector' | 'rest-api'>('plugin-connector');
   const [wpBridgeKey, setWpBridgeKey] = useState('');
   const [wpUsername, setWpUsername] = useState('');
   const [wpAppPassword, setWpAppPassword] = useState('');
@@ -133,7 +133,7 @@ function AccountsContent() {
     threads: `${currentOrigin}/api/auth/callback/threads`,
     youtube: `${currentOrigin}/api/auth/callback/youtube`,
     telegram: 'No redirect URI needed (Bot Token & Channel ID Direct)',
-    wordpress: 'No redirect URI needed (Auto Engine Bridge API & REST API)',
+    wordpress: 'No redirect URI needed (Social Auto Poster Connector Plugin & REST API)',
   };
 
   // Check for pending imported pages from Facebook OAuth callback
@@ -179,10 +179,15 @@ function AccountsContent() {
       try {
         const firstPage = parsed.pages[0];
         const userToken = parsed.userAccessToken || parsed.userToken || '';
-        const newAcc = addAccount('facebook', `${firstPage.name} (Meta Account)`, {
+        const effectiveMetaAppId = parsed.metaAppId || firstPage.metaAppId;
+        const effectiveMetaAppName = parsed.metaAppName || firstPage.metaAppName || 'Meta App';
+
+        const newAcc = addAccount('facebook', `${firstPage.name} (${effectiveMetaAppName})`, {
           accessToken: userToken,
           avatarUrl: firstPage.avatarUrl || parsed.user?.avatarUrl || '/icons/social/facebook.png',
           fanCount: firstPage.fanCount || 0,
+          metaAppId: effectiveMetaAppId,
+          metaAppName: effectiveMetaAppName,
         });
 
         const pagesToAdd: SocialPage[] = parsed.pages.map((p: any, idx: number) => ({
@@ -197,6 +202,8 @@ function AccountsContent() {
           accessToken: p.accessToken || p.access_token || userToken,
           targetUrl: `https://facebook.com/${p.pageId || p.id}`,
           category: p.category || 'Facebook Page',
+          metaAppId: p.metaAppId || effectiveMetaAppId,
+          metaAppName: p.metaAppName || effectiveMetaAppName,
           permissions: Array.isArray(p.permissions)
             ? p.permissions
             : (Array.isArray(p.tasks) ? p.tasks : ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list']),
@@ -359,11 +366,17 @@ function AccountsContent() {
       }
 
       // Create Parent Account
+      const defaultMetaApp = settings?.metaApps?.find((a) => a.isDefault) || settings?.metaApps?.[0];
+      const effAppId = defaultMetaApp?.id || settings?.metaAppId;
+      const effAppName = defaultMetaApp?.name || 'Meta App';
+
       const primaryPage = verifiedPages[0];
-      const newAcc = addAccount('facebook', `${primaryPage.name} (Meta Account)`, {
+      const newAcc = addAccount('facebook', `${primaryPage.name} (${effAppName})`, {
         accessToken: fbAccessToken.trim(),
         avatarUrl: primaryPage.avatarUrl || '/icons/social/facebook.png',
         fanCount: primaryPage.fanCount,
+        metaAppId: effAppId,
+        metaAppName: effAppName,
       });
 
       // Add all discovered pages
@@ -379,6 +392,8 @@ function AccountsContent() {
         accessToken: p.accessToken || fbAccessToken.trim(),
         targetUrl: `https://facebook.com/${p.id}`,
         category: 'Facebook Page',
+        metaAppId: effAppId,
+        metaAppName: effAppName,
         permissions: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list'],
       }));
 
@@ -469,7 +484,7 @@ function AccountsContent() {
     setConnectModalOpen(false);
   };
 
-  // 5. WordPress Connect (Auto Engine Bridge API & Standard REST API)
+  // 5. WordPress Connect (Social Auto Poster Connector & Standard REST API)
   const handleConnectWordPress = async (e: React.FormEvent) => {
     e.preventDefault();
     setConnectError(null);
@@ -499,8 +514,9 @@ function AccountsContent() {
 
       const finalName = wpSiteName.trim() || data.siteName || 'WordPress Portal';
       const cleanUrl = data.siteUrl || wpSiteUrl.trim().replace(/\/+$/, '');
+      const fetchedCats = Array.isArray(data.categories) ? data.categories : [];
 
-      // Add to context state
+      // Add to context state with fetched categories
       addAccount('wordpress', `${finalName} (WP)`, {
         siteUrl: cleanUrl,
         bridgeApiKey: wpBridgeKey,
@@ -509,14 +525,14 @@ function AccountsContent() {
         bridgeType: wpConnectionMode,
         avatarUrl: '/icons/social/wordpress.png',
         fanCount: 25000,
+        wpCategories: fetchedCats,
       });
 
+      const catNotice = fetchedCats.length > 0 ? ` (${fetchedCats.length} Categories Fetched)` : '';
       setConnectSuccess(
-        `Successfully connected to WordPress site "${finalName}" via ${
+        `Successfully connected to "${finalName}"${catNotice} via ${
           wpConnectionMode === 'plugin-connector'
-            ? 'Social Auto Poster Connector (Multi-Titles Ready)'
-            : wpConnectionMode === 'auto-engine'
-            ? 'Auto Engine Bridge v7.5'
+            ? 'Social Auto Poster Plugin (Multi-Titles Ready)'
             : 'WordPress REST API'
         }!`
       );
@@ -569,7 +585,7 @@ function AccountsContent() {
     {
       id: 'wordpress',
       name: 'WordPress',
-      description: 'Auto Engine Bridge & REST API for automated news articles, watermarked photos, and blogs.',
+      description: 'Official WordPress Plugin & REST API for automated multi-title publishing, categories sync, and blog management.',
     },
   ];
 
@@ -921,7 +937,31 @@ function AccountsContent() {
                           </span>
                           <span>•</span>
                           <span className="font-mono text-[10px] text-slate-400">ID: {page.pageId}</span>
+                          {page.platform === 'facebook' && page.metaAppName && (
+                            <>
+                              <span>•</span>
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 rounded-md">
+                                App: {page.metaAppName}
+                              </span>
+                            </>
+                          )}
                         </div>
+
+                        {/* WordPress Categories Preview */}
+                        {page.wpCategories && page.wpCategories.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {page.wpCategories.slice(0, 4).map((cat) => (
+                              <span key={cat.id} className="text-[10px] bg-sky-50 text-sky-800 border border-sky-200/80 px-1.5 py-0.5 rounded-md font-medium">
+                                #{cat.name} {cat.count !== undefined ? `(${cat.count})` : ''}
+                              </span>
+                            ))}
+                            {page.wpCategories.length > 4 && (
+                              <span className="text-[10px] text-slate-400 font-medium self-center">
+                                +{page.wpCategories.length - 4} more
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1214,45 +1254,142 @@ function AccountsContent() {
                   </form>
                 ) : (
                   <div className="space-y-4 text-xs">
-                    <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-2.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-800">Target Facebook App:</span>
-                        <span className="font-mono text-[11px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-[#E2E8F0]">
-                          {settings?.metaAppId || '109283746501928'}
-                        </span>
-                      </div>
+                    {/* Multi-App Selection or Single App Details */}
+                    {(() => {
+                      const appsList = settings?.metaApps && Array.isArray(settings.metaApps) && settings.metaApps.length > 0
+                        ? settings.metaApps
+                        : settings?.metaAppId
+                        ? [
+                            {
+                              id: 'meta_app_primary',
+                              name: 'Primary Meta App',
+                              appId: settings.metaAppId,
+                              appSecret: settings.metaAppSecret || '',
+                              isDefault: true,
+                              createdAt: '',
+                            },
+                          ]
+                        : [];
 
-                      <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] font-mono text-[11px]">
-                        <span className="truncate">{redirectUriMap.facebook}</span>
-                        <button
-                          type="button"
-                          onClick={handleCopyUri}
-                          className="ml-2 text-slate-900 hover:text-black font-bold flex items-center gap-1 shrink-0"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>{copiedUri ? 'Copied!' : 'Copy'}</span>
-                        </button>
-                      </div>
-                    </div>
+                      if (appsList.length > 1) {
+                        return (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-800">
+                                Select Meta Developer App to Connect:
+                              </span>
+                              <Link
+                                href="/settings"
+                                className="text-[11px] font-bold text-slate-800 hover:underline flex items-center gap-1"
+                              >
+                                <span>+ Manage Apps</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </Link>
+                            </div>
 
-                    {/* Prominent Official OAuth Button */}
-                    <a
-                      href={`/api/auth/facebook?app_id=${encodeURIComponent(
-                        settings?.metaAppId || '109283746501928'
-                      )}&app_secret=${encodeURIComponent(settings?.metaAppSecret || '')}`}
-                      className="w-full py-3 px-4 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] text-white font-bold text-xs flex items-center justify-center gap-2.5 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
-                    >
-                      <SocialIcon platform="facebook" className="w-4 h-4 rounded-xs" />
-                      <span>Log In with Facebook & Select Pages</span>
-                      <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                    </a>
+                            <div className="grid grid-cols-1 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                              {appsList.map((app) => {
+                                const count = pages.filter(
+                                  (p) => p.platform === 'facebook' && (p.metaAppId === app.id || p.metaAppId === app.appId)
+                                ).length;
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                      <span>Uses Meta Graph API v19.0 Dialog</span>
-                      <Link href="/settings" className="font-bold text-slate-800 hover:underline">
-                        App Settings & Secret &rarr;
-                      </Link>
-                    </div>
+                                return (
+                                  <a
+                                    key={app.id}
+                                    href={`/api/auth/facebook?app_config_id=${encodeURIComponent(
+                                      app.id
+                                    )}&app_id=${encodeURIComponent(
+                                      app.appId.trim()
+                                    )}&app_secret=${encodeURIComponent(
+                                      app.appSecret.trim()
+                                    )}&app_name=${encodeURIComponent(app.name)}`}
+                                    className="p-3 rounded-xl border border-[#E2E8F0] hover:border-blue-400 bg-white hover:bg-blue-50/30 flex items-center justify-between gap-3 transition-all group shadow-2xs"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-bold text-slate-900 group-hover:text-[#1877F2] transition-colors">
+                                          {app.name}
+                                        </span>
+                                        {app.isDefault && (
+                                          <span className="px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-700 text-[9px] font-bold border border-amber-200">
+                                            Default
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                        App ID: {app.appId} • {count} Page(s) linked
+                                      </div>
+                                    </div>
+
+                                    <div className="px-3 py-1.5 rounded-lg bg-[#1877F2] text-white text-[11px] font-bold flex items-center gap-1.5 shrink-0 group-hover:bg-[#166FE5]">
+                                      <SocialIcon platform="facebook" className="w-3.5 h-3.5 rounded-xs" />
+                                      <span>Log In</span>
+                                      <ExternalLink className="w-3 h-3 opacity-80" />
+                                    </div>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Single App or default fallback
+                      const activeApp = appsList[0];
+                      const activeAppId = activeApp?.appId || settings?.metaAppId || '109283746501928';
+                      const activeAppSecret = activeApp?.appSecret || settings?.metaAppSecret || '';
+                      const activeAppName = activeApp?.name || 'Primary Meta App';
+
+                      return (
+                        <div className="space-y-3">
+                          <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-slate-800">Target Facebook App:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-700">{activeAppName}</span>
+                                <span className="font-mono text-[10px] font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-[#E2E8F0]">
+                                  {activeAppId}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] font-mono text-[11px]">
+                              <span className="truncate">{redirectUriMap.facebook}</span>
+                              <button
+                                type="button"
+                                onClick={handleCopyUri}
+                                className="ml-2 text-slate-900 hover:text-black font-bold flex items-center gap-1 shrink-0"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>{copiedUri ? 'Copied!' : 'Copy'}</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <a
+                            href={`/api/auth/facebook?app_config_id=${encodeURIComponent(
+                              activeApp?.id || ''
+                            )}&app_id=${encodeURIComponent(
+                              activeAppId
+                            )}&app_secret=${encodeURIComponent(
+                              activeAppSecret
+                            )}&app_name=${encodeURIComponent(activeAppName)}`}
+                            className="w-full py-3 px-4 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] text-white font-bold text-xs flex items-center justify-center gap-2.5 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
+                          >
+                            <SocialIcon platform="facebook" className="w-4 h-4 rounded-xs" />
+                            <span>Log In with Facebook ({activeAppName})</span>
+                            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                          </a>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                            <span>Uses Meta Graph API v19.0 Dialog</span>
+                            <Link href="/settings" className="font-bold text-slate-800 hover:underline">
+                              Manage Multiple Meta Apps &rarr;
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#E2E8F0]">
                       <button
@@ -1527,42 +1664,31 @@ function AccountsContent() {
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
                     Connection Mode
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => {
                         setWpConnectionMode('plugin-connector');
                         if (!wpBridgeKey) setWpBridgeKey(settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f');
                       }}
-                      className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition-all text-center cursor-pointer ${
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
                         wpConnectionMode === 'plugin-connector'
                           ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
                           : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      ⚡ Multi-Title Plugin (Best)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWpConnectionMode('auto-engine')}
-                      className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition-all text-center cursor-pointer ${
-                        wpConnectionMode === 'auto-engine'
-                          ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
-                          : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      🔌 Auto Engine v7.5
+                      ⚡ Multi-Title Plugin (Recommended)
                     </button>
                     <button
                       type="button"
                       onClick={() => setWpConnectionMode('rest-api')}
-                      className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition-all text-center cursor-pointer ${
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
                         wpConnectionMode === 'rest-api'
                           ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
                           : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      🔑 WP REST API
+                      🔑 Standard WP REST API
                     </button>
                   </div>
                 </div>
@@ -1583,8 +1709,8 @@ function AccountsContent() {
                   <span className="text-[10px] text-slate-400 mt-0.5 block">Include https:// without trailing slash</span>
                 </div>
 
-                {/* Plugin Connector / Auto Engine Secret Key */}
-                {(wpConnectionMode === 'plugin-connector' || wpConnectionMode === 'auto-engine') && (
+                {/* Plugin Connector Secret Key */}
+                {wpConnectionMode === 'plugin-connector' && (
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
                       Secret API Key
@@ -1598,9 +1724,7 @@ function AccountsContent() {
                       className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all"
                     />
                     <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      {wpConnectionMode === 'plugin-connector'
-                        ? 'WordPress Admin > Settings > Social Auto Poster se verify karein'
-                        : 'WP Admin > Auto Engine > Settings > Social Auto Poster Bridge'}
+                      Found in WordPress Admin &gt; Settings &gt; Social Auto Poster
                     </span>
                   </div>
                 )}

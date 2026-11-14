@@ -45,6 +45,11 @@ class Social_Auto_Poster_Connector {
 
         // REST API verification endpoint
         add_action('rest_api_init', array($this, 'register_rest_routes'));
+
+        // One-Click In-Dashboard Auto-Update Engine
+        add_filter('pre_set_site_transient_update_plugins', array($this, 'check_plugin_update'));
+        add_filter('plugins_api', array($this, 'plugin_popup_details'), 20, 3);
+        add_action('wp_ajax_sap_check_update_now', array($this, 'ajax_check_update_now'));
     }
 
     /* ==========================================================================
@@ -73,10 +78,17 @@ class Social_Auto_Poster_Connector {
         $secret_key = get_option('sap_secret_key', '');
         $auto_publish = get_option('sap_auto_publish', '1');
         $first_comment = get_option('sap_first_comment', '1');
+
+        $remote_update = $this->fetch_remote_info();
+        $has_update = $remote_update && version_compare(SAP_CONNECTOR_VERSION, $remote_update['version'], '<');
+        $update_url = wp_nonce_url(
+            self_admin_url('update.php?action=upgrade-plugin&plugin=' . urlencode(plugin_basename(__FILE__))),
+            'upgrade-plugin_' . plugin_basename(__FILE__)
+        );
         ?>
         <div class="wrap" style="max-width: 860px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
             <div style="background: #ffffff; padding: 24px 30px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
                     <div>
                         <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #0f172a;">
                             ⚡ Social Auto Poster Connector
@@ -85,10 +97,35 @@ class Social_Auto_Poster_Connector {
                             WordPress ko CreatorFlow Social Auto Poster SaaS se jodein aur automatic multi-title posting karein.
                         </p>
                     </div>
-                    <span style="background: #e0f2fe; color: #0369a1; font-weight: 600; font-size: 11px; padding: 4px 10px; border-radius: 9999px;">
-                        v<?php echo esc_html(SAP_CONNECTOR_VERSION); ?> Active
-                    </span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #e0f2fe; color: #0369a1; font-weight: 600; font-size: 11px; padding: 4px 10px; border-radius: 9999px;">
+                            v<?php echo esc_html(SAP_CONNECTOR_VERSION); ?> Active
+                        </span>
+                        <button type="button" id="sap_btn_check_update" class="button button-secondary" style="font-size: 11px; padding: 2px 10px; border-radius: 6px; font-weight: 600;">
+                            🔄 Check Updates
+                        </button>
+                    </div>
                 </div>
+
+                <!-- One-Click In-Dashboard Update Banner -->
+                <?php if ($has_update) : ?>
+                    <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 16px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <div style="font-weight: 700; color: #065f46; font-size: 14px; display: flex; items-center; gap: 6px;">
+                                <span>🎉 Naya Version Update Available: v<?php echo esc_html($remote_update['version']); ?></span>
+                                <span style="font-size: 11px; background: #059669; color: #fff; padding: 1px 6px; border-radius: 4px;">Latest</span>
+                            </div>
+                            <p style="margin: 4px 0 0 0; color: #047857; font-size: 12px;">
+                                <?php echo esc_html(isset($remote_update['upgrade_notice']) ? $remote_update['upgrade_notice'] : 'Aap bina ZIP upload kiye WordPress ke andar hi 1-click mein update kar sakte hain.'); ?>
+                            </p>
+                        </div>
+                        <a href="<?php echo esc_url($update_url); ?>" class="button button-primary" style="background: #059669; border-color: #059669; font-weight: 700; padding: 6px 18px; border-radius: 8px; font-size: 13px; text-decoration: none;">
+                            ⚡ 1-Click Update to v<?php echo esc_html($remote_update['version']); ?> Now
+                        </a>
+                    </div>
+                <?php endif; ?>
+
+                <div id="sap_update_result" style="margin-bottom: 16px; display: none;"></div>
 
                 <form method="post" action="options.php">
                     <?php settings_fields('sap_settings_group'); ?>
@@ -155,7 +192,7 @@ class Social_Auto_Poster_Connector {
                     <li>Jab aap <strong>Post Editor</strong> mein nayi post likhenge, toh wahan <strong>"Social Multi-Titles"</strong> ka box aayega.</li>
                     <li>Us box mein aap <strong>Per Line 1 Title</strong> likh sakte hain (Line 1 = Page B, Line 2 = Page C, Line 3 = Page D).</li>
                     <li>Jaise hi aap <strong>Publish</strong> dabayenge, yeh plugin featured image, permalink aur sabhi unique titles Social Auto Poster ko instant bhej dega.</li>
-                    <li>Social Auto Poster har Facebook page ke liye alag image banakar publish karega aur first comment mein link add kar dega!</li>
+                    <li><strong>Direct Updates:</strong> Jab bhi naya feature aayega, aapko nayi ZIP upload nahi karni padegi—yahin se 1-click update ho jayega!</li>
                 </ol>
             </div>
         </div>
@@ -205,6 +242,46 @@ class Social_Auto_Poster_Connector {
                         btn.disabled = false;
                         btn.innerText = '🔄 Test Connection';
                         resultDiv.innerHTML = '<div style="padding: 10px 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #991b1b; font-size: 13px;">❌ Error: ' + err.message + '</div>';
+                    });
+                });
+            }
+
+            // Check Updates AJAX handler
+            var updateBtn = document.getElementById('sap_btn_check_update');
+            var updateRes = document.getElementById('sap_update_result');
+            if (updateBtn && updateRes) {
+                updateBtn.addEventListener('click', function() {
+                    updateBtn.disabled = true;
+                    updateBtn.innerText = 'Checking...';
+                    updateRes.style.display = 'block';
+                    updateRes.innerHTML = '<div style="padding: 10px 14px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; color: #0369a1; font-size: 12px;">Update server se naya version check kar rahe hain...</div>';
+
+                    var fd = new FormData();
+                    fd.append('action', 'sap_check_update_now');
+                    fd.append('nonce', '<?php echo esc_js(wp_create_nonce('sap_update_nonce')); ?>');
+
+                    fetch(ajaxurl, {
+                        method: 'POST',
+                        body: fd
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        updateBtn.disabled = false;
+                        updateBtn.innerText = '🔄 Check Updates';
+                        if (d.success) {
+                            if (d.data.has_update) {
+                                updateRes.innerHTML = '<div style="padding: 12px 16px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; color: #065f46; font-size: 13px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;"><div><strong>🎉 ' + d.data.message + '</strong><div style="font-size: 11px; color: #047857; margin-top: 2px;">' + (d.data.upgrade_notice || '') + '</div></div><a href="' + d.data.update_url + '" class="button button-primary" style="background:#059669; border-color:#059669; font-weight:700;">⚡ 1-Click Update Now</a></div>';
+                            } else {
+                                updateRes.innerHTML = '<div style="padding: 10px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; color: #166534; font-size: 12px; font-weight: 600;">✅ ' + d.data.message + '</div>';
+                            }
+                        } else {
+                            updateRes.innerHTML = '<div style="padding: 10px 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #991b1b; font-size: 12px;">❌ ' + (d.data.message || 'Check failed') + '</div>';
+                        }
+                    })
+                    .catch(function(err) {
+                        updateBtn.disabled = false;
+                        updateBtn.innerText = '🔄 Check Updates';
+                        updateRes.innerHTML = '<div style="padding: 10px 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #991b1b; font-size: 12px;">❌ ' + err.message + '</div>';
                     });
                 });
             }
@@ -266,6 +343,140 @@ class Social_Auto_Poster_Connector {
             $errMsg = isset($data['error']) ? $data['error'] : 'HTTP Error ' . $code;
             wp_send_json_error(array('message' => $errMsg));
         }
+    }
+
+    /* ==========================================================================
+       AUTO-UPDATE ENGINE (ONE-CLICK DIRECT WP DASHBOARD UPDATES)
+       ========================================================================== */
+
+    public function get_update_endpoint() {
+        $webhook_url = get_option('sap_webhook_url', '');
+        if (!empty($webhook_url)) {
+            $parsed = parse_url($webhook_url);
+            if (!empty($parsed['scheme']) && !empty($parsed['host'])) {
+                $base = $parsed['scheme'] . '://' . $parsed['host'] . (!empty($parsed['port']) ? ':' . $parsed['port'] : '');
+                return $base . '/api/wordpress/plugin-update';
+            }
+        }
+        return 'https://game.khabarmonkey.com/api/wordpress/plugin-update';
+    }
+
+    public function fetch_remote_info($force = false) {
+        $cache_key = 'sap_plugin_update_info';
+        if (!$force) {
+            $cached = get_transient($cache_key);
+            if ($cached !== false && is_array($cached)) {
+                return $cached;
+            }
+        }
+
+        $endpoint = $this->get_update_endpoint();
+        $response = wp_remote_get($endpoint, array(
+            'timeout' => 8,
+            'headers' => array('Accept' => 'application/json'),
+        ));
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            return false;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        if (!$data || !isset($data['version'])) {
+            return false;
+        }
+
+        set_transient($cache_key, $data, 6 * HOUR_IN_SECONDS);
+        return $data;
+    }
+
+    public function check_plugin_update($transient) {
+        if (empty($transient->checked)) {
+            return $transient;
+        }
+
+        $remote = $this->fetch_remote_info();
+        if ($remote && version_compare(SAP_CONNECTOR_VERSION, $remote['version'], '<')) {
+            $plugin_file = plugin_basename(__FILE__);
+            $obj = new stdClass();
+            $obj->slug = 'social-auto-poster-connector';
+            $obj->plugin = $plugin_file;
+            $obj->new_version = $remote['version'];
+            $obj->url = isset($remote['homepage']) ? $remote['homepage'] : '';
+            $obj->package = isset($remote['package']) ? $remote['package'] : '';
+            $obj->tested = isset($remote['tested']) ? $remote['tested'] : '';
+            $obj->requires_php = isset($remote['requires_php']) ? $remote['requires_php'] : '';
+            $obj->icons = isset($remote['banners']) ? $remote['banners'] : array();
+            $obj->banners = isset($remote['banners']) ? $remote['banners'] : array();
+
+            $transient->response[$plugin_file] = $obj;
+        }
+
+        return $transient;
+    }
+
+    public function plugin_popup_details($result, $action, $args) {
+        if ($action !== 'plugin_information') {
+            return $result;
+        }
+
+        if (!isset($args->slug) || $args->slug !== 'social-auto-poster-connector') {
+            return $result;
+        }
+
+        $remote = $this->fetch_remote_info();
+        if (!$remote) {
+            return $result;
+        }
+
+        $res = new stdClass();
+        $res->name = $remote['name'];
+        $res->slug = $remote['slug'];
+        $res->version = $remote['version'];
+        $res->tested = isset($remote['tested']) ? $remote['tested'] : '';
+        $res->requires = isset($remote['requires']) ? $remote['requires'] : '';
+        $res->requires_php = isset($remote['requires_php']) ? $remote['requires_php'] : '';
+        $res->author = $remote['author'];
+        $res->author_profile = isset($remote['author_profile']) ? $remote['author_profile'] : '';
+        $res->download_link = isset($remote['package']) ? $remote['package'] : '';
+        $res->trunk = isset($remote['package']) ? $remote['package'] : '';
+        $res->last_updated = isset($remote['last_updated']) ? $remote['last_updated'] : '';
+        $res->sections = isset($remote['sections']) ? $remote['sections'] : array();
+        $res->banners = isset($remote['banners']) ? $remote['banners'] : array();
+
+        return $res;
+    }
+
+    public function ajax_check_update_now() {
+        check_ajax_referer('sap_update_nonce', 'nonce');
+        if (!current_user_can('update_plugins')) {
+            wp_send_json_error(array('message' => 'Unauthorized user.'));
+        }
+
+        delete_transient('sap_plugin_update_info');
+        delete_site_transient('update_plugins');
+
+        $remote = $this->fetch_remote_info(true);
+        if (!$remote) {
+            wp_send_json_error(array('message' => 'Update server se connect nahi ho paya. Webhook URL check karein.'));
+        }
+
+        $has_update = version_compare(SAP_CONNECTOR_VERSION, $remote['version'], '<');
+        $update_url = wp_nonce_url(
+            self_admin_url('update.php?action=upgrade-plugin&plugin=' . urlencode(plugin_basename(__FILE__))),
+            'upgrade-plugin_' . plugin_basename(__FILE__)
+        );
+
+        wp_send_json_success(array(
+            'has_update'        => $has_update,
+            'current_version'   => SAP_CONNECTOR_VERSION,
+            'latest_version'    => $remote['version'],
+            'upgrade_notice'    => isset($remote['upgrade_notice']) ? $remote['upgrade_notice'] : '',
+            'update_url'        => $update_url,
+            'message'           => $has_update
+                ? 'Naya update v' . $remote['version'] . ' available hai!'
+                : 'Aapke paas already latest version (v' . SAP_CONNECTOR_VERSION . ') installed hai.',
+        ));
     }
 
     /* ==========================================================================
@@ -566,26 +777,229 @@ class Social_Auto_Poster_Connector {
     }
 
     /* ==========================================================================
-       4. REST API VERIFICATION ENDPOINT
+       4. REST API ENDPOINTS (PING, CATEGORIES, FETCH POSTS, PUBLISH TO WP)
        ========================================================================== */
 
     public function register_rest_routes() {
+        // 1. Health check & verification ping
         register_rest_route('social-poster/v1', '/ping', array(
             'methods'             => 'GET',
             'callback'            => array($this, 'rest_ping_handler'),
             'permission_callback' => '__return_true',
         ));
+
+        // 2. Fetch all categories
+        register_rest_route('social-poster/v1', '/categories', array(
+            'methods'             => 'GET',
+            'callback'            => array($this, 'rest_categories_handler'),
+            'permission_callback' => '__return_true',
+        ));
+
+        // 3. Fetch recent posts with multi-titles
+        register_rest_route('social-poster/v1', '/posts', array(
+            'methods'             => 'GET',
+            'callback'            => array($this, 'rest_posts_handler'),
+            'permission_callback' => '__return_true',
+        ));
+
+        // 4. Publish post TO WordPress from SaaS
+        register_rest_route('social-poster/v1', '/publish', array(
+            'methods'             => 'POST',
+            'callback'            => array($this, 'rest_publish_handler'),
+            'permission_callback' => array($this, 'verify_rest_secret'),
+        ));
+    }
+
+    public function verify_rest_secret($request) {
+        $saved_secret = get_option('sap_secret_key', '');
+        if (empty($saved_secret)) {
+            return false;
+        }
+
+        $header_secret = $request->get_header('x-sap-secret');
+        $query_secret = $request->get_param('secret');
+        $provided = !empty($header_secret) ? $header_secret : $query_secret;
+
+        return hash_equals($saved_secret, (string)$provided);
+    }
+
+    private function get_formatted_categories() {
+        $categories_raw = get_categories(array(
+            'hide_empty' => false,
+            'orderby'    => 'count',
+            'order'      => 'DESC',
+        ));
+
+        $categories = array();
+        foreach ($categories_raw as $cat) {
+            $categories[] = array(
+                'id'    => (int)$cat->term_id,
+                'name'  => $cat->name,
+                'slug'  => $cat->slug,
+                'count' => (int)$cat->count,
+            );
+        }
+        return $categories;
     }
 
     public function rest_ping_handler() {
+        $categories = $this->get_formatted_categories();
+        $published_posts_count = wp_count_posts('post')->publish;
+
         return rest_ensure_response(array(
-            'status'         => 'active',
-            'plugin'         => 'Social Auto Poster Connector',
-            'version'        => SAP_CONNECTOR_VERSION,
-            'site_name'      => get_bloginfo('name'),
-            'site_url'       => get_site_url(),
-            'configured'     => !empty(get_option('sap_webhook_url')),
+            'status'                => 'active',
+            'plugin'                => 'Social Auto Poster Connector',
+            'version'               => SAP_CONNECTOR_VERSION,
+            'site_name'             => get_bloginfo('name'),
+            'site_url'              => get_site_url(),
+            'configured'            => !empty(get_option('sap_webhook_url')),
             'supports_multi_titles' => true,
+            'supports_publishing'   => true,
+            'supports_fetching'     => true,
+            'categories'            => $categories,
+            'total_categories'      => count($categories),
+            'published_posts_count' => (int)$published_posts_count,
+        ));
+    }
+
+    public function rest_categories_handler() {
+        $categories = $this->get_formatted_categories();
+        return rest_ensure_response(array(
+            'success'    => true,
+            'count'      => count($categories),
+            'categories' => $categories,
+        ));
+    }
+
+    public function rest_posts_handler($request) {
+        $per_page = $request->get_param('per_page') ? intval($request->get_param('per_page')) : 15;
+        $category_slug = $request->get_param('category');
+
+        $args = array(
+            'post_type'      => 'post',
+            'post_status'    => 'publish',
+            'posts_per_page' => min(50, max(1, $per_page)),
+            'orderby'        => 'date',
+            'order'          => 'DESC',
+        );
+
+        if (!empty($category_slug)) {
+            $args['category_name'] = sanitize_text_field($category_slug);
+        }
+
+        $query = new WP_Query($args);
+        $posts_data = array();
+
+        if ($query->have_posts()) {
+            while ($query->have_posts()) {
+                $query->the_post();
+                $pid = get_the_ID();
+                $raw_titles = get_post_meta($pid, '_sap_social_titles', true);
+                $social_titles = array();
+                if (!empty($raw_titles)) {
+                    $lines = explode("\n", str_replace("\r", "", $raw_titles));
+                    foreach ($lines as $line) {
+                        $trimmed = trim($line);
+                        if (!empty($trimmed)) {
+                            $social_titles[] = $trimmed;
+                        }
+                    }
+                }
+
+                $thumbnail_id = get_post_thumbnail_id($pid);
+                $img_url = '';
+                if ($thumbnail_id) {
+                    $src = wp_get_attachment_image_src($thumbnail_id, 'full');
+                    if ($src && !empty($src[0])) $img_url = $src[0];
+                }
+
+                $posts_data[] = array(
+                    'id'             => $pid,
+                    'title'          => get_the_title(),
+                    'social_titles'  => $social_titles,
+                    'permalink'      => get_permalink(),
+                    'featured_image' => $img_url,
+                    'categories'     => wp_get_post_categories($pid, array('fields' => 'names')),
+                    'excerpt'        => get_the_excerpt(),
+                    'published_at'   => get_the_date('c'),
+                    'author'         => get_the_author(),
+                );
+            }
+            wp_reset_postdata();
+        }
+
+        return rest_ensure_response(array(
+            'success' => true,
+            'count'   => count($posts_data),
+            'posts'   => $posts_data,
+        ));
+    }
+
+    public function rest_publish_handler($request) {
+        $params = $request->get_json_params();
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
+        $title = !empty($params['title']) ? sanitize_text_field($params['title']) : '';
+        $content = !empty($params['content']) ? wp_kses_post($params['content']) : '';
+        $excerpt = !empty($params['excerpt']) ? sanitize_textarea_field($params['excerpt']) : '';
+        $status = !empty($params['status']) && in_array($params['status'], array('publish', 'draft')) ? $params['status'] : 'publish';
+        $social_titles = !empty($params['social_titles']) && is_array($params['social_titles']) ? $params['social_titles'] : array();
+
+        if (empty($title)) {
+            return new WP_Error('missing_title', 'Post title is required', array('status' => 400));
+        }
+
+        // Create post
+        $post_data = array(
+            'post_title'   => $title,
+            'post_content' => $content,
+            'post_excerpt' => $excerpt,
+            'post_status'  => $status,
+            'post_type'    => 'post',
+        );
+
+        $post_id = wp_insert_post($post_data, true);
+        if (is_wp_error($post_id)) {
+            return new WP_Error('insert_failed', $post_id->get_error_message(), array('status' => 500));
+        }
+
+        // Save multi-titles if provided
+        if (!empty($social_titles)) {
+            $titles_str = implode("\n", array_map('sanitize_text_field', $social_titles));
+            update_post_meta($post_id, '_sap_social_titles', $titles_str);
+        }
+
+        // Assign categories
+        if (!empty($params['categories']) && is_array($params['categories'])) {
+            $cat_ids = array();
+            foreach ($params['categories'] as $cat_val) {
+                if (is_numeric($cat_val)) {
+                    $cat_ids[] = (int)$cat_val;
+                } else {
+                    $term = get_term_by('name', $cat_val, 'category');
+                    if ($term) {
+                        $cat_ids[] = $term->term_id;
+                    } else {
+                        $new_cat = wp_insert_term($cat_val, 'category');
+                        if (!is_wp_error($new_cat) && isset($new_cat['term_id'])) {
+                            $cat_ids[] = (int)$new_cat['term_id'];
+                        }
+                    }
+                }
+            }
+            if (!empty($cat_ids)) {
+                wp_set_post_categories($post_id, $cat_ids);
+            }
+        }
+
+        return rest_ensure_response(array(
+            'success'   => true,
+            'post_id'   => $post_id,
+            'permalink' => get_permalink($post_id),
+            'status'    => $status,
+            'message'   => 'Post created on WordPress successfully!',
         ));
     }
 }

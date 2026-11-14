@@ -536,6 +536,8 @@ function ComposerContent() {
               botToken: p.botToken || acc?.botToken,
               chatId: p.chatId || p.pageId,
               accessToken: p.accessToken || acc?.accessToken,
+              metaAppId: p.metaAppId || acc?.metaAppId,
+              metaAppName: p.metaAppName || acc?.metaAppName,
             };
           }),
         }),
@@ -1741,15 +1743,20 @@ function ComposerContent() {
                     </div>
 
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold shrink-0">
-                      <span>⚡ Auto Engine v7.5</span>
+                      <span>⚡ WP Connector</span>
                     </span>
                   </div>
 
                   {/* Category & Timestamp */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase tracking-wider">
                       {previewPage?.category || 'News Update'}
                     </span>
+                    {previewPage?.wpCategories && previewPage.wpCategories.length > 0 && (
+                      <span className="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-md font-semibold">
+                        {previewPage.wpCategories[0].name}
+                      </span>
+                    )}
                     <span className="text-[11px] text-slate-400">• Just now</span>
                     <span className="text-[11px] text-slate-400">• 3 min read</span>
                   </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBaseUrl } from '@/lib/utils/url';
 import { getDbPool } from '@/lib/db/mysql';
+import { MetaAppConfig } from '@/types';
 
 export async function GET(request: NextRequest) {
   const baseUrl = getBaseUrl(request);
@@ -17,34 +18,68 @@ export async function GET(request: NextRequest) {
     process.env.FACEBOOK_APP_SECRET || ''
   ).trim();
 
-  // If missing from query or env, check MySQL settings for logged in user
-  if (!appId || !appSecret) {
-    const userCookie = request.cookies.get('sap_google_user')?.value;
-    if (userCookie) {
-      try {
-        let decoded = userCookie;
-        try { decoded = decodeURIComponent(userCookie); } catch {}
-        const parsed = JSON.parse(decoded);
-        const email = (parsed.email || '').toLowerCase().trim();
-        if (email) {
-          const pool = getDbPool();
-          if (pool) {
-            const [rows] = await pool.query<any[]>(
-              'SELECT settings FROM app_user_data WHERE email = ? LIMIT 1',
-              [email]
-            );
-            if (rows && rows.length > 0 && rows[0].settings) {
-              const userSettings = typeof rows[0].settings === 'string'
-                ? JSON.parse(rows[0].settings)
-                : rows[0].settings;
-              if (!appId && userSettings?.metaAppId) appId = userSettings.metaAppId.trim();
-              if (!appSecret && userSettings?.metaAppSecret) appSecret = userSettings.metaAppSecret.trim();
+  let metaAppConfigId = (searchParams.get('app_config_id') || '').trim();
+  let metaAppName = (searchParams.get('app_name') || '').trim();
+
+  // If user is logged in, read settings from MySQL to resolve Meta App
+  const userCookie = request.cookies.get('sap_google_user')?.value;
+  if (userCookie) {
+    try {
+      let decoded = userCookie;
+      try { decoded = decodeURIComponent(userCookie); } catch {}
+      const parsed = JSON.parse(decoded);
+      const email = (parsed.email || '').toLowerCase().trim();
+      if (email) {
+        const pool = getDbPool();
+        if (pool) {
+          const [rows] = await pool.query<any[]>(
+            'SELECT settings FROM app_user_data WHERE email = ? LIMIT 1',
+            [email]
+          );
+          if (rows && rows.length > 0 && rows[0].settings) {
+            const userSettings = typeof rows[0].settings === 'string'
+              ? JSON.parse(rows[0].settings)
+              : rows[0].settings;
+
+            const metaApps: MetaAppConfig[] = Array.isArray(userSettings?.metaApps) ? userSettings.metaApps : [];
+
+            // 1. If metaAppConfigId provided, match by id or appId
+            if (metaAppConfigId && metaApps.length > 0) {
+              const matched = metaApps.find((a) => a.id === metaAppConfigId || a.appId === metaAppConfigId);
+              if (matched) {
+                appId = matched.appId.trim();
+                appSecret = matched.appSecret.trim();
+                metaAppConfigId = matched.id;
+                metaAppName = matched.name;
+              }
+            } else if (appId && metaApps.length > 0) {
+              // 2. If appId provided, match against metaApps to populate secret/name
+              const matched = metaApps.find((a) => a.appId.trim() === appId.trim());
+              if (matched) {
+                if (!appSecret) appSecret = matched.appSecret.trim();
+                if (!metaAppConfigId) metaAppConfigId = matched.id;
+                if (!metaAppName) metaAppName = matched.name;
+              }
+            } else if (!appId && metaApps.length > 0) {
+              // 3. Pick default or first app from metaApps
+              const defaultApp = metaApps.find((a) => a.isDefault) || metaApps[0];
+              if (defaultApp) {
+                appId = defaultApp.appId.trim();
+                appSecret = defaultApp.appSecret.trim();
+                metaAppConfigId = defaultApp.id;
+                metaAppName = defaultApp.name;
+              }
             }
+
+            // Fallback to legacy single metaAppId / metaAppSecret
+            if (!appId && userSettings?.metaAppId) appId = userSettings.metaAppId.trim();
+            if (!appSecret && userSettings?.metaAppSecret) appSecret = userSettings.metaAppSecret.trim();
+            if (!metaAppName && appId) metaAppName = 'Primary Meta App';
           }
         }
-      } catch (err) {
-        console.warn('[Facebook Auth Init] Failed reading user settings from DB:', err);
       }
+    } catch (err) {
+      console.warn('[Facebook Auth Init] Failed reading user settings from DB:', err);
     }
   }
 
@@ -68,6 +103,8 @@ export async function GET(request: NextRequest) {
   const statePayload = {
     appId: appId.trim(),
     appSecret: appSecret ? appSecret.trim() : '',
+    metaAppConfigId: metaAppConfigId || appId.trim(),
+    metaAppName: metaAppName || 'Meta App',
     t: Date.now(),
   };
   const stateParam = Buffer.from(JSON.stringify(statePayload)).toString('base64url');
@@ -84,7 +121,12 @@ export async function GET(request: NextRequest) {
   if (appSecret) {
     response.cookies.set(
       'sap_fb_app_creds',
-      encodeURIComponent(JSON.stringify({ appId: appId.trim(), appSecret: appSecret.trim() })),
+      encodeURIComponent(JSON.stringify({
+        appId: appId.trim(),
+        appSecret: appSecret.trim(),
+        metaAppConfigId: metaAppConfigId || appId.trim(),
+        metaAppName: metaAppName || 'Meta App',
+      })),
       {
         path: '/',
         maxAge: 3600,

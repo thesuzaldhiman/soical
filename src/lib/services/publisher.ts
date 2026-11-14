@@ -13,6 +13,8 @@ export interface PublishTarget {
   category?: string;
   wpUsername?: string;
   wpAppPassword?: string;
+  metaAppId?: string;
+  metaAppName?: string;
 }
 
 export interface DispatchOptions {
@@ -382,30 +384,44 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
         const wpPostContent = contentHtml || (message ? message.replace(/\n/g, '<br/>') : '');
 
         try {
-          // Option A: Auto Engine Bridge API
-          if (isAutoEngine && bridgeKey) {
+          // Option A: Social Auto Poster Connector Plugin / Bridge API
+          if (bridgeKey) {
             const publishPayload = {
               title: wpPostTitle,
               content: wpPostContent,
               featured_image: mediaUrl || '',
+              featured_image_url: mediaUrl || '',
               status: 'publish',
-              category_id: target.category || undefined,
-              logo_watermark: true,
+              category: target.category || undefined,
+              categories: target.category ? [target.category] : [],
             };
 
-            const wpRes = await fetch(`${siteUrl}/wp-json/auto-engine/v1/publish`, {
+            // 1. Try Social Auto Poster Connector endpoint
+            let wpRes = await fetch(`${siteUrl}/wp-json/social-poster/v1/publish`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'X-AE-Key': bridgeKey,
+                'X-SAP-Secret': bridgeKey,
               },
               body: JSON.stringify(publishPayload),
-            });
+            }).catch(() => null);
 
-            const resData = await wpRes.json().catch(() => null);
+            // 2. If 404 or failed, fallback to legacy Auto Engine
+            if (!wpRes || wpRes.status === 404) {
+              wpRes = await fetch(`${siteUrl}/wp-json/auto-engine/v1/publish`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-AE-Key': bridgeKey,
+                },
+                body: JSON.stringify(publishPayload),
+              }).catch(() => null);
+            }
 
-            if (!wpRes.ok || !resData?.success) {
-              const errMsg = resData?.message || resData?.error || `WordPress responded with HTTP ${wpRes.status}`;
+            const resData = wpRes ? await wpRes.json().catch(() => null) : null;
+
+            if (!wpRes || !wpRes.ok || (!resData?.success && !resData?.post_id)) {
+              const errMsg = resData?.message || resData?.error || `WordPress responded with HTTP ${wpRes?.status || 500}`;
               results.push({
                 pageId: target.id,
                 pageName: target.name,
@@ -417,13 +433,14 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               return;
             }
 
+            const wpPostId = resData.post_id || resData.id;
             results.push({
               pageId: target.id,
               pageName: target.name,
               platform: 'wordpress',
               status: 'success',
-              externalPostId: String(resData.post_id),
-              postUrl: resData.url || `${siteUrl}/?p=${resData.post_id}`,
+              externalPostId: String(wpPostId),
+              postUrl: resData.permalink || resData.url || `${siteUrl}/?p=${wpPostId}`,
               timestamp,
             });
             return;

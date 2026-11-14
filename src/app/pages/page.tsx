@@ -422,6 +422,13 @@ function PagesContent() {
                           <div className="text-[10px] text-slate-400 font-mono">
                             ID: {page.pageId}
                           </div>
+                          {page.metaAppName && (
+                            <div className="mt-0.5">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 rounded">
+                                App: {page.metaAppName}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
