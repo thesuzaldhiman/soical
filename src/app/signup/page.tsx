@@ -29,7 +29,7 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -49,7 +49,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const res = registerUser(name, email, selectedPlan, password);
+      const res = await registerUser(name, email, selectedPlan, password);
       if (res.success) {
         if (res.isPending) {
           setIsSubmitted(true);

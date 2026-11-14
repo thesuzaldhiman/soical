@@ -32,6 +32,7 @@ export default function AdminDashboardPage() {
     toggleUserSuspension,
     updateUserSubscription,
     deleteUser,
+    promoteUserToSuperAdmin,
     switchActiveUser,
   } = useApp();
 
@@ -231,7 +232,7 @@ export default function AdminDashboardPage() {
                         type="button"
                         onClick={() => {
                           if (confirm(`Kya aap ${pUser.name} (${pUser.email}) ki registration request delete karna chahte hain?`)) {
-                            deleteUser(pUser.id);
+                            deleteUser(pUser.id, pUser.email);
                             showToast(`Registration request for ${pUser.name} deleted.`);
                           }
                         }}
@@ -305,7 +306,8 @@ export default function AdminDashboardPage() {
                   ) : (
                     filteredUsers.map((u) => {
                       const sub = u.subscription;
-                      const isSuperAdmin = u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
+                      const isPrimarySuperAdmin = u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
+                      const isSuperAdmin = isPrimarySuperAdmin || u.role === 'owner';
                       const isCurrent = currentUser?.id === u.id || currentUser?.email?.toLowerCase().trim() === u.email?.toLowerCase().trim();
 
                       return (
@@ -327,11 +329,15 @@ export default function AdminDashboardPage() {
                                       YOU
                                     </span>
                                   )}
-                                  {isSuperAdmin && (
-                                    <span className="text-[8px] font-black px-1 rounded bg-amber-100 text-amber-900">
+                                  {isPrimarySuperAdmin ? (
+                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                      SUPER ADMIN (OWNER)
+                                    </span>
+                                  ) : isSuperAdmin ? (
+                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 border border-indigo-200">
                                       SUPER ADMIN
                                     </span>
-                                  )}
+                                  ) : null}
                                 </div>
                                 <div className="text-[10px] text-slate-400 truncate">{u.email}</div>
                               </div>
@@ -423,6 +429,46 @@ export default function AdminDashboardPage() {
                                 <Eye className="w-3 h-3" />
                               </button>
 
+                              {/* Super Admin Promotion / Demotion */}
+                              {!isPrimarySuperAdmin && !isCurrent && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (isSuperAdmin) {
+                                      if (
+                                        confirm(
+                                          `Kya aap ${u.name} ko Super Admin se standard member me demote karna chahte hain?`
+                                        )
+                                      ) {
+                                        await promoteUserToSuperAdmin(u.id, false);
+                                        showToast(`${u.name} ko Standard Member bana diya gaya.`);
+                                      }
+                                    } else {
+                                      if (
+                                        confirm(
+                                          `Kya aap ${u.name} ko SUPER ADMIN banana chahte hain? Inhe full platform admin access & Agency tier mil jayega.`
+                                        )
+                                      ) {
+                                        await promoteUserToSuperAdmin(u.id, true);
+                                        showToast(`${u.name} ab Super Admin ban chuke hain!`);
+                                      }
+                                    }
+                                  }}
+                                  className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                                    isSuperAdmin
+                                      ? 'border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                                      : 'border-[#E2E8F0] bg-white hover:bg-amber-50 text-slate-500 hover:text-amber-700'
+                                  }`}
+                                  title={
+                                    isSuperAdmin
+                                      ? 'Demote from Super Admin to Member'
+                                      : 'Promote to Super Admin (Full Privileges)'
+                                  }
+                                >
+                                  <Crown className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
                               {/* Suspend Toggle */}
                               {!isSuperAdmin && !isCurrent && (
                                 <button
@@ -447,13 +493,17 @@ export default function AdminDashboardPage() {
                               )}
 
                               {/* Remove User */}
-                              {!isSuperAdmin && !isCurrent && (
+                              {!isPrimarySuperAdmin && !isCurrent && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    if (confirm(`Kya aap ${u.name} (${u.email}) ka account completely delete/remove karna chahte hain? Iska sara data server se delete ho jayega.`)) {
-                                      deleteUser(u.id);
-                                      showToast(`User ${u.name} successfully removed.`);
+                                  onClick={async () => {
+                                    if (
+                                      confirm(
+                                        `Kya aap ${u.name} (${u.email}) ka account completely delete/remove karna chahte hain? Iska sara data database se permanently delete ho jayega.`
+                                      )
+                                    ) {
+                                      await deleteUser(u.id, u.email);
+                                      showToast(`User ${u.name} completely removed.`);
                                     }
                                   }}
                                   className="p-1.5 rounded-lg border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
@@ -698,8 +748,8 @@ export default function AdminDashboardPage() {
         <EditSubscriptionModal
           user={editingUser}
           onClose={() => setEditingUser(null)}
-          onDelete={() => {
-            deleteUser(editingUser.id);
+          onDelete={async () => {
+            await deleteUser(editingUser.id, editingUser.email);
             showToast(`User ${editingUser.name} deleted.`);
             setEditingUser(null);
           }}

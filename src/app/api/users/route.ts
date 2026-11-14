@@ -117,7 +117,114 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing action' }, { status: 400 });
     }
 
-    // 1. REGISTRATION
+    // 1. LOGIN
+    if (action === 'login') {
+      const { email: rawEmail, password } = body;
+      if (!rawEmail || !rawEmail.includes('@')) {
+        return NextResponse.json({ success: false, message: 'Valid email required' }, { status: 400 });
+      }
+
+      const email = rawEmail.toLowerCase().trim();
+      const isOwner = isOwnerEmail(email);
+
+      if (pool) {
+        await initDbTables();
+        const [rows] = await pool.query<any[]>(
+          'SELECT * FROM app_users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+          [email]
+        );
+
+        if (!rows || rows.length === 0) {
+          // If super admin and not in DB, create on the fly
+          if (isOwner) {
+            return NextResponse.json({
+              success: true,
+              user: INITIAL_USER,
+              message: 'Super admin signed in successfully',
+            });
+          }
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'USER_NOT_FOUND',
+              message: 'No account found with this email. Please sign up first.',
+            },
+            { status: 404 }
+          );
+        }
+
+        const userRow = rows[0];
+        const userObj = mapRowToUser(userRow);
+
+        // Password verification (if password was set)
+        if (userRow.password && password && userRow.password !== password) {
+          return NextResponse.json(
+            { success: false, message: 'Incorrect password. Please try again.' },
+            { status: 401 }
+          );
+        }
+
+        // Approval checks for non-owners
+        if (userObj.role !== 'owner' && !isOwner) {
+          if (userObj.approvalStatus === 'pending') {
+            return NextResponse.json(
+              {
+                success: false,
+                code: 'PENDING_APPROVAL',
+                message:
+                  'Aapka account abhi Admin approval ke liye pending hai. Admin dwara approve hone ke baad hi aap login kar payenge.',
+              },
+              { status: 403 }
+            );
+          }
+          if (userObj.approvalStatus === 'suspended') {
+            return NextResponse.json(
+              {
+                success: false,
+                code: 'SUSPENDED',
+                message:
+                  'Aapka account temporarily suspend kar diya gaya hai. Kripya admin se sampark karein.',
+              },
+              { status: 403 }
+            );
+          }
+          if (userObj.approvalStatus === 'rejected') {
+            return NextResponse.json(
+              {
+                success: false,
+                code: 'REJECTED',
+                message: `Aapka registration request admin dwara decline kar diya gaya hai${
+                  userObj.rejectionReason ? ': ' + userObj.rejectionReason : '.'
+                }`,
+              },
+              { status: 403 }
+            );
+          }
+        }
+
+        // Update last login timestamp
+        try {
+          await pool.query('UPDATE app_users SET last_login_at = NOW() WHERE id = ?', [userRow.id]);
+        } catch {}
+
+        return NextResponse.json({
+          success: true,
+          user: userObj,
+          message: 'Signed in successfully!',
+        });
+      }
+
+      // Offline / fallback mode
+      if (isOwner) {
+        return NextResponse.json({ success: true, user: INITIAL_USER, message: 'Signed in as owner' });
+      }
+      return NextResponse.json(
+        { success: false, message: 'Database connection offline. Please try again.' },
+        { status: 503 }
+      );
+    }
+
+    // 2. REGISTRATION
     if (action === 'register') {
       const { name, email: rawEmail, password, tierPreference } = body;
       if (!rawEmail || !rawEmail.includes('@')) {
@@ -151,7 +258,7 @@ export async function POST(request: NextRequest) {
 
         // Check if user already exists in DB
         const [existing] = await pool.query<any[]>(
-          'SELECT email FROM app_users WHERE email = ? LIMIT 1',
+          'SELECT email FROM app_users WHERE LOWER(email) = LOWER(?) LIMIT 1',
           [email]
         );
 
@@ -304,7 +411,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'Subscription updated' });
     }
 
-    // 6. DELETE USER
+    // 6. PROMOTE / DEMOTE USER (Super Admin toggle)
+    if (action === 'promote') {
+      const { userId, role = 'owner', tier = 'agency' } = body;
+      if (!userId) {
+        return NextResponse.json({ success: false, message: 'Missing userId' }, { status: 400 });
+      }
+
+      const isSuperAdmin = role === 'owner';
+      const targetTier = isSuperAdmin ? 'agency' : tier || 'pro';
+      const subData: UserSubscription = {
+        tier: targetTier,
+        status: 'active',
+        expiresAt: null,
+        maxConnectedPages: targetTier === 'agency' ? 50 : 15,
+        maxDailyPosts: targetTier === 'agency' ? 500 : 100,
+        features: {
+          canUseAI: true,
+          canUseBulkScheduler: true,
+          canUseAutomationFeed: isSuperAdmin || targetTier === 'agency',
+          canUseAnalytics: true,
+        },
+      };
+
+      if (pool) {
+        await initDbTables();
+        await pool.query(
+          `UPDATE app_users SET
+            role = ?,
+            subscription_tier = ?,
+            subscription_data = ?,
+            approval_status = 'approved'
+          WHERE id = ?`,
+          [role, targetTier, JSON.stringify(subData), userId]
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: isSuperAdmin
+          ? 'User promoted to Super Admin successfully!'
+          : 'User demoted to Member successfully',
+      });
+    }
+
+    // 7. DELETE USER (Complete database & cache purge)
     if (action === 'delete') {
       const { userId, email } = body;
       if (!userId && !email) {
@@ -313,16 +464,36 @@ export async function POST(request: NextRequest) {
 
       if (pool) {
         await initDbTables();
+
+        // 1. Resolve email if only userId was provided
+        let targetEmail = email ? email.toLowerCase().trim() : null;
+        if (!targetEmail && userId) {
+          const [rows] = await pool.query<any[]>('SELECT email FROM app_users WHERE id = ? LIMIT 1', [userId]);
+          if (rows && rows.length > 0 && rows[0].email) {
+            targetEmail = rows[0].email.toLowerCase().trim();
+          }
+        }
+
+        // 2. Prevent accidental deletion of primary owner
+        if (targetEmail === 'suzaldhiman@gmail.com') {
+          return NextResponse.json(
+            { success: false, message: 'Primary Super Admin cannot be deleted.' },
+            { status: 403 }
+          );
+        }
+
+        // 3. Delete from all database tables
         if (userId) {
           await pool.query('DELETE FROM app_users WHERE id = ?', [userId]);
         }
-        if (email) {
-          await pool.query('DELETE FROM app_users WHERE email = ?', [email]);
-          await pool.query('DELETE FROM app_user_data WHERE email = ?', [email]);
+        if (targetEmail) {
+          await pool.query('DELETE FROM app_users WHERE LOWER(email) = LOWER(?)', [targetEmail]);
+          await pool.query('DELETE FROM app_user_data WHERE LOWER(email) = LOWER(?)', [targetEmail]);
+          await pool.query('DELETE FROM app_password_resets WHERE LOWER(email) = LOWER(?)', [targetEmail]);
         }
       }
 
-      return NextResponse.json({ success: true, message: 'User deleted successfully' });
+      return NextResponse.json({ success: true, message: 'User completely deleted from database.' });
     }
 
     return NextResponse.json({ success: false, message: `Unknown action: ${action}` }, { status: 400 });

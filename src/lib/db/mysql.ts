@@ -122,6 +122,19 @@ export async function initDbTables(): Promise<boolean> {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
 
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS app_password_resets (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          email VARCHAR(255) NOT NULL,
+          token VARCHAR(255) UNIQUE NOT NULL,
+          expires_at TIMESTAMP NOT NULL,
+          used TINYINT(1) DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX (email),
+          INDEX (token)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
       tablesInitialized = true;
       console.log('[MySQL] Database tables successfully initialized.');
       return true;

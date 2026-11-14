@@ -63,7 +63,7 @@ export interface SocialAccount {
   wpUsername?: string;
   wpAppPassword?: string;
   bridgeApiKey?: string;
-  bridgeType?: 'auto-engine' | 'rest-api';
+  bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
 }
 
 export type MonetizationProgramType =
@@ -127,7 +127,7 @@ export interface SocialPage {
   wpUsername?: string;
   wpAppPassword?: string;
   bridgeApiKey?: string;
-  bridgeType?: 'auto-engine' | 'rest-api';
+  bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
 }
 
 export interface PageCategory {

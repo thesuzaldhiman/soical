@@ -582,24 +582,24 @@ function AutomationsContent() {
             </div>
             <div>
               <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                <span>WordPress Realtime Webhook &amp; Auto Engine Bridge</span>
+                <span>WordPress Multi-Titles Webhook &amp; Auto Poster Connector</span>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                   Ready ({wpPages.length} Sites Connected)
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Supports multiple WordPress sites! Content can be pushed to all connected websites simultaneously with automatic watermarking &amp; SEO.
+                Supports multiple WordPress sites! Post publish hone par per-line titles fetch karke har Facebook page par alag image card aur first-comment link dispatch karta hai.
               </p>
             </div>
           </div>
 
           <a
-            href="/downloads/auto-engine-v7.5-bridge.zip"
-            download="auto-engine-v7.5-bridge.zip"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 transition-colors shrink-0"
+            href="/api/wordpress/download-plugin"
+            download="social-auto-poster-connector.zip"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold border border-sky-200 transition-colors shrink-0"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Download Auto Engine Bridge (.zip)</span>
+            <Download className="w-3.5 h-3.5 text-sky-600" />
+            <span>Download Multi-Title Plugin (.zip)</span>
           </a>
         </div>
 

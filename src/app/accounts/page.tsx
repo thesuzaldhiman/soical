@@ -98,11 +98,13 @@ function AccountsContent() {
 
   // WordPress Connect State
   const [wpSiteUrl, setWpSiteUrl] = useState('');
-  const [wpConnectionMode, setWpConnectionMode] = useState<'auto-engine' | 'rest-api'>('auto-engine');
+  const [wpConnectionMode, setWpConnectionMode] = useState<'plugin-connector' | 'auto-engine' | 'rest-api'>('plugin-connector');
   const [wpBridgeKey, setWpBridgeKey] = useState('');
   const [wpUsername, setWpUsername] = useState('');
   const [wpAppPassword, setWpAppPassword] = useState('');
   const [wpSiteName, setWpSiteName] = useState('');
+  const [copiedWpWebhook, setCopiedWpWebhook] = useState(false);
+  const [copiedWpSecret, setCopiedWpSecret] = useState(false);
 
   // Status & loading
   const [isVerifying, setIsVerifying] = useState(false);
@@ -511,7 +513,11 @@ function AccountsContent() {
 
       setConnectSuccess(
         `Successfully connected to WordPress site "${finalName}" via ${
-          wpConnectionMode === 'auto-engine' ? 'Auto Engine Bridge v7.5' : 'WordPress REST API'
+          wpConnectionMode === 'plugin-connector'
+            ? 'Social Auto Poster Connector (Multi-Titles Ready)'
+            : wpConnectionMode === 'auto-engine'
+            ? 'Auto Engine Bridge v7.5'
+            : 'WordPress REST API'
         }!`
       );
       setWpSiteUrl('');
@@ -1414,25 +1420,106 @@ function AccountsContent() {
             {/* 4. WORDPRESS CONNECTION FORM */}
             {connectPlatformChoice === 'wordpress' && (
               <form onSubmit={handleConnectWordPress} className="space-y-4">
-                {/* Plugin Download & Instructions Banner */}
-                <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/80 text-xs text-sky-950 space-y-2.5">
+                {/* Plugin Download & Instructions Card */}
+                <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/80 text-xs text-sky-950 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="font-bold flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-[#21759B] text-white flex items-center justify-center text-xs">W</span>
-                      <span>Auto Engine v7.5 WordPress Bridge</span>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-[#21759B] text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                        W
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                          <span>Social Auto Poster Connector v1.0</span>
+                          <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                            Multi-Title Ready
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-sky-800">
+                          Official WordPress Plugin for multi-title variations &amp; instant publishing
+                        </p>
+                      </div>
                     </div>
+
                     <a
-                      href="/downloads/auto-engine-v7.5-bridge.zip"
-                      download="auto-engine-v7.5-bridge.zip"
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#21759B] hover:bg-[#1a5d7c] text-white text-[11px] font-bold shadow-2xs transition-colors"
+                      href="/api/wordpress/download-plugin"
+                      download="social-auto-poster-connector.zip"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#21759B] hover:bg-[#1a5d7c] text-white text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Download Plugin (ZIP)</span>
+                      <span>Download Plugin (.ZIP)</span>
                     </a>
                   </div>
-                  <p className="text-[11px] text-sky-800 leading-relaxed">
-                    Apni WordPress site par <strong>Auto Engine v7.5</strong> plugin install karein, phir <strong>Auto Engine &gt; Settings &gt; Social Auto Poster</strong> se Secret Key copy karke neeche paste karein.
-                  </p>
+
+                  {/* Step-by-Step Instructions */}
+                  <div className="bg-white/80 p-3 rounded-xl border border-sky-200/60 space-y-2 text-[11px] text-slate-700">
+                    <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Setup Instructions (4 Easy Steps):</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1 leading-relaxed">
+                      <li>Upar diye button se <strong>Plugin ZIP download</strong> karein aur WordPress mein <strong>Plugins &gt; Add New &gt; Upload Plugin</strong> se install karke activate karein.</li>
+                      <li>WordPress Admin mein <strong>Settings &gt; Social Auto Poster</strong> page kholein.</li>
+                      <li>Neeche di gayi <strong>Webhook URL</strong> aur <strong>Secret Key</strong> copy karke WordPress settings mein paste karein:</li>
+                    </ol>
+
+                    {/* Copyable Webhook URL & Secret Key */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1">
+                          <span>YOUR WEBHOOK URL:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const origin = typeof window !== 'undefined' ? window.location.origin : 'https://game.khabarmonkey.com';
+                              const url = `${origin}/api/webhook/wordpress?secret=${settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f'}`;
+                              navigator.clipboard.writeText(url);
+                              setCopiedWpWebhook(true);
+                              setTimeout(() => setCopiedWpWebhook(false), 2000);
+                            }}
+                            className="text-[#21759B] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+                          >
+                            {copiedWpWebhook ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedWpWebhook ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${typeof window !== 'undefined' ? window.location.origin : 'https://game.khabarmonkey.com'}/api/webhook/wordpress?secret=${settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f'}`}
+                          className="w-full text-[10px] font-mono text-slate-700 bg-white border border-slate-200 rounded px-2 py-1 select-all"
+                        />
+                      </div>
+
+                      <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1">
+                          <span>SECRET API KEY:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sec = settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f';
+                              navigator.clipboard.writeText(sec);
+                              setCopiedWpSecret(true);
+                              setTimeout(() => setCopiedWpSecret(false), 2000);
+                            }}
+                            className="text-[#21759B] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+                          >
+                            {copiedWpSecret ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedWpSecret ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          readOnly
+                          value={settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f'}
+                          className="w-full text-[10px] font-mono text-slate-700 bg-white border border-slate-200 rounded px-2 py-1 select-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-slate-500 pt-1 leading-normal">
+                      <strong>💡 Multi-Title Posting:</strong> Post likhte waqt <strong>"Social Multi-Titles"</strong> box mein per-line 1 title daalein. Page A par default title jayega, Page B par Line 1, Page C par Line 2... har page ke liye alag image banegi aur link first comment mein jayega!
+                    </div>
+                  </div>
                 </div>
 
                 {/* Connection Mode Switcher */}
@@ -1440,28 +1527,42 @@ function AccountsContent() {
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
                     Connection Mode
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWpConnectionMode('plugin-connector');
+                        if (!wpBridgeKey) setWpBridgeKey(settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f');
+                      }}
+                      className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition-all text-center cursor-pointer ${
+                        wpConnectionMode === 'plugin-connector'
+                          ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
+                          : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      ⚡ Multi-Title Plugin (Best)
+                    </button>
                     <button
                       type="button"
                       onClick={() => setWpConnectionMode('auto-engine')}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
+                      className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition-all text-center cursor-pointer ${
                         wpConnectionMode === 'auto-engine'
                           ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
                           : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      ⚡ Auto Engine Bridge (Fast)
+                      🔌 Auto Engine v7.5
                     </button>
                     <button
                       type="button"
                       onClick={() => setWpConnectionMode('rest-api')}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
+                      className={`py-2 px-2 rounded-xl border text-[11px] font-bold transition-all text-center cursor-pointer ${
                         wpConnectionMode === 'rest-api'
                           ? 'bg-slate-900 border-slate-900 text-white shadow-2xs'
                           : 'bg-[#F8F9FA] border-[#E2E8F0] text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      🔑 Standard WP REST API
+                      🔑 WP REST API
                     </button>
                   </div>
                 </div>
@@ -1482,21 +1583,25 @@ function AccountsContent() {
                   <span className="text-[10px] text-slate-400 mt-0.5 block">Include https:// without trailing slash</span>
                 </div>
 
-                {/* Mode 1: Bridge Key */}
-                {wpConnectionMode === 'auto-engine' && (
+                {/* Plugin Connector / Auto Engine Secret Key */}
+                {(wpConnectionMode === 'plugin-connector' || wpConnectionMode === 'auto-engine') && (
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                      Bridge Secret Key
+                      Secret API Key
                     </label>
                     <input
-                      type="password"
+                      type="text"
                       required
-                      value={wpBridgeKey}
+                      value={wpBridgeKey || settings?.webhookSecret || ''}
                       onChange={(e) => setWpBridgeKey(e.target.value)}
-                      placeholder="e.g. 32-character secret key from Auto Engine settings"
+                      placeholder="e.g. sap_whsec_..."
                       className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all"
                     />
-                    <span className="text-[10px] text-slate-400 mt-0.5 block">Found in WP Admin &gt; Auto Engine &gt; Settings &gt; Social Auto Poster Bridge</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      {wpConnectionMode === 'plugin-connector'
+                        ? 'WordPress Admin > Settings > Social Auto Poster se verify karein'
+                        : 'WP Admin > Auto Engine > Settings > Social Auto Poster Bridge'}
+                    </span>
                   </div>
                 )}
 

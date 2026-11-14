@@ -24,13 +24,13 @@ export async function POST(request: NextRequest) {
       normalizedUrl = `https://${normalizedUrl}`;
     }
 
-    // MODE 1: AUTO ENGINE BRIDGE API
-    if (connectionMode === 'auto-engine') {
+    // MODE 1: CONNECTOR PLUGIN / AUTO ENGINE BRIDGE API
+    if (connectionMode === 'auto-engine' || connectionMode === 'plugin-connector') {
       if (!bridgeKey || typeof bridgeKey !== 'string') {
         return NextResponse.json(
           {
             verified: false,
-            error: 'Missing Bridge Secret Key. Copy it from your WordPress Admin > Auto Engine > Settings > Social Auto Poster Bridge.',
+            error: 'Missing Secret Key. Copy it from your WordPress Admin > Settings > Social Auto Poster.',
           },
           { status: 400 }
         );
@@ -40,8 +40,34 @@ export async function POST(request: NextRequest) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 9000);
 
+        // 1. Try new Social Auto Poster Connector ping endpoint
+        const connectorEndpoint = `${normalizedUrl}/wp-json/social-poster/v1/ping`;
+        let res = await fetch(connectorEndpoint, {
+          method: 'GET',
+          headers: {
+            'X-SAP-Secret': bridgeKey.trim(),
+            'Accept': 'application/json',
+          },
+          signal: controller.signal,
+        }).catch(() => null);
+
+        if (res && res.ok) {
+          clearTimeout(timeoutId);
+          const data = await res.json();
+          return NextResponse.json({
+            verified: true,
+            siteName: data.site_name || new URL(normalizedUrl).hostname,
+            siteUrl: normalizedUrl,
+            pluginVersion: data.version || '1.0.0',
+            bridgeVersion: '2.0',
+            supportsMultiTitles: true,
+            message: 'Connected successfully via Social Auto Poster Connector Plugin!',
+          });
+        }
+
+        // 2. Try legacy Auto Engine Bridge status endpoint
         const targetEndpoint = `${normalizedUrl}/wp-json/auto-engine/v1/status`;
-        const res = await fetch(targetEndpoint, {
+        res = await fetch(targetEndpoint, {
           method: 'GET',
           headers: {
             'X-AE-Key': bridgeKey.trim(),

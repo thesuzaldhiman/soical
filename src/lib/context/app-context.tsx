@@ -77,7 +77,7 @@ interface AppContextType {
       wpUsername?: string;
       wpAppPassword?: string;
       bridgeApiKey?: string;
-      bridgeType?: 'auto-engine' | 'rest-api';
+      bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
     }
   ) => SocialAccount;
   addPages: (pagesToAdd: SocialPage[]) => void;
@@ -111,7 +111,7 @@ interface AppContextType {
   loginWithEmail: (
     email: string,
     password: string
-  ) => { success: boolean; user?: User; message: string };
+  ) => Promise<{ success: boolean; user?: User; message: string }>;
   logout: () => void;
   clearAllData: () => void;
   loadDemoData: () => void;
@@ -128,13 +128,14 @@ interface AppContextType {
   rejectUser: (userId: string, reason?: string) => void;
   updateUserSubscription: (userId: string, sub: Partial<UserSubscription>) => void;
   toggleUserSuspension: (userId: string, reason?: string) => void;
-  deleteUser: (userId: string) => void;
+  deleteUser: (userId: string, email?: string) => Promise<void>;
+  promoteUserToSuperAdmin: (userId: string, makeSuperAdmin: boolean) => Promise<void>;
   registerUser: (
     name: string,
     email: string,
     tierPreference?: SubscriptionTier,
     password?: string
-  ) => { success: boolean; user: User; message: string; isPending?: boolean };
+  ) => Promise<{ success: boolean; user: User; message: string; isPending?: boolean }>;
   switchActiveUser: (userId: string) => void;
 
   // Facebook Analytics & Monetization Actions
@@ -225,7 +226,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   saveSigTemplate: noop,
   isAuthenticated: false,
   loginWithGoogle: noop,
-  loginWithEmail: () => ({ success: false, message: '' }),
+  loginWithEmail: async () => ({ success: false, message: '' }),
   logout: noop,
   clearAllData: noop,
   loadDemoData: noop,
@@ -234,8 +235,9 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   rejectUser: noop,
   updateUserSubscription: noop,
   toggleUserSuspension: noop,
-  deleteUser: noop,
-  registerUser: () => ({ success: false, user: GUEST_USER, message: '' }),
+  deleteUser: noopAsync,
+  promoteUserToSuperAdmin: noopAsync,
+  registerUser: async () => ({ success: false, user: GUEST_USER, message: '' }),
   switchActiveUser: noop,
   syncPageLiveFollowers: noopAsync,
   syncPostInsights: noopAsync,
@@ -722,7 +724,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       wpUsername?: string;
       wpAppPassword?: string;
       bridgeApiKey?: string;
-      bridgeType?: 'auto-engine' | 'rest-api';
+      bridgeType?: 'plugin-connector' | 'auto-engine' | 'rest-api';
     }
   ): SocialAccount => {
     const newAcc: SocialAccount = {
@@ -1452,7 +1454,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     loadUserDataForEmail(cleanEmail, googleUser.name);
   };
 
-  const loginWithEmail = (email: string, password: string) => {
+  const loginWithEmail = async (email: string, password: string) => {
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { success: false, message: 'Please enter a valid email address.' };
@@ -1461,86 +1463,84 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: 'Please enter your password.' };
     }
 
-    const found = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (!found) {
-      return {
-        success: false,
-        message: 'No account found with this email. Please sign up first.',
-      };
-    }
+    try {
+      // Query the backend / MySQL database directly
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', email: cleanEmail, password }),
+      });
 
-    if (found.provider === 'google' && !found.password) {
-      return {
-        success: false,
-        message: 'This account uses Google Sign-In. Please click "Continue with Google".',
-      };
-    }
+      const data = await res.json();
 
-    if (found.password && found.password !== password) {
-      return {
-        success: false,
-        message: 'Incorrect password. Please try again.',
-      };
-    }
-
-    const isOwner =
-      cleanEmail === 'suzaldhiman@gmail.com' ||
-      cleanEmail === 'suzal@khabarmonkey.com' ||
-      cleanEmail.includes('suzal') ||
-      cleanEmail.includes('khabarmonkey') ||
-      cleanEmail.startsWith('admin');
-
-    // Strict Admin Approval Enforcement
-    if (!isOwner) {
-      if (found.approvalStatus === 'pending') {
+      if (!res.ok || !data.success) {
+        // If user was deleted or not found in DB, purge client cache completely
+        if (res.status === 404 || data.code === 'USER_NOT_FOUND') {
+          setAllUsers((prev) => prev.filter((u) => u.email.toLowerCase() !== cleanEmail));
+          if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem(`sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`);
+            try {
+              const stored = localStorage.getItem('sap_all_registered_users');
+              if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) {
+                  localStorage.setItem(
+                    'sap_all_registered_users',
+                    JSON.stringify(parsed.filter((u: User) => u.email.toLowerCase() !== cleanEmail))
+                  );
+                }
+              }
+            } catch {}
+          }
+        }
         return {
           success: false,
-          message: 'Aapka account abhi Admin approval ke liye pending hai. Admin dwara approve hone ke baad hi aap login kar payenge.',
+          message: data.message || 'Login failed. Please check your credentials.',
         };
       }
-      if (found.approvalStatus === 'suspended') {
-        return {
-          success: false,
-          message: 'Aapka account temporarily suspend kar diya gaya hai. Kripya admin se sampark karein.',
-        };
+
+      const dbUser: User = data.user;
+
+      setAllUsers((prev) => {
+        const exists = prev.some((u) => u.id === dbUser.id || u.email.toLowerCase() === cleanEmail);
+        if (exists) {
+          return prev.map((u) =>
+            u.id === dbUser.id || u.email.toLowerCase() === cleanEmail ? dbUser : u
+          );
+        }
+        return [dbUser, ...prev];
+      });
+
+      setUser(dbUser);
+      setIsAuthenticated(true);
+
+      if (typeof document !== 'undefined') {
+        document.cookie = 'sap_google_user=; path=/; max-age=0; SameSite=Lax';
       }
-      if (found.approvalStatus === 'rejected') {
-        return {
-          success: false,
-          message: `Aapka registration request admin dwara decline kar diya gaya hai${found.rejectionReason ? ': ' + found.rejectionReason : '.'}`,
-        };
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('sap_current_user_email', cleanEmail);
+        localStorage.setItem(
+          `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+          JSON.stringify(dbUser)
+        );
       }
+      loadUserDataForEmail(cleanEmail, dbUser.name);
+
+      return {
+        success: true,
+        user: dbUser,
+        message: 'Signed in successfully!',
+      };
+    } catch (err) {
+      console.error('[loginWithEmail] Network error:', err);
+      return {
+        success: false,
+        message: 'Network error while contacting server. Please try again.',
+      };
     }
-
-    const updatedUser: User = {
-      ...found,
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    setAllUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
-    setUser(updatedUser);
-    setIsAuthenticated(true);
-
-    if (typeof document !== 'undefined') {
-      document.cookie = 'sap_google_user=; path=/; max-age=0; SameSite=Lax';
-    }
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('sap_current_user_email', cleanEmail);
-      localStorage.setItem(
-        `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
-        JSON.stringify(updatedUser)
-      );
-    }
-    loadUserDataForEmail(cleanEmail, updatedUser.name);
-
-    return {
-      success: true,
-      user: updatedUser,
-      message: 'Signed in successfully!',
-    };
   };
 
-  const registerUser = (
+  const registerUser = async (
     name: string,
     email: string,
     tierPreference: SubscriptionTier = 'starter',
@@ -1551,93 +1551,64 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { success: false, user: GUEST_USER, message: 'Please provide a valid email address.' };
     }
 
-    const existing = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (existing) {
-      return { success: false, user: existing, message: 'This email is already registered. Please sign in.' };
-    }
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register',
+          name: name.trim() || cleanEmail.split('@')[0],
+          email: cleanEmail,
+          password,
+          tierPreference,
+        }),
+      });
 
-    const isOwner =
-      cleanEmail === 'suzaldhiman@gmail.com' ||
-      cleanEmail === 'suzal@khabarmonkey.com' ||
-      cleanEmail.includes('suzal') ||
-      cleanEmail.includes('khabarmonkey') ||
-      cleanEmail.startsWith('admin');
+      const data = await res.json();
 
-    const newUser: User = {
-      id: `usr_${Date.now()}`,
-      name: name.trim() || cleanEmail.split('@')[0],
-      email: cleanEmail,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-      role: isOwner ? 'owner' : 'member',
-      provider: 'email',
-      password: password || undefined,
-      approvalStatus: isOwner ? 'approved' : 'pending',
-      createdAt: new Date().toISOString(),
-      lastLoginAt: isOwner ? new Date().toISOString() : undefined,
-      subscription: isOwner
-        ? {
-            tier: 'agency',
-            status: 'active',
-            expiresAt: null,
-            maxConnectedPages: 50,
-            maxDailyPosts: 500,
-            features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: true, canUseAnalytics: true },
-          }
-        : {
-            tier: tierPreference,
-            status: 'trial',
-            expiresAt: null,
-            maxConnectedPages: tierPreference === 'pro' ? 15 : tierPreference === 'agency' ? 50 : 5,
-            maxDailyPosts: tierPreference === 'pro' ? 100 : tierPreference === 'agency' ? 500 : 30,
-            features: {
-              canUseAI: true,
-              canUseBulkScheduler: tierPreference !== 'free',
-              canUseAutomationFeed: tierPreference === 'agency',
-              canUseAnalytics: true,
-            },
-          },
-    };
-
-    setAllUsers((prev) => [newUser, ...prev]);
-
-    // Save to MySQL DB
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'register',
-        name: newUser.name,
-        email: newUser.email,
-        password: newUser.password,
-        tierPreference,
-      }),
-    }).catch((e) => console.warn('[App Context] Failed to register user in DB:', e));
-
-    if (isOwner) {
-      setUser(newUser);
-      setIsAuthenticated(true);
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('sap_current_user_email', cleanEmail);
-        localStorage.setItem(
-          `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
-          JSON.stringify(newUser)
-        );
+      if (!res.ok || !data.success) {
+        return {
+          success: false,
+          user: GUEST_USER,
+          message: data.message || 'Registration failed.',
+        };
       }
+
+      const createdUser: User = data.user;
+
+      setAllUsers((prev) => [createdUser, ...prev.filter((u) => u.email.toLowerCase() !== cleanEmail)]);
+
+      const isOwner =
+        cleanEmail === 'suzaldhiman@gmail.com' ||
+        cleanEmail === 'suzal@khabarmonkey.com' ||
+        createdUser.role === 'owner';
+
+      if (isOwner) {
+        setUser(createdUser);
+        setIsAuthenticated(true);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('sap_current_user_email', cleanEmail);
+          localStorage.setItem(
+            `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+            JSON.stringify(createdUser)
+          );
+        }
+      }
+
       return {
         success: true,
-        isPending: false,
-        user: newUser,
-        message: 'Welcome Admin!',
+        isPending: Boolean(data.isPending),
+        user: createdUser,
+        message: data.message || (data.isPending ? 'Awaiting approval' : 'Registered successfully!'),
+      };
+    } catch (err) {
+      console.error('[registerUser] Network error:', err);
+      return {
+        success: false,
+        user: GUEST_USER,
+        message: 'Network error during registration. Please try again.',
       };
     }
-
-    // Normal user stays unauthenticated until approved by Admin
-    return {
-      success: true,
-      isPending: true,
-      user: newUser,
-      message: 'Registration request submitted! Awaiting admin approval.',
-    };
   };
 
   const approveUser = (
@@ -1838,16 +1809,107 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteUser = (userId: string) => {
-    const targetUser = allUsers.find((u) => u.id === userId);
-    setAllUsers((prev) => prev.filter((u) => u.id !== userId));
+  const deleteUser = async (userId: string, email?: string) => {
+    const targetUser = allUsers.find(
+      (u) => u.id === userId || (email && u.email.toLowerCase() === email.toLowerCase())
+    );
+    const targetEmail = (email || targetUser?.email || '').toLowerCase().trim();
 
-    // Sync deletion to DB
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', userId, email: targetUser?.email }),
-    }).catch((e) => console.warn('[App Context] DB delete user error:', e));
+    // 1. Remove from local state immediately
+    setAllUsers((prev) =>
+      prev.filter(
+        (u) => u.id !== userId && (!targetEmail || u.email.toLowerCase() !== targetEmail)
+      )
+    );
+
+    // 2. Clear from localStorage caches
+    if (typeof localStorage !== 'undefined') {
+      if (targetEmail) {
+        localStorage.removeItem(`sap_user_profile_${targetEmail.replace(/[^a-z0-9_]/g, '_')}`);
+      }
+      try {
+        const stored = localStorage.getItem('sap_all_registered_users');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter(
+              (u: User) =>
+                u.id !== userId && (!targetEmail || u.email.toLowerCase() !== targetEmail)
+            );
+            localStorage.setItem('sap_all_registered_users', JSON.stringify(filtered));
+          }
+        }
+      } catch {}
+    }
+
+    // 3. If currently logged in as this user, log out immediately
+    if (
+      user &&
+      (user.id === userId || (targetEmail && user.email.toLowerCase() === targetEmail))
+    ) {
+      logout();
+    }
+
+    // 4. Await database deletion in MySQL
+    try {
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', userId, email: targetEmail }),
+      });
+    } catch (e) {
+      console.warn('[App Context] DB delete user error:', e);
+    }
+  };
+
+  const promoteUserToSuperAdmin = async (userId: string, makeSuperAdmin: boolean) => {
+    const role = makeSuperAdmin ? 'owner' : 'member';
+    const tier = makeSuperAdmin ? 'agency' : 'pro';
+
+    const newSub: UserSubscription = {
+      tier: tier as SubscriptionTier,
+      status: 'active',
+      expiresAt: null,
+      maxConnectedPages: makeSuperAdmin ? 50 : 15,
+      maxDailyPosts: makeSuperAdmin ? 500 : 100,
+      features: {
+        canUseAI: true,
+        canUseBulkScheduler: true,
+        canUseAutomationFeed: makeSuperAdmin || tier === 'agency',
+        canUseAnalytics: true,
+      },
+    };
+
+    setAllUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== userId) return u;
+        return {
+          ...u,
+          role: role as any,
+          approvalStatus: 'approved' as const,
+          subscription: newSub,
+        };
+      })
+    );
+
+    if (user?.id === userId) {
+      setUser((prev) => ({
+        ...prev,
+        role: role as any,
+        approvalStatus: 'approved' as const,
+        subscription: newSub,
+      }));
+    }
+
+    try {
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'promote', userId, role, tier }),
+      });
+    } catch (e) {
+      console.warn('[App Context] DB promote user error:', e);
+    }
   };
 
   const switchActiveUser = (userId: string) => {
@@ -2387,6 +2449,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateUserSubscription,
         toggleUserSuspension,
         deleteUser,
+        promoteUserToSuperAdmin,
         registerUser,
         switchActiveUser,
         syncPageLiveFollowers,

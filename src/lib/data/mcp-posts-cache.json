@@ -1,5 +1,52 @@
 [
   {
+    "id": "post_wp_1794662578500_37obr",
+    "workspaceId": "ws_default",
+    "postType": "image",
+    "title": "शिमला में भारी बर्फबारी, 3 नेशनल हाईवे बंद",
+    "message": "शिमला में भारी बर्फबारी, 3 नेशनल हाईवे बंद\n\nशिमला, मनाली और लाहौल-स्पीति में मौसम ने करवट ले ली है और भारी बर्फबारी जारी है।",
+    "mediaUrl": "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1200",
+    "thumbnailUrl": "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1200",
+    "linkUrl": "https://himachalnews.com/shimla-snowfall-alert",
+    "commentText": "👉 पूरी खबर यहाँ पढ़ें: https://himachalnews.com/shimla-snowfall-alert",
+    "pageIds": [
+      "pg_1",
+      "pg_4",
+      "pg_7"
+    ],
+    "status": "published",
+    "scheduledAt": "2026-11-14T13:22:58.500Z",
+    "publishedAt": "2026-11-14T13:22:58.500Z",
+    "results": [
+      {
+        "pageId": "pg_1",
+        "platform": "facebook",
+        "pageName": "Khabar Monkey (Official)",
+        "status": "failed",
+        "error": "Missing Facebook Page Access Token.",
+        "timestamp": "2026-11-14T13:22:58.500Z"
+      },
+      {
+        "pageId": "pg_4",
+        "platform": "instagram",
+        "pageName": "Instagram: @himachali_samachar",
+        "status": "success",
+        "externalPostId": "sim_1794662578500_756",
+        "timestamp": "2026-11-14T13:22:58.500Z"
+      },
+      {
+        "pageId": "pg_7",
+        "platform": "threads",
+        "pageName": "Threads: @himachali_samachar",
+        "status": "success",
+        "externalPostId": "sim_1794662578500_506",
+        "timestamp": "2026-11-14T13:22:58.500Z"
+      }
+    ],
+    "createdAt": "2026-11-14T13:22:58.500Z",
+    "updatedAt": "2026-11-14T13:22:58.501Z"
+  },
+  {
     "id": "pst_mcp_1794660237550_0_905",
     "workspaceId": "ws_default",
     "postType": "text",
