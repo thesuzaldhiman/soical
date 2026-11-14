@@ -38,6 +38,7 @@ export default function AdminDashboardPage() {
   const isAuthorizedAdmin =
     currentUser?.role === 'owner' ||
     currentUser?.role === 'admin' ||
+    currentUser?.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com' ||
     currentUser?.email?.toLowerCase().includes('suzal') ||
     currentUser?.email?.toLowerCase().includes('khabarmonkey');
 
@@ -228,6 +229,20 @@ export default function AdminDashboardPage() {
 
                       <button
                         type="button"
+                        onClick={() => {
+                          if (confirm(`Kya aap ${pUser.name} (${pUser.email}) ki registration request delete karna chahte hain?`)) {
+                            deleteUser(pUser.id);
+                            showToast(`Registration request for ${pUser.name} deleted.`);
+                          }
+                        }}
+                        className="p-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 transition-colors cursor-pointer"
+                        title="Delete / Remove Request"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleQuickApprove(pUser.id, pUser.subscription?.tier || 'pro')}
                         className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-transform active:scale-95 cursor-pointer"
                       >
@@ -290,8 +305,8 @@ export default function AdminDashboardPage() {
                   ) : (
                     filteredUsers.map((u) => {
                       const sub = u.subscription;
-                      const isOwner = u.role === 'owner';
-                      const isCurrent = currentUser.id === u.id;
+                      const isSuperAdmin = u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
+                      const isCurrent = currentUser?.id === u.id || currentUser?.email?.toLowerCase().trim() === u.email?.toLowerCase().trim();
 
                       return (
                         <tr key={u.id} className="hover:bg-[#F8F9FA]/60 transition-colors">
@@ -312,9 +327,9 @@ export default function AdminDashboardPage() {
                                       YOU
                                     </span>
                                   )}
-                                  {isOwner && (
+                                  {isSuperAdmin && (
                                     <span className="text-[8px] font-black px-1 rounded bg-amber-100 text-amber-900">
-                                      OWNER
+                                      SUPER ADMIN
                                     </span>
                                   )}
                                 </div>
@@ -409,7 +424,7 @@ export default function AdminDashboardPage() {
                               </button>
 
                               {/* Suspend Toggle */}
-                              {!isOwner && (
+                              {!isSuperAdmin && !isCurrent && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -427,24 +442,24 @@ export default function AdminDashboardPage() {
                                   }`}
                                   title={u.approvalStatus === 'suspended' ? 'Unsuspend' : 'Suspend'}
                                 >
-                                  <Ban className="w-3 h-3" />
+                                  <Ban className="w-3.5 h-3.5" />
                                 </button>
                               )}
 
-                              {/* Delete */}
-                              {!isOwner && (
+                              {/* Remove User */}
+                              {!isSuperAdmin && !isCurrent && (
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (confirm(`Kya aap ${u.name} ka account delete karna chahte hain?`)) {
+                                    if (confirm(`Kya aap ${u.name} (${u.email}) ka account completely delete/remove karna chahte hain? Iska sara data server se delete ho jayega.`)) {
                                       deleteUser(u.id);
-                                      showToast('User deleted.');
+                                      showToast(`User ${u.name} successfully removed.`);
                                     }
                                   }}
-                                  className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-slate-400 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors cursor-pointer"
-                                  title="Delete user"
+                                  className="p-1.5 rounded-lg border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
+                                  title="Remove / Delete User Account"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
@@ -683,6 +698,11 @@ export default function AdminDashboardPage() {
         <EditSubscriptionModal
           user={editingUser}
           onClose={() => setEditingUser(null)}
+          onDelete={() => {
+            deleteUser(editingUser.id);
+            showToast(`User ${editingUser.name} deleted.`);
+            setEditingUser(null);
+          }}
           onSave={(sub, newStatus) => {
             if (newStatus === 'approved') {
               approveUser(
@@ -769,10 +789,12 @@ function EditSubscriptionModal({
   user,
   onClose,
   onSave,
+  onDelete,
 }: {
   user: User;
   onClose: () => void;
   onSave: (sub: UserSubscription, newStatus: string) => void;
+  onDelete?: () => void;
 }) {
   const currentSub = user.subscription;
 
@@ -981,22 +1003,41 @@ function EditSubscriptionModal({
         </div>
 
         {/* Action Buttons */}
-        <div className="pt-2 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="py-1.5 px-3 rounded-lg border border-[#E2E8F0] hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="py-1.5 px-4 rounded-lg bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-transform active:scale-95 cursor-pointer"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Save &amp; Apply</span>
-          </button>
+        <div className="pt-2.5 border-t border-[#E2E8F0] flex items-center justify-between">
+          {user.email?.toLowerCase().trim() !== 'suzaldhiman@gmail.com' ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`Kya aap ${user.name} (${user.email}) ka account completely delete/remove karna chahte hain?`)) {
+                  onDelete?.();
+                }
+              }}
+              className="py-1.5 px-3 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Remove User</span>
+            </button>
+          ) : (
+            <div />
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="py-1.5 px-3 rounded-lg border border-[#E2E8F0] hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="py-1.5 px-4 rounded-lg bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-transform active:scale-95 cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Save &amp; Apply</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ import { User, SubscriptionTier, UserSubscription } from '@/types';
 const isOwnerEmail = (email: string) => {
   const clean = email.toLowerCase().trim();
   return (
+    clean === 'suzaldhiman@gmail.com' ||
     clean === 'suzal@khabarmonkey.com' ||
     clean.includes('suzal') ||
     clean.includes('khabarmonkey') ||

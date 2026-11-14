@@ -75,7 +75,7 @@ export function ApprovalGate({ children }: ApprovalGateProps) {
 
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <a
-                href="mailto:suzal@khabarmonkey.com?subject=Appeal%20Account%20Access"
+                href="mailto:suzaldhiman@gmail.com?subject=Appeal%20Account%20Access"
                 className="flex-1 py-3 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
               >
                 <Mail className="w-4 h-4" />
@@ -196,7 +196,7 @@ export function ApprovalGate({ children }: ApprovalGateProps) {
           {/* Contact Admin & Signout */}
           <div className="pt-2 border-t border-[#E2E8F0] flex flex-col sm:flex-row gap-2.5">
             <a
-              href="mailto:suzal@khabarmonkey.com?subject=Approve%20My%20Account%20Social%20Auto%20Poster"
+              href="mailto:suzaldhiman@gmail.com?subject=Approve%20My%20Account%20Social%20Auto%20Poster"
               className="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
             >
               <Mail className="w-3.5 h-3.5" />

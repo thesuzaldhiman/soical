@@ -1484,6 +1484,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     const isOwner =
+      cleanEmail === 'suzaldhiman@gmail.com' ||
       cleanEmail === 'suzal@khabarmonkey.com' ||
       cleanEmail.includes('suzal') ||
       cleanEmail.includes('khabarmonkey') ||
@@ -1556,6 +1557,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     const isOwner =
+      cleanEmail === 'suzaldhiman@gmail.com' ||
       cleanEmail === 'suzal@khabarmonkey.com' ||
       cleanEmail.includes('suzal') ||
       cleanEmail.includes('khabarmonkey') ||

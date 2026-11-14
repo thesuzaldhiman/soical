@@ -84,10 +84,20 @@ export async function initDbTables(): Promise<boolean> {
       await addColumnIfNotExists('rejection_reason', 'TEXT NULL');
       await addColumnIfNotExists('last_login_at', 'TIMESTAMP NULL');
 
-      // Ensure Owner user (Suzal Dhiman) always exists and is approved in app_users
+      // Ensure Super Admin user (Suzal Dhiman - suzaldhiman@gmail.com) always exists and is approved in app_users
       await connection.query(`
         INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
-        VALUES ('usr_01', 'suzal@khabarmonkey.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'google', 'agency')
+        VALUES ('usr_01', 'suzaldhiman@gmail.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'google', 'agency')
+        ON DUPLICATE KEY UPDATE
+          role = 'owner',
+          approval_status = 'approved',
+          subscription_tier = 'agency';
+      `);
+
+      // Also ensure suzal@khabarmonkey.com is approved
+      await connection.query(`
+        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
+        VALUES ('usr_01b', 'suzal@khabarmonkey.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'google', 'agency')
         ON DUPLICATE KEY UPDATE
           role = 'owner',
           approval_status = 'approved',

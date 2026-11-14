@@ -170,7 +170,7 @@ export default function SignupPage() {
               </Link>
 
               <a
-                href="mailto:suzal@khabarmonkey.com?subject=Approval%20Request%20Social%20Auto%20Poster"
+                href="mailto:suzaldhiman@gmail.com?subject=Approval%20Request%20Social%20Auto%20Poster"
                 className="w-full py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
               >
                 <Mail className="w-3.5 h-3.5" />

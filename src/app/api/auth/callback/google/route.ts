@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
 
     const userEmail = (userData.email || '').toLowerCase().trim();
     const isOwner =
+      userEmail === 'suzaldhiman@gmail.com' ||
       userEmail === 'suzal@khabarmonkey.com' ||
       userEmail.includes('suzal') ||
       userEmail.includes('khabarmonkey') ||

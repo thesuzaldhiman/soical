@@ -18,12 +18,12 @@ import { DEFAULT_SENSITIVE_WORDS } from '../utils/sensitive-words';
 export const INITIAL_USER: User = {
   id: 'usr_01',
   name: 'Suzal Dhiman',
-  email: 'suzal@khabarmonkey.com',
+  email: 'suzaldhiman@gmail.com',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
   role: 'owner',
   approvalStatus: 'approved',
   createdAt: '2026-01-01T00:00:00Z',
-  lastLoginAt: '2026-11-12T04:00:00Z',
+  lastLoginAt: '2026-11-14T12:00:00Z',
   subscription: {
     tier: 'agency',
     status: 'active',
