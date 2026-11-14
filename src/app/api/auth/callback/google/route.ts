@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBaseUrl } from '@/lib/utils/url';
+import { getDbPool, initDbTables } from '@/lib/db/mysql';
 
 
 
@@ -58,13 +59,59 @@ export async function GET(request: NextRequest) {
     const userData = await userRes.json();
     console.log('[Google Auth Callback] User profile received for email:', userData.email);
 
+    const userEmail = (userData.email || '').toLowerCase().trim();
+    const isOwner =
+      userEmail === 'suzal@khabarmonkey.com' ||
+      userEmail.includes('suzal') ||
+      userEmail.includes('khabarmonkey') ||
+      userEmail.startsWith('admin@');
+
+    let role = isOwner ? 'owner' : 'member';
+    let approvalStatus = isOwner ? 'approved' : 'pending';
+
+    // Verify or insert user in MySQL database
+    const pool = getDbPool();
+    if (pool) {
+      try {
+        await initDbTables();
+        const [existing] = await pool.query<any[]>(
+          'SELECT role, approval_status FROM app_users WHERE email = ? LIMIT 1',
+          [userEmail]
+        );
+        if (existing && existing.length > 0) {
+          role = existing[0].role || role;
+          approvalStatus = existing[0].approval_status || approvalStatus;
+        } else {
+          await pool.query(
+            `INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               name = VALUES(name),
+               avatar = VALUES(avatar)`,
+            [
+              userData.sub || `google_${Date.now()}`,
+              userEmail,
+              userData.name || userEmail.split('@')[0],
+              userData.picture || '',
+              role,
+              approvalStatus,
+              'google',
+              isOwner ? 'agency' : 'starter',
+            ]
+          );
+        }
+      } catch (err) {
+        console.error('[Google Auth Callback] Database sync error:', err);
+      }
+    }
+
     const userProfile = {
       id: userData.sub || `google_${Date.now()}`,
-      name: userData.name || userData.email?.split('@')[0] || 'Google User',
-      email: (userData.email || '').toLowerCase().trim(),
+      name: userData.name || userEmail.split('@')[0] || 'Google User',
+      email: userEmail,
       avatar: userData.picture || '',
-      role: 'owner',
-      approvalStatus: 'approved',
+      role,
+      approvalStatus,
       provider: 'google',
     };
 

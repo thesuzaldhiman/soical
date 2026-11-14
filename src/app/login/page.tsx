@@ -46,9 +46,15 @@ function LoginContent() {
   const errorParam = searchParams.get('error');
   const isGoogleMissing = errorParam === 'google_client_id_missing';
 
-  // Automatically redirect already logged in users to dashboard
+  // Automatically redirect already logged in & approved users to dashboard
   useEffect(() => {
-    if (isHydrated && isAuthenticated && user?.email && !searchParams.get('logout')) {
+    if (
+      isHydrated &&
+      isAuthenticated &&
+      user?.email &&
+      !searchParams.get('logout') &&
+      (user.approvalStatus === 'approved' || user.role === 'owner')
+    ) {
       router.replace('/dashboard');
     }
   }, [isHydrated, isAuthenticated, user, searchParams, router]);

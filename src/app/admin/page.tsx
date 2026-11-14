@@ -15,6 +15,7 @@ import {
   X,
   Sliders,
   Shield,
+  ShieldAlert,
   ArrowRight,
   Filter,
   RotateCcw,
@@ -34,6 +35,12 @@ export default function AdminDashboardPage() {
     switchActiveUser,
   } = useApp();
 
+  const isAuthorizedAdmin =
+    currentUser?.role === 'owner' ||
+    currentUser?.role === 'admin' ||
+    currentUser?.email?.toLowerCase().includes('suzal') ||
+    currentUser?.email?.toLowerCase().includes('khabarmonkey');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'suspended'>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
@@ -41,6 +48,28 @@ export default function AdminDashboardPage() {
   const [rejectionTargetUser, setRejectionTargetUser] = useState<User | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  if (!isAuthorizedAdmin) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shadow-xs">
+          <ShieldAlert className="w-8 h-8 stroke-[2.2]" />
+        </div>
+        <div className="space-y-1 max-w-sm">
+          <h1 className="text-xl font-black text-slate-900 tracking-tight">Access Restricted</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">
+            Admin Management Console sirf authorized platform administrator ke liye accessible hai.
+          </p>
+        </div>
+        <Link
+          href="/dashboard"
+          className="py-2.5 px-5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
+        >
+          Return to Dashboard
+        </Link>
+      </div>
+    );
+  }
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
