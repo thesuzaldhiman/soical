@@ -53,12 +53,45 @@ export async function initDbTables(): Promise<boolean> {
           email VARCHAR(255) UNIQUE NOT NULL,
           name VARCHAR(255),
           avatar TEXT,
-          role VARCHAR(50) DEFAULT 'owner',
-          approval_status VARCHAR(50) DEFAULT 'approved',
-          provider VARCHAR(50) DEFAULT 'google',
+          role VARCHAR(50) DEFAULT 'member',
+          approval_status VARCHAR(50) DEFAULT 'pending',
+          provider VARCHAR(50) DEFAULT 'email',
+          password VARCHAR(255) NULL,
+          subscription_tier VARCHAR(50) DEFAULT 'starter',
+          subscription_data LONGTEXT NULL,
+          rejection_reason TEXT NULL,
+          last_login_at TIMESTAMP NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // Safe column migrations in case table was created with older schema
+      const addColumnIfNotExists = async (col: string, def: string) => {
+        try {
+          const [cols] = await connection.query<any[]>(`SHOW COLUMNS FROM app_users LIKE ?`, [col]);
+          if (!cols || cols.length === 0) {
+            await connection.query(`ALTER TABLE app_users ADD COLUMN ${col} ${def}`);
+          }
+        } catch (e) {
+          console.warn(`[MySQL] Note on adding column ${col}:`, e);
+        }
+      };
+
+      await addColumnIfNotExists('password', 'VARCHAR(255) NULL');
+      await addColumnIfNotExists('subscription_tier', "VARCHAR(50) DEFAULT 'starter'");
+      await addColumnIfNotExists('subscription_data', 'LONGTEXT NULL');
+      await addColumnIfNotExists('rejection_reason', 'TEXT NULL');
+      await addColumnIfNotExists('last_login_at', 'TIMESTAMP NULL');
+
+      // Ensure Owner user (Suzal Dhiman) always exists and is approved in app_users
+      await connection.query(`
+        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
+        VALUES ('usr_01', 'suzal@khabarmonkey.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'google', 'agency')
+        ON DUPLICATE KEY UPDATE
+          role = 'owner',
+          approval_status = 'approved',
+          subscription_tier = 'agency';
       `);
 
       await connection.query(`
