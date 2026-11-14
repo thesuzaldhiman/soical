@@ -483,6 +483,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
           if (parsed.accounts) {
             let sanitizedAccs = sanitizeAccounts(parsed.accounts);
+            // If user has no WordPress pages in parsed.pages, filter out WordPress accounts so removed sites never linger
+            const hasWpPages = Array.isArray(parsed.pages) && parsed.pages.some((p: any) => p.platform === 'wordpress');
+            if (!hasWpPages) {
+              sanitizedAccs = sanitizedAccs.filter((a) => a.platform !== 'wordpress');
+            }
             if (localMetaApps.length > 0) {
               sanitizedAccs = sanitizedAccs.map((a) => {
                 if (a.platform === 'facebook') {
@@ -574,42 +579,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const db = res.data;
             const dbMetaApps: MetaAppConfig[] = Array.isArray(db.settings?.metaApps) ? db.settings.metaApps : [];
 
-            if (Array.isArray(db.accounts)) {
-              let cleanedAccs = sanitizeAccounts(db.accounts).filter((a) => {
-                if (a.platform === 'facebook' && !a.metaAppId) {
-                  return !db.accounts.some((other: any) => other.platform === 'facebook' && other.metaAppId && other.accountId === a.accountId);
+            // Read cached custom meta apps from localStorage to preserve renamed app names across cloud sync
+            let cachedCustomMetaApps: MetaAppConfig[] = [];
+            if (typeof localStorage !== 'undefined') {
+              try {
+                const rawSet = localStorage.getItem('sap_app_settings');
+                if (rawSet) {
+                  const p = JSON.parse(rawSet);
+                  if (Array.isArray(p.metaApps)) cachedCustomMetaApps = p.metaApps;
                 }
-                return true;
-              });
-
-              if (dbMetaApps.length > 0) {
-                cleanedAccs = cleanedAccs.map((a) => {
-                  if (a.platform === 'facebook') {
-                    const matched = dbMetaApps.find((m) => m.id === a.metaAppId || m.appId === a.metaAppId || (a.metaAppName && m.name === a.metaAppName));
-                    if (matched) {
-                      const baseName = a.name.replace(/\s*\([^)]*\)$/, '');
-                      return { ...a, metaAppId: matched.id, metaAppName: matched.name, name: `${baseName} (${matched.name})` };
-                    }
+                if (cachedCustomMetaApps.length === 0) {
+                  const rawU = localStorage.getItem(userKey);
+                  if (rawU) {
+                    const p = JSON.parse(rawU);
+                    if (Array.isArray(p.settings?.metaApps)) cachedCustomMetaApps = p.settings.metaApps;
                   }
-                  return a;
-                });
-              }
-
-              setAccounts(cleanedAccs);
+                }
+              } catch {}
             }
+
+            const incomingMetaApps: MetaAppConfig[] = dbMetaApps;
+            let effectiveMetaApps = incomingMetaApps.map((ia) => {
+              const localMatch = cachedCustomMetaApps.find((ca) => ca.id === ia.id || ca.appId === ia.appId);
+              if (localMatch && localMatch.name && localMatch.name !== 'Primary Meta Developer App') {
+                return { ...ia, name: localMatch.name };
+              }
+              return ia;
+            });
+            cachedCustomMetaApps.forEach((ca) => {
+              if (!effectiveMetaApps.some((ea) => ea.id === ca.id || ea.appId === ca.appId)) {
+                effectiveMetaApps.push(ca);
+              }
+            });
+            if (effectiveMetaApps.length === 0 && dbMetaApps.length > 0) {
+              effectiveMetaApps = dbMetaApps;
+            }
+
+            let healedPages: SocialPage[] = [];
             if (Array.isArray(db.pages)) {
               const validAccountIds = new Set((db.accounts || []).map((a: any) => a.id));
-              let healedPages = sanitizePages(db.pages).filter((p) => {
+              healedPages = sanitizePages(db.pages).filter((p) => {
                 if (p.platform === 'facebook' && !p.metaAppId) {
                   if (p.accountId && !validAccountIds.has(p.accountId)) return false;
                 }
                 return true;
               });
 
-              if (dbMetaApps.length > 0) {
+              if (effectiveMetaApps.length > 0) {
                 healedPages = healedPages.map((p) => {
                   if (p.platform === 'facebook') {
-                    const matched = dbMetaApps.find((m) => m.id === p.metaAppId || m.appId === p.metaAppId || (p.metaAppName && m.name === p.metaAppName));
+                    const matched = effectiveMetaApps.find((m) => m.id === p.metaAppId || m.appId === p.metaAppId || (p.metaAppName && m.name === p.metaAppName));
                     if (matched) {
                       return { ...p, metaAppId: matched.id, metaAppName: matched.name };
                     }
@@ -623,6 +642,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 setTimeout(() => syncPageLiveFollowers(), 400);
               }
             }
+
+            let cleanedAccs: SocialAccount[] = [];
+            if (Array.isArray(db.accounts)) {
+              cleanedAccs = sanitizeAccounts(db.accounts).filter((a) => {
+                if (a.platform === 'facebook' && !a.metaAppId) {
+                  return !db.accounts.some((other: any) => other.platform === 'facebook' && other.metaAppId && other.accountId === a.accountId);
+                }
+                // Filter out orphaned WordPress accounts if user removed WordPress destinations
+                if (a.platform === 'wordpress') {
+                  const hasWpPage = healedPages.some((p: any) => p.platform === 'wordpress' && (p.accountId === a.id || p.siteUrl === a.siteUrl));
+                  if (!hasWpPage) return false;
+                }
+                return true;
+              });
+
+              // Extra anti-phantom check: If no WordPress destinations remain in pages, strip all WordPress accounts
+              if (!healedPages.some((p) => p.platform === 'wordpress')) {
+                cleanedAccs = cleanedAccs.filter((a) => a.platform !== 'wordpress');
+              }
+
+              if (effectiveMetaApps.length > 0) {
+                cleanedAccs = cleanedAccs.map((a) => {
+                  if (a.platform === 'facebook') {
+                    const matched = effectiveMetaApps.find((m) => m.id === a.metaAppId || m.appId === a.metaAppId || (a.metaAppName && m.name === a.metaAppName));
+                    if (matched) {
+                      const baseName = a.name.replace(/\s*\([^)]*\)$/, '');
+                      return { ...a, metaAppId: matched.id, metaAppName: matched.name, name: `${baseName} (${matched.name})` };
+                    }
+                  }
+                  return a;
+                });
+              }
+
+              setAccounts(cleanedAccs);
+            }
             if (Array.isArray(db.categories)) setCategories(db.categories);
             if (Array.isArray(db.posts)) setPosts(db.posts);
             if (Array.isArray(db.sigTemplates)) setSigTemplates(db.sigTemplates);
@@ -630,30 +684,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(db.postPerformances)) setPostPerformances(db.postPerformances);
             if (Array.isArray(db.postComments)) setPostComments(db.postComments);
             if (Array.isArray(db.automations)) setAutomations(db.automations);
+
+            let finalSettingsObj: AppSettings | null = null;
             if (db.settings && typeof db.settings === 'object') {
               setSettings((prev) => {
-                const incomingMetaApps = Array.isArray(db.settings.metaApps) ? db.settings.metaApps : [];
-                const localMetaApps = Array.isArray(prev.metaApps) ? prev.metaApps : [];
-                const mergedApps = [...incomingMetaApps];
-                localMetaApps.forEach((la) => {
-                  if (!mergedApps.some((ma) => ma.id === la.id || ma.appId === la.appId)) {
-                    mergedApps.push(la);
-                  }
-                });
-                return {
+                const finalMetaApps = effectiveMetaApps.length > 0 ? effectiveMetaApps : (prev.metaApps || []);
+
+                const finalSettings = {
                   ...prev,
                   ...db.settings,
-                  metaApps: mergedApps.length > 0 ? mergedApps : prev.metaApps,
+                  metaApps: finalMetaApps,
                 };
+                finalSettingsObj = finalSettings;
+
+                if (typeof localStorage !== 'undefined') {
+                  try {
+                    localStorage.setItem('sap_app_settings', JSON.stringify(finalSettings));
+                  } catch {}
+                }
+
+                return finalSettings;
               });
             }
             if (db.workspace) setWorkspace(db.workspace);
 
-            // Update local storage cache
+            // Update local storage cache safely with sanitized & healed data
+            const authoritativePayload = {
+              ...db,
+              accounts: cleanedAccs,
+              pages: healedPages,
+              settings: finalSettingsObj || db.settings,
+            };
             if (typeof localStorage !== 'undefined') {
               try {
-                localStorage.setItem(userKey, JSON.stringify(db));
+                localStorage.setItem(userKey, JSON.stringify(authoritativePayload));
               } catch {}
+            }
+
+            // If user had customized Meta App name locally or purged removed WP sites, ensure Hostinger MySQL is updated permanently
+            const hasCustomMetaName = effectiveMetaApps.some(
+              (ea) => ea.name && ea.name !== 'Primary Meta Developer App' && !dbMetaApps.some((da) => da.id === ea.id && da.name === ea.name)
+            );
+            const hadOrphanedWp = Array.isArray(db.accounts) && db.accounts.some((a: any) => a.platform === 'wordpress') && !healedPages.some((p) => p.platform === 'wordpress');
+            if (hasCustomMetaName || hadOrphanedWp) {
+              syncToCloud(cleanEmail, authoritativePayload, user);
             }
           } else if (res.success && !res.data) {
             // First time on MySQL: Seed DB with current local data
@@ -1042,8 +1116,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeAccount = (id: string) => {
-    setAccounts((prev) => prev.filter((a) => a.id !== id));
-    setPages((prev) => prev.filter((p) => p.accountId !== id));
+    let targetAccount: SocialAccount | undefined;
+    setAccounts((prev) => {
+      targetAccount = prev.find((a) => a.id === id);
+      return prev.filter((a) => a.id !== id);
+    });
+    setPages((prev) => {
+      const nextPages = prev.filter((p) => {
+        if (p.accountId === id) return false;
+        if (targetAccount?.platform === 'wordpress') {
+          if (p.platform === 'wordpress' && (p.id === id || (targetAccount.siteUrl && p.siteUrl === targetAccount.siteUrl))) {
+            return false;
+          }
+        }
+        return true;
+      });
+      return nextPages;
+    });
   };
 
   const togglePageActive = (id: string) => {
@@ -1053,7 +1142,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const disconnectPage = (id: string) => {
-    setPages((prev) => prev.filter((p) => p.id !== id));
+    let nextPages: SocialPage[] = [];
+    let targetPage: SocialPage | undefined;
+
+    setPages((prev) => {
+      targetPage = prev.find((p) => p.id === id);
+      nextPages = prev.filter((p) => p.id !== id);
+      return nextPages;
+    });
+
+    // When a page is disconnected, clean up associated accounts to prevent phantom/orphaned accounts
+    setAccounts((prev) => {
+      const remainingWpPages = nextPages.filter((p) => p.platform === 'wordpress');
+      return prev.filter((a) => {
+        if (targetPage?.platform === 'wordpress' || (a.platform === 'wordpress' && remainingWpPages.length === 0)) {
+          if (remainingWpPages.length === 0) return false;
+          if (targetPage && (a.id === targetPage.accountId || a.id === targetPage.id)) return false;
+          if (
+            targetPage?.siteUrl &&
+            a.siteUrl &&
+            a.siteUrl.toLowerCase().trim() === targetPage.siteUrl.toLowerCase().trim()
+          ) {
+            return false;
+          }
+        } else if (targetPage?.accountId && a.id === targetPage.accountId) {
+          const hasOtherPages = nextPages.some((p) => p.accountId === targetPage?.accountId);
+          if (!hasOtherPages) return false;
+        }
+        return true;
+      });
+    });
   };
 
   const updateUser = (userData: Partial<User>) => {
@@ -1564,34 +1682,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const trimmed = newName.trim();
       if (!appId || !trimmed) return;
 
-      const currentApps = settings?.metaApps || [];
-      const targetApp = currentApps.find((a) => a.id === appId || a.appId === appId);
-      const oldName = targetApp?.name;
+      let nextSettingsObj: AppSettings | null = null;
+      let targetAppObj: MetaAppConfig | undefined;
+      let oldNameStr: string | undefined;
 
-      const updatedApps = currentApps.map((a) => {
-        if (a.id === appId || a.appId === appId) {
-          return { ...a, name: trimmed };
-        }
-        return a;
+      setSettings((prev) => {
+        const currentApps = prev?.metaApps || [];
+        targetAppObj = currentApps.find((a) => a.id === appId || a.appId === appId);
+        oldNameStr = targetAppObj?.name;
+
+        const updatedApps = currentApps.map((a) => {
+          if (a.id === appId || a.appId === appId) {
+            return { ...a, name: trimmed };
+          }
+          return a;
+        });
+
+        const nextSettings: AppSettings = {
+          ...(prev || INITIAL_SETTINGS),
+          metaApps: updatedApps,
+        };
+        nextSettingsObj = nextSettings;
+        return nextSettings;
       });
-
-      const nextSettings: AppSettings = {
-        ...(settings || INITIAL_SETTINGS),
-        metaApps: updatedApps,
-      };
-      setSettings(nextSettings);
 
       let nextPages: SocialPage[] = [];
       setPages((prevPages) => {
         nextPages = prevPages.map((p) => {
           const isMatch =
             p.metaAppId === appId ||
-            (targetApp && (p.metaAppId === targetApp.appId || p.metaAppId === targetApp.id)) ||
-            (oldName && p.metaAppName === oldName);
+            (targetAppObj && (p.metaAppId === targetAppObj.appId || p.metaAppId === targetAppObj.id)) ||
+            (oldNameStr && p.metaAppName === oldNameStr);
           if (isMatch) {
             return {
               ...p,
-              metaAppId: targetApp?.id || appId,
+              metaAppId: targetAppObj?.id || appId,
               metaAppName: trimmed,
             };
           }
@@ -1610,13 +1735,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         nextAccounts = prevAccounts.map((acc) => {
           const isMatch =
             acc.metaAppId === appId ||
-            (targetApp && (acc.metaAppId === targetApp.appId || acc.metaAppId === targetApp.id)) ||
-            (oldName && acc.metaAppName === oldName);
+            (targetAppObj && (acc.metaAppId === targetAppObj.appId || acc.metaAppId === targetAppObj.id)) ||
+            (oldNameStr && acc.metaAppName === oldNameStr);
           if (isMatch) {
             const baseName = acc.name.replace(/\s*\([^)]*\)$/, '');
             return {
               ...acc,
-              metaAppId: targetApp?.id || appId,
+              metaAppId: targetAppObj?.id || appId,
               metaAppName: trimmed,
               name: `${baseName} (${trimmed})`,
             };
@@ -1633,12 +1758,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (typeof localStorage !== 'undefined') {
         try {
-          localStorage.setItem('sap_app_settings', JSON.stringify(nextSettings));
+          if (nextSettingsObj) {
+            localStorage.setItem('sap_app_settings', JSON.stringify(nextSettingsObj));
+          }
           if (user?.email) {
             const userKey = getStorageKeyForEmail(user.email);
             const userStored = localStorage.getItem(userKey);
             const userPayload = userStored ? JSON.parse(userStored) : {};
-            userPayload.settings = nextSettings;
+            if (nextSettingsObj) userPayload.settings = nextSettingsObj;
             userPayload.pages = nextPages;
             userPayload.accounts = nextAccounts;
             localStorage.setItem(userKey, JSON.stringify(userPayload));
@@ -1649,7 +1776,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [settings, user, getStorageKeyForEmail, syncToCloud]
+    [user, getStorageKeyForEmail, syncToCloud]
   );
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {

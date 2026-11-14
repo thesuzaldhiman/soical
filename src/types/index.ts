@@ -317,7 +317,7 @@ export interface PageAnalyticsSnapshot {
 export interface AutomationFeed {
   id: string;
   name: string;
-  type: 'website_to_fb' | 'wordpress' | 'rss' | 'blogger';
+  type: 'website_to_fb' | 'wordpress' | 'rss';
   feedUrl: string;
   siteUrl?: string; // Connected WordPress Site URL
   wpCategory?: string; // Specific WP Category (e.g. "Himachal News", "Health", "Dharm", or "*")

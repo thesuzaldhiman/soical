@@ -179,16 +179,24 @@ function SettingsContent() {
         ];
       }
       setMetaApps((prev) => {
-        if (prev.length > apps.length) {
-          const merged = [...apps];
-          prev.forEach((p) => {
-            if (!merged.some((m) => m.id === p.id || m.appId === p.appId)) {
-              merged.push(p);
-            }
-          });
-          return merged;
-        }
-        return apps;
+        const merged = apps.map((app) => {
+          const prevMatch = prev.find((p) => p.id === app.id || p.appId === app.appId);
+          if (
+            prevMatch &&
+            prevMatch.name &&
+            prevMatch.name !== 'Primary Meta Developer App' &&
+            app.name === 'Primary Meta Developer App'
+          ) {
+            return { ...app, name: prevMatch.name };
+          }
+          return app;
+        });
+        prev.forEach((p) => {
+          if (!merged.some((m) => m.id === p.id || m.appId === p.appId)) {
+            merged.push(p);
+          }
+        });
+        return merged;
       });
       if (settings.ytClientId !== undefined) setYtClientId(settings.ytClientId);
       if (settings.ytClientSecret !== undefined) setYtClientSecret(settings.ytClientSecret);
@@ -454,11 +462,6 @@ function SettingsContent() {
     };
 
     updateSettings(newSettings);
-
-    // If an existing app was renamed, trigger rename cascade
-    if (editingMetaAppId && oldName && oldName !== trimmedNewName) {
-      renameMetaApp(editingMetaAppId, trimmedNewName);
-    }
 
     // Cascade update pages and accounts for direct sync
     const updatedPages = (pages || []).map((p) => {

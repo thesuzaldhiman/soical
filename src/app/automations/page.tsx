@@ -97,7 +97,20 @@ function AutomationsContent() {
   const [filterFormat, setFilterFormat] = useState<'all' | 'website_to_fb' | 'rss'>('all');
 
   // Connected WordPress Accounts & Website to FB State
-  const wpAccounts = React.useMemo(() => accounts.filter((a) => a.platform === 'wordpress'), [accounts]);
+  const wpPages = React.useMemo(() => pages.filter((p) => p.platform === 'wordpress'), [pages]);
+  const wpAccounts = React.useMemo(() => {
+    if (wpPages.length === 0) return [];
+    return accounts.filter(
+      (a) =>
+        a.platform === 'wordpress' &&
+        wpPages.some(
+          (p) =>
+            p.accountId === a.id ||
+            p.id === a.id ||
+            (a.siteUrl && p.siteUrl && a.siteUrl.toLowerCase().trim() === p.siteUrl.toLowerCase().trim())
+        )
+    );
+  }, [accounts, wpPages]);
   const [selectedWpAccountId, setSelectedWpAccountId] = useState<string>('');
   const [selectedWpCategory, setSelectedWpCategory] = useState<string>('*');
   const [dispatchFormat, setDispatchFormat] = useState<'ai_image' | 'featured_image' | 'link_card' | 'text_only'>('ai_image');
@@ -115,7 +128,7 @@ function AutomationsContent() {
   }, [activeWpAccount]);
 
   const [feedName, setFeedName] = useState('');
-  const [feedType, setFeedType] = useState<'website_to_fb' | 'rss' | 'blogger' | 'wordpress'>('website_to_fb');
+  const [feedType, setFeedType] = useState<'website_to_fb' | 'rss' | 'wordpress'>('website_to_fb');
   const [feedUrl, setFeedUrl] = useState('');
   const [targetCategory, setTargetCategory] = useState(categories[0]?.id || '');
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
@@ -152,22 +165,13 @@ function AutomationsContent() {
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [testFeedSuccess, setTestFeedSuccess] = useState<string | null>(null);
 
-  // Blogger Label to Category mappings
-  const [labelMappings, setLabelMappings] = useState([
-    { label: 'Breaking News', categoryId: 'cat_1' },
-    { label: 'Weather', categoryId: 'cat_2' },
-    { label: 'Viral Videos', categoryId: 'cat_3' },
-  ]);
-  const [newLabel, setNewLabel] = useState('');
-  const [newLabelCat, setNewLabelCat] = useState(categories[0]?.id || '');
-
   const currentOrigin =
     typeof window !== 'undefined' ? window.location.origin : 'https://app.socialautoposter.pro';
   const webhookUrl = `${currentOrigin}/api/webhook/wordpress?secret=${settings.webhookSecret}`;
 
   // Format-specific quick presets
   const FORMAT_PRESETS: Record<
-    'rss' | 'blogger' | 'wordpress',
+    'rss' | 'wordpress',
     Array<{ name: string; url: string; desc: string }>
   > = {
     rss: [
@@ -185,18 +189,6 @@ function AutomationsContent() {
         name: 'Times of India Breaking',
         url: 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
         desc: 'Top breaking stories & headlines',
-      },
-    ],
-    blogger: [
-      {
-        name: 'Blogger Posts Feed Template',
-        url: 'https://himachalbulletin.blogspot.com/feeds/posts/default?alt=rss',
-        desc: 'Standard Blogspot XML/Atom feed with full summary',
-      },
-      {
-        name: 'Pahadi Traveller Blogspot',
-        url: 'https://pahaditraveller.blogspot.com/feeds/posts/default?alt=rss',
-        desc: 'Travel & cultural stories feed',
       },
     ],
     wordpress: [
@@ -246,7 +238,7 @@ function AutomationsContent() {
     setEditingAutomationId(auto.id);
     setFeedName(auto.name);
     const resolvedType =
-      auto.type === 'website_to_fb' || auto.type === 'wordpress' || auto.type === 'blogger'
+      auto.type === 'website_to_fb' || auto.type === 'wordpress'
         ? 'website_to_fb'
         : 'rss';
     setFeedType(resolvedType);
@@ -301,7 +293,7 @@ function AutomationsContent() {
   const handleSaveAutomation = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (feedType === 'website_to_fb' || feedType === 'wordpress' || feedType === 'blogger') {
+    if (feedType === 'website_to_fb' || feedType === 'wordpress') {
       const currentSite = activeWpAccount?.siteUrl || feedUrl.trim() || 'https://himachalsamachar.com';
       const siteDisplayName = activeWpAccount?.name || 'WordPress Site';
       const catLabel = selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory;
@@ -633,17 +625,6 @@ function AutomationsContent() {
     }
   };
 
-  const handleAddLabelMapping = () => {
-    if (!newLabel.trim()) return;
-    setLabelMappings((prev) => [...prev, { label: newLabel.trim(), categoryId: newLabelCat }]);
-    setNewLabel('');
-  };
-
-  const handleRemoveLabelMapping = (idx: number) => {
-    setLabelMappings((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const wpPages = pages.filter((p) => p.platform === 'wordpress');
   const socialPages = pages.filter((p) => p.platform !== 'wordpress');
 
   return (
@@ -788,7 +769,7 @@ function AutomationsContent() {
                     ? automations.length
                     : tab.id === 'website_to_fb'
                     ? automations.filter((a) => a.type === 'website_to_fb' || a.type === 'wordpress').length
-                    : automations.filter((a) => a.type === 'rss' || a.type === 'blogger').length;
+                    : automations.filter((a) => a.type === 'rss').length;
                 return (
                   <button
                     key={tab.id}
@@ -863,7 +844,7 @@ function AutomationsContent() {
               .filter((a) => {
                 if (filterFormat === 'all') return true;
                 if (filterFormat === 'website_to_fb') return a.type === 'website_to_fb' || a.type === 'wordpress';
-                if (filterFormat === 'rss') return a.type === 'rss' || a.type === 'blogger';
+                if (filterFormat === 'rss') return a.type === 'rss';
                 return true;
               })
               .map((auto) => {
@@ -899,15 +880,11 @@ function AutomationsContent() {
                           className={`w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 ${
                             isWpRule
                               ? 'bg-[#21759B]/10 text-[#21759B] border border-[#21759B]/20'
-                              : auto.type === 'blogger'
-                              ? 'bg-orange-50 text-[#FF5722] border border-orange-200'
                               : 'bg-slate-900 text-white'
                           }`}
                         >
                           {isWpRule ? (
                             <SocialIcon platform="wordpress" size={18} />
-                          ) : auto.type === 'blogger' ? (
-                            <span className="font-black text-sm">B</span>
                           ) : (
                             <Rss className="w-4 h-4 text-amber-400" />
                           )}
@@ -1120,92 +1097,7 @@ function AutomationsContent() {
         )}
       </div>
 
-      {/* Blogger Label to Category Mapping */}
-      <div className="bg-white rounded-2xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-3.5">
-        <div className="flex items-center justify-between pb-3 border-b border-[#F0F2F6]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center">
-              <Layers className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Blogger / RSS Label &rarr; Social Category Routing
-              </h3>
-              <p className="text-xs text-slate-400">
-                Route articles with specific tags or categories directly to designated page groups.
-              </p>
-            </div>
-          </div>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-[#F0F2F6] text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                <th className="py-2 px-3">Label / Tag</th>
-                <th className="py-2 px-3">Target Social Category</th>
-                <th className="py-2 px-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#F0F2F6]">
-              {labelMappings.map((m, idx) => {
-                const targetCat = categories.find((c) => c.id === m.categoryId);
-                return (
-                  <tr key={idx} className="hover:bg-[#F8F9FD] transition-colors">
-                    <td className="py-2.5 px-3 font-bold text-slate-900">
-                      <span className="bg-[#F8F9FD] border border-[#EEF1F6] px-2 py-0.5 rounded-md text-[11px]">
-                        🏷️ {m.label}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className="font-semibold text-slate-700">
-                        {targetCat?.name || 'All Pages'}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveLabelMapping(idx)}
-                        className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer p-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="pt-2 border-t border-[#F0F2F6] flex flex-col sm:flex-row items-center gap-2.5">
-          <input
-            type="text"
-            value={newLabel}
-            onChange={(e) => setNewLabel(e.target.value)}
-            placeholder="e.g. Breaking News, Himachal, Politics..."
-            className="flex-1 w-full sm:w-auto px-3 py-1.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-900 focus:outline-none focus:border-slate-400"
-          />
-          <select
-            value={newLabelCat}
-            onChange={(e) => setNewLabelCat(e.target.value)}
-            className="w-full sm:w-auto px-3 py-1.5 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs text-slate-700 focus:outline-none"
-          >
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={handleAddLabelMapping}
-            className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shrink-0 transition-colors cursor-pointer"
-          >
-            + Add Mapping
-          </button>
-        </div>
-      </div>
 
       {/* ═══ MODAL 1: ADD / EDIT INGESTION FEED OR WEBSITE TO FB RULE ═══ */}
       {modalOpen && (
@@ -1264,7 +1156,7 @@ function AutomationsContent() {
                     setFeedType('rss');
                   }}
                   className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    feedType === 'rss' || feedType === 'blogger'
+                    feedType === 'rss'
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
@@ -1842,7 +1734,12 @@ function AutomationsContent() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs cursor-pointer"
+                  disabled={feedType === 'website_to_fb' && wpAccounts.length === 0}
+                  className={`px-4 py-2 rounded-xl text-white text-xs font-bold shadow-xs cursor-pointer ${
+                    feedType === 'website_to_fb' && wpAccounts.length === 0
+                      ? 'bg-slate-300 cursor-not-allowed opacity-60'
+                      : 'bg-slate-900 hover:bg-black'
+                  }`}
                 >
                   {editingAutomationId
                     ? 'Update Rule'

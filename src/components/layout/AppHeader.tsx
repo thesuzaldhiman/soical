@@ -29,7 +29,7 @@ export function AppHeader() {
     '/bulk-scheduler': { group: 'Publishing', label: 'Bulk Scheduler', groupHref: '/bulk-scheduler' },
     '/library': { group: 'Publishing', label: 'Post Library', groupHref: '/library' },
     '/bulk-delete': { group: 'Publishing', label: 'Bulk Delete Posts', groupHref: '/bulk-delete' },
-    '/automations': { group: 'Automation & Tools', label: 'Blogger → FB', groupHref: '/automations' },
+    '/automations': { group: 'Automation & Tools', label: 'Website → FB', groupHref: '/automations' },
     '/image-generator': { group: 'Automation & Tools', label: 'Image Generator', groupHref: '/image-generator' },
     '/analytics': { group: 'Analytics', label: 'Analytics Overview', groupHref: '/analytics' },
     '/monetization': { group: 'Analytics', label: 'Monetization & Integrity', groupHref: '/monetization' },

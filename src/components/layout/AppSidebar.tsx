@@ -13,6 +13,7 @@ import {
   BookmarkCheck,
   Trash2,
   Rss,
+  Globe,
   Palette,
   BarChart3,
   DollarSign,
@@ -95,7 +96,7 @@ export function AppSidebar() {
       id: 'automation-tools',
       title: 'AUTOMATION & TOOLS',
       items: [
-        { href: '/automations', label: 'Blogger → FB', icon: Rss },
+        { href: '/automations', label: 'Website → FB', icon: Globe },
         { href: '/image-generator', label: 'Image Generator', icon: Palette },
       ],
     },

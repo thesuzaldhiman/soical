@@ -1049,7 +1049,12 @@ function AccountsContent() {
 
                       <button
                         type="button"
-                        onClick={() => disconnectPage(page.id)}
+                        onClick={() => {
+                          disconnectPage(page.id);
+                          if (page.platform === 'wordpress') {
+                            removeAccount(page.accountId || page.id);
+                          }
+                        }}
                         className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                         title="Disconnect destination"
                       >
