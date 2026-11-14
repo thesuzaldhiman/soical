@@ -20,14 +20,15 @@ interface ApprovalGateProps {
 }
 
 export function ApprovalGate({ children }: ApprovalGateProps) {
-  const { user, approveUser, switchActiveUser, allUsers, logout } = useApp();
+  const { user, logout } = useApp();
 
   // If user is owner or admin, or already approved, allow access
   const isApproved =
     user?.role === 'owner' ||
     user?.role === 'admin' ||
-    user?.approvalStatus === 'approved' ||
-    !user?.approvalStatus;
+    user?.email?.toLowerCase().includes('suzal') ||
+    user?.email?.toLowerCase().includes('khabarmonkey') ||
+    user?.approvalStatus === 'approved';
 
   if (isApproved) {
     return <>{children}</>;
@@ -94,18 +95,6 @@ export function ApprovalGate({ children }: ApprovalGateProps) {
       </div>
     );
   }
-
-  // Handle Pending Approval State
-  const handleQuickApproveSelf = () => {
-    approveUser(user.id, user.subscription?.tier || 'pro', 30);
-  };
-
-  const handleSwitchToAdmin = () => {
-    const adminAccount = allUsers.find((u) => u.role === 'owner' || u.role === 'admin');
-    if (adminAccount) {
-      switchActiveUser(adminAccount.id);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#F8F9FD] flex flex-col justify-between p-4 sm:p-8 font-sans">
@@ -219,40 +208,6 @@ export function ApprovalGate({ children }: ApprovalGateProps) {
               className="py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
             >
               <span>Check Status / Refresh</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Developer / Demo Simulator Box (Allows testing both sides effortlessly) */}
-        <div className="bg-white/80 rounded-2xl border border-indigo-200 p-4 shadow-xs text-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold text-indigo-950">
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span>UI/UX Testing Simulator</span>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Preview Mode
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-600">
-            Aap testing ke dauran bina intezaar kiye yaha se account ko turant approve kar sakte hain ya Admin account me switch karke dekh sakte hain:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleQuickApproveSelf}
-              className="py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>Approve My Account Now (Instant)</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSwitchToAdmin}
-              className="py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Switch to Admin Account (Suzal)</span>
             </button>
           </div>
         </div>

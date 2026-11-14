@@ -13,6 +13,7 @@ import {
   User,
   AlertCircle,
   Sparkles,
+  Clock,
 } from 'lucide-react';
 import { SubscriptionTier } from '@/types';
 
@@ -26,6 +27,7 @@ export default function SignupPage() {
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionTier>('pro');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,8 +51,12 @@ export default function SignupPage() {
     try {
       const res = registerUser(name, email, selectedPlan, password);
       if (res.success) {
-        // Redirect to dashboard where ApprovalGate handles the pending screen
-        router.push('/dashboard');
+        if (res.isPending) {
+          setIsSubmitted(true);
+          setLoading(false);
+        } else {
+          router.push('/dashboard');
+        }
       } else {
         setError(res.message);
         setLoading(false);
@@ -110,7 +116,71 @@ export default function SignupPage() {
       </div>
 
       {/* Main Form Box */}
-      <div className="max-w-md w-full mx-auto my-6 animate-fade-in">
+      {isSubmitted ? (
+        <div className="max-w-md w-full mx-auto my-6 animate-fade-in">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto shadow-xs">
+              <Clock className="w-8 h-8 animate-pulse stroke-[2.2]" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                <span>Request Sent to Admin</span>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                Registration Request Submitted!
+              </h1>
+              <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                Aapka registration request admin panel me bhej diya gaya hai. Admin dwara request review aur approve hone ke baad hi aap login kar payenge.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] text-left text-xs space-y-2.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Submitted Details
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Name:</span>
+                <span className="font-bold text-slate-900">{name}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Email:</span>
+                <span className="font-bold text-slate-900">{email}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Requested Plan:</span>
+                <span className="font-bold text-emerald-700 capitalize">{selectedPlan} Tier</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Status:</span>
+                <span className="px-2 py-0.5 rounded-md font-bold bg-amber-100 text-amber-800 text-[10px] uppercase">
+                  Pending Approval
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-2.5">
+              <Link
+                href="/login"
+                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
+              >
+                <span>Proceed to Sign In</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+
+              <a
+                href="mailto:suzal@khabarmonkey.com?subject=Approval%20Request%20Social%20Auto%20Poster"
+                className="w-full py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Contact Admin to Fast-Track</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="max-w-md w-full mx-auto my-6 animate-fade-in">
         <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-5">
           {/* Header */}
           <div className="text-center space-y-1.5">
@@ -275,6 +345,7 @@ export default function SignupPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Footer */}
       <div className="max-w-6xl w-full mx-auto text-center text-xs text-slate-400 py-2">

@@ -1,5 +1,25 @@
 [
   {
+    "id": "pst_mcp_1794660237550_0_905",
+    "workspaceId": "ws_default",
+    "postType": "text",
+    "title": "Category Broadcast Test",
+    "message": "Testing automatic multi-page category broadcasting via MCP!",
+    "contentHtml": "Testing automatic multi-page category broadcasting via MCP!",
+    "commentText": "Check updates at https://khabarmonkey.com",
+    "pageIds": [
+      "pg_1",
+      "pg_2",
+      "pg_3",
+      "pg_6"
+    ],
+    "status": "scheduled",
+    "scheduledAt": "2026-11-16T03:30:00.000Z",
+    "results": [],
+    "createdAt": "2026-11-14T12:43:57.548Z",
+    "updatedAt": "2026-11-14T12:43:57.548Z"
+  },
+  {
     "id": "pst_mcp_1794659971969_0_542",
     "workspaceId": "ws_default",
     "postType": "image",

@@ -134,7 +134,7 @@ interface AppContextType {
     email: string,
     tierPreference?: SubscriptionTier,
     password?: string
-  ) => { success: boolean; user: User; message: string };
+  ) => { success: boolean; user: User; message: string; isPending?: boolean };
   switchActiveUser: (userId: string) => void;
 
   // Facebook Analytics & Monetization Actions
@@ -363,12 +363,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const stored = localStorage.getItem('sap_all_registered_users');
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Strictly filter out mock/dummy accounts (usr_02..usr_10)
+            const cleaned = parsed.filter(
+              (u: User) =>
+                u.id === 'usr_01' ||
+                (!u.id.startsWith('usr_0') &&
+                  !u.email.includes('rahul.creator') &&
+                  !u.email.includes('amit.newsmedia') &&
+                  !u.email.includes('priya.digital') &&
+                  !u.email.includes('vikas.mediahub') &&
+                  !u.email.includes('neha.blogger'))
+            );
+            return cleaned.length > 0 ? cleaned : INITIAL_ALL_USERS;
+          }
         }
       } catch {}
     }
     return INITIAL_ALL_USERS;
   });
+
+  // Fetch real registered users from MySQL Database on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    fetch('/api/users')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.users) && data.users.length > 0) {
+          const cleanUsers = data.users.filter(
+            (u: User) =>
+              u.id === 'usr_01' ||
+              (!u.id.startsWith('usr_0') &&
+                !u.email.includes('rahul.creator') &&
+                !u.email.includes('amit.newsmedia') &&
+                !u.email.includes('priya.digital') &&
+                !u.email.includes('vikas.mediahub') &&
+                !u.email.includes('neha.blogger'))
+          );
+          setAllUsers(cleanUsers);
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('sap_all_registered_users', JSON.stringify(cleanUsers));
+          }
+        }
+      })
+      .catch((e) => console.warn('[App Context] Failed to fetch users from DB:', e));
+  }, []);
 
   // Sync registered users to localStorage
   useEffect(() => {
@@ -1444,6 +1483,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
+    const isOwner =
+      cleanEmail === 'suzal@khabarmonkey.com' ||
+      cleanEmail.includes('suzal') ||
+      cleanEmail.includes('khabarmonkey') ||
+      cleanEmail.startsWith('admin');
+
+    // Strict Admin Approval Enforcement
+    if (!isOwner) {
+      if (found.approvalStatus === 'pending') {
+        return {
+          success: false,
+          message: 'Aapka account abhi Admin approval ke liye pending hai. Admin dwara approve hone ke baad hi aap login kar payenge.',
+        };
+      }
+      if (found.approvalStatus === 'suspended') {
+        return {
+          success: false,
+          message: 'Aapka account temporarily suspend kar diya gaya hai. Kripya admin se sampark karein.',
+        };
+      }
+      if (found.approvalStatus === 'rejected') {
+        return {
+          success: false,
+          message: `Aapka registration request admin dwara decline kar diya gaya hai${found.rejectionReason ? ': ' + found.rejectionReason : '.'}`,
+        };
+      }
+    }
+
     const updatedUser: User = {
       ...found,
       lastLoginAt: new Date().toISOString(),
@@ -1489,6 +1556,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     const isOwner =
+      cleanEmail === 'suzal@khabarmonkey.com' ||
       cleanEmail.includes('suzal') ||
       cleanEmail.includes('khabarmonkey') ||
       cleanEmail.startsWith('admin');
@@ -1503,7 +1571,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       password: password || undefined,
       approvalStatus: isOwner ? 'approved' : 'pending',
       createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
+      lastLoginAt: isOwner ? new Date().toISOString() : undefined,
       subscription: isOwner
         ? {
             tier: 'agency',
@@ -1529,21 +1597,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     setAllUsers((prev) => [newUser, ...prev]);
-    setUser(newUser);
-    setIsAuthenticated(true);
 
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('sap_current_user_email', cleanEmail);
-      localStorage.setItem(
-        `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
-        JSON.stringify(newUser)
-      );
+    // Save to MySQL DB
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'register',
+        name: newUser.name,
+        email: newUser.email,
+        password: newUser.password,
+        tierPreference,
+      }),
+    }).catch((e) => console.warn('[App Context] Failed to register user in DB:', e));
+
+    if (isOwner) {
+      setUser(newUser);
+      setIsAuthenticated(true);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('sap_current_user_email', cleanEmail);
+        localStorage.setItem(
+          `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
+          JSON.stringify(newUser)
+        );
+      }
+      return {
+        success: true,
+        isPending: false,
+        user: newUser,
+        message: 'Welcome Admin!',
+      };
     }
 
+    // Normal user stays unauthenticated until approved by Admin
     return {
       success: true,
+      isPending: true,
       user: newUser,
-      message: isOwner ? 'Welcome Admin!' : 'Signup successful! Account is awaiting admin approval.',
+      message: 'Registration request submitted! Awaiting admin approval.',
     };
   };
 
@@ -1602,6 +1693,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
+    // Sync approval to DB
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'approve', userId, tier, durationDays, maxPages, maxPosts }),
+    }).catch((e) => console.warn('[App Context] DB approve user error:', e));
+
     if (user.id === userId) {
       setUser((prev) => ({
         ...prev,
@@ -1629,16 +1727,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAllUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, approvalStatus: 'rejected', rejectionReason: finalReason } : u))
     );
+
+    // Sync rejection to DB
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reject', userId, reason: finalReason }),
+    }).catch((e) => console.warn('[App Context] DB reject user error:', e));
+
     if (user.id === userId) {
       setUser((prev) => ({ ...prev, approvalStatus: 'rejected', rejectionReason: finalReason }));
     }
   };
 
-  const toggleUserSuspension = (userId: string, reason?: string) => {
+  const updateUserSubscription = (userId: string, sub: Partial<UserSubscription>) => {
     setAllUsers((prev) =>
       prev.map((u) => {
         if (u.id !== userId) return u;
-        const willSuspend = u.approvalStatus !== 'suspended';
+        const currentSub: UserSubscription = u.subscription || {
+          tier: 'starter',
+          status: 'trial',
+          expiresAt: null,
+          maxConnectedPages: 5,
+          maxDailyPosts: 30,
+          features: {
+            canUseAI: true,
+            canUseBulkScheduler: true,
+            canUseAutomationFeed: false,
+            canUseAnalytics: true,
+          },
+        };
+        const updatedSub: UserSubscription = {
+          ...currentSub,
+          ...sub,
+          features: {
+            ...currentSub.features,
+            ...sub.features,
+          },
+        };
+        return {
+          ...u,
+          subscription: updatedSub,
+        };
+      })
+    );
+
+    if (user.id === userId) {
+      setUser((prev) => {
+        const currentSub: UserSubscription = prev.subscription || {
+          tier: 'starter',
+          status: 'trial',
+          expiresAt: null,
+          maxConnectedPages: 5,
+          maxDailyPosts: 30,
+          features: {
+            canUseAI: true,
+            canUseBulkScheduler: true,
+            canUseAutomationFeed: false,
+            canUseAnalytics: true,
+          },
+        };
+        const updatedSub: UserSubscription = {
+          ...currentSub,
+          ...sub,
+          features: {
+            ...currentSub.features,
+            ...sub.features,
+          },
+        };
+        return {
+          ...prev,
+          subscription: updatedSub,
+        };
+      });
+    }
+  };
+
+  const toggleUserSuspension = (userId: string, reason?: string) => {
+    const targetUser = allUsers.find((u) => u.id === userId);
+    const willSuspend = targetUser?.approvalStatus !== 'suspended';
+
+    setAllUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== userId) return u;
         return {
           ...u,
           approvalStatus: willSuspend ? 'suspended' : 'approved',
@@ -1646,9 +1817,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       })
     );
+
+    // Sync suspension to DB
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'suspend', userId, suspended: willSuspend }),
+    }).catch((e) => console.warn('[App Context] DB suspend user error:', e));
+
     if (user.id === userId) {
       setUser((prev) => {
-        const willSuspend = prev.approvalStatus !== 'suspended';
         return {
           ...prev,
           approvalStatus: willSuspend ? 'suspended' : 'approved',
@@ -1658,54 +1836,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateUserSubscription = (userId: string, sub: Partial<UserSubscription>) => {
-    setAllUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== userId) return u;
-        return {
-          ...u,
-          subscription: {
-            tier: 'pro',
-            status: 'active',
-            expiresAt: null,
-            maxConnectedPages: 15,
-            maxDailyPosts: 100,
-            features: {
-              canUseAI: true,
-              canUseBulkScheduler: true,
-              canUseAutomationFeed: true,
-              canUseAnalytics: true,
-            },
-            ...u.subscription,
-            ...sub,
-          },
-        };
-      })
-    );
-    if (user.id === userId) {
-      setUser((prev) => ({
-        ...prev,
-        subscription: {
-          tier: 'pro',
-          status: 'active',
-          expiresAt: null,
-          maxConnectedPages: 15,
-          maxDailyPosts: 100,
-          features: {
-            canUseAI: true,
-            canUseBulkScheduler: true,
-            canUseAutomationFeed: true,
-            canUseAnalytics: true,
-          },
-          ...prev.subscription,
-          ...sub,
-        },
-      }));
-    }
-  };
-
   const deleteUser = (userId: string) => {
+    const targetUser = allUsers.find((u) => u.id === userId);
     setAllUsers((prev) => prev.filter((u) => u.id !== userId));
+
+    // Sync deletion to DB
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', userId, email: targetUser?.email }),
+    }).catch((e) => console.warn('[App Context] DB delete user error:', e));
   };
 
   const switchActiveUser = (userId: string) => {

@@ -418,6 +418,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (fatalErr: unknown) {
+    if ((fatalErr as any)?.digest?.startsWith('NEXT_')) {
+      throw fatalErr;
+    }
     const errorMsg = fatalErr instanceof Error ? fatalErr.message : 'Internal OAuth error';
     console.error('[Facebook Auth Callback] Fatal error caught:', fatalErr);
     try {
