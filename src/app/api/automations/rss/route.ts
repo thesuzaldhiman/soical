@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchAndParseRssFeed, RssItem } from '@/lib/services/rss-parser';
 import { dispatchToTargets, PublishTarget } from '@/lib/services/publisher';
+import { getDbPool, initDbTables } from '@/lib/db/mysql';
+import { Post } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -190,6 +192,61 @@ export async function POST(request: NextRequest) {
       0,
       500
     );
+
+    // Save dispatched / draft posts directly to MySQL app_user_data.posts so they always show in Post Library
+    const userEmail = (body.email || body.userEmail || '').trim().toLowerCase();
+    if (userEmail && userEmail.includes('@') && dispatchResults.length > 0) {
+      const pool = getDbPool();
+      if (pool) {
+        try {
+          await initDbTables();
+          const postsToSave: Post[] = dispatchResults.map((dr) => {
+            const isDraft = postStatus === 'draft';
+            return {
+              id: `post_rss_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              workspaceId: 'ws_default',
+              postType: dr.item.imageUrl ? 'image' : 'link',
+              title: dr.item.title,
+              message: dr.item.title,
+              mediaUrl: dr.item.imageUrl || undefined,
+              linkUrl: dr.item.link || undefined,
+              commentText: linkInComment && dr.item.link ? `👉 पूरी खबर यहाँ पढ़ें: ${dr.item.link}` : undefined,
+              pageIds: (targets as PublishTarget[]).map((t) => t.id),
+              status: isDraft ? 'draft' : dr.results.some((r) => r.status === 'success') ? 'published' : 'failed',
+              scheduledAt: new Date().toISOString(),
+              publishedAt: isDraft ? undefined : new Date().toISOString(),
+              results: dr.results.map((r: any) => ({
+                pageId: r.pageId || r.targetId || 'target',
+                platform: r.platform || 'facebook',
+                pageName: r.pageName || 'Channel Target',
+                status: isDraft ? 'draft' : r.status === 'success' ? 'success' : 'failed',
+                externalPostId: isDraft ? '' : r.externalPostId || r.externalId || '',
+                error: r.error,
+                timestamp: new Date().toISOString(),
+              })),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+          });
+
+          const [rows] = await pool.query<any[]>(
+            'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+            [userEmail]
+          );
+          if (rows && rows.length > 0) {
+            const rawPosts = rows[0].posts;
+            const existing = (typeof rawPosts === 'string' ? JSON.parse(rawPosts) : rawPosts) || [];
+            const merged = [...postsToSave, ...(Array.isArray(existing) ? existing : [])].slice(0, 500);
+            await pool.query(
+              'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
+              [JSON.stringify(merged), userEmail]
+            );
+          }
+        } catch (dbErr) {
+          console.warn('[RSS Automation] Post persistence note:', dbErr);
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

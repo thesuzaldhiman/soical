@@ -106,6 +106,37 @@ export async function POST(request: NextRequest) {
     if (payload) {
       const toJson = (val: any) => (val !== undefined ? JSON.stringify(val) : null);
 
+      // CRITICAL ANTI-CLOBBER: Merge existing MySQL posts with incoming client payload posts
+      // Ensures background posts created by WordPress webhook or cron are NEVER overwritten by client sync
+      let finalPosts = Array.isArray(payload.posts) ? [...payload.posts] : [];
+      try {
+        const [existingRows] = await pool.query<any[]>(
+          'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+          [email]
+        );
+        if (existingRows && existingRows.length > 0 && existingRows[0].posts) {
+          const rawDbPosts = existingRows[0].posts;
+          const dbPosts = (typeof rawDbPosts === 'string' ? JSON.parse(rawDbPosts) : rawDbPosts) || [];
+          if (Array.isArray(dbPosts) && dbPosts.length > 0) {
+            const incomingIds = new Set(finalPosts.map((p: any) => p?.id));
+            for (const dbPost of dbPosts) {
+              if (dbPost && dbPost.id && !incomingIds.has(dbPost.id)) {
+                finalPosts.push(dbPost);
+              }
+            }
+          }
+        }
+      } catch (mergeErr) {
+        console.warn('[MySQL Sync] Post merge note:', mergeErr);
+      }
+
+      // Sort by newest first
+      finalPosts.sort((a, b) => {
+        const timeA = new Date(a.createdAt || a.updatedAt || a.publishedAt || 0).getTime();
+        const timeB = new Date(b.createdAt || b.updatedAt || b.publishedAt || 0).getTime();
+        return timeB - timeA;
+      });
+
       await pool.query(
         `INSERT INTO app_user_data (
           email, workspace, accounts, pages, categories, posts,
@@ -130,7 +161,7 @@ export async function POST(request: NextRequest) {
           toJson(payload.accounts || []),
           toJson(payload.pages || []),
           toJson(payload.categories),
-          toJson(payload.posts || []),
+          toJson(finalPosts),
           toJson(payload.sigTemplates),
           toJson(payload.pageAnalytics || {}),
           toJson(payload.postPerformances || []),
@@ -139,6 +170,14 @@ export async function POST(request: NextRequest) {
           toJson(payload.settings),
         ]
       );
+
+      return NextResponse.json({
+        success: true,
+        synced: true,
+        postsCount: finalPosts.length,
+        posts: finalPosts,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return NextResponse.json({ success: true, synced: true, timestamp: new Date().toISOString() });

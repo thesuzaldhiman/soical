@@ -48,16 +48,20 @@ async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail
   try {
     const cleanEmail = email.toLowerCase().trim();
     const [rows] = await pool.query<any[]>(
-      'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+      'SELECT posts, workspace FROM app_user_data WHERE email = ? LIMIT 1',
       [cleanEmail]
     );
 
     if (rows && rows.length > 0) {
       const existingPosts = parseJsonSafe(rows[0].posts, []);
-      const updatedPosts = [...newPosts, ...existingPosts].slice(0, 300);
+      const updatedPosts = [...newPosts, ...existingPosts].slice(0, 500);
+      const ws = parseJsonSafe(rows[0].workspace, { monthlyPostsUsed: 0 });
+      const successfulCount = newPosts.filter((p) => p.status === 'published').length;
+      ws.monthlyPostsUsed = (ws.monthlyPostsUsed || 0) + successfulCount;
+
       await pool.query(
-        'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
-        [JSON.stringify(updatedPosts), cleanEmail]
+        'UPDATE app_user_data SET posts = ?, workspace = ?, updated_at = NOW() WHERE email = ?',
+        [JSON.stringify(updatedPosts), JSON.stringify(ws), cleanEmail]
       );
     }
   } catch (err) {
@@ -65,11 +69,18 @@ async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail
   }
 }
 
-async function getUserState(email: string = 'suzaldhiman@gmail.com') {
-  const cleanEmail = email.toLowerCase().trim();
+async function resolveUserState(siteUrl: string = '', explicitEmail?: string): Promise<{
+  email: string;
+  pages: SocialPage[];
+  categories: PageCategory[];
+  automations: AutomationFeed[];
+  posts: Post[];
+}> {
+  const fallbackEmail = (explicitEmail || 'suzaldhiman@gmail.com').toLowerCase().trim();
   const pool = getDbPool();
   if (!pool) {
     return {
+      email: fallbackEmail,
       pages: DEMO_PAGES,
       categories: DEMO_CATEGORIES,
       automations: [] as AutomationFeed[],
@@ -79,28 +90,96 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
 
   try {
     await initDbTables();
-    const [rows] = await pool.query<any[]>(
-      'SELECT pages, categories, posts, automations FROM app_user_data WHERE email = ? LIMIT 1',
-      [cleanEmail]
+    const cleanSite = (siteUrl || '').trim().toLowerCase().replace(/\/+$/, '');
+
+    // 1. If explicit email passed, use it directly
+    if (explicitEmail) {
+      const [rows] = await pool.query<any[]>(
+        'SELECT email, pages, categories, posts, automations FROM app_user_data WHERE email = ? LIMIT 1',
+        [fallbackEmail]
+      );
+      if (rows && rows.length > 0) {
+        return {
+          email: rows[0].email,
+          pages: parseJsonSafe(rows[0].pages, DEMO_PAGES),
+          categories: parseJsonSafe(rows[0].categories, DEMO_CATEGORIES),
+          automations: parseJsonSafe(rows[0].automations, []),
+          posts: parseJsonSafe(rows[0].posts, getLocalPosts()),
+        };
+      }
+    }
+
+    // 2. Query all tenant users to find the owner of this site
+    const [allUsers] = await pool.query<any[]>(
+      'SELECT email, pages, categories, posts, automations, accounts FROM app_user_data'
     );
 
-    if (rows && rows.length > 0) {
-      const row = rows[0];
-      const parsedPages = parseJsonSafe(row.pages, DEMO_PAGES) as SocialPage[];
-      const parsedCats = parseJsonSafe(row.categories, DEMO_CATEGORIES) as PageCategory[];
-      const parsedAutos = parseJsonSafe(row.automations, []) as AutomationFeed[];
+    if (allUsers && allUsers.length > 0) {
+      if (cleanSite) {
+        for (const u of allUsers) {
+          const autos = parseJsonSafe(u.automations, []);
+          const hasAuto = autos.some((a: any) => {
+            const aSite = (a.siteUrl || a.feedUrl || '').trim().toLowerCase().replace(/\/+$/, '');
+            return aSite && (aSite.includes(cleanSite) || cleanSite.includes(aSite));
+          });
+          if (hasAuto) {
+            return {
+              email: u.email,
+              pages: parseJsonSafe(u.pages, DEMO_PAGES),
+              categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
+              automations: autos,
+              posts: parseJsonSafe(u.posts, getLocalPosts()),
+            };
+          }
+
+          const accs = parseJsonSafe(u.accounts, []);
+          const hasAcc = accs.some((a: any) => {
+            const aSite = (a.siteUrl || '').trim().toLowerCase().replace(/\/+$/, '');
+            return aSite && (aSite.includes(cleanSite) || cleanSite.includes(aSite));
+          });
+          if (hasAcc) {
+            return {
+              email: u.email,
+              pages: parseJsonSafe(u.pages, DEMO_PAGES),
+              categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
+              automations: autos,
+              posts: parseJsonSafe(u.posts, getLocalPosts()),
+            };
+          }
+
+          const pgs = parseJsonSafe(u.pages, []);
+          const hasPage = pgs.some((p: any) => {
+            const pSite = (p.siteUrl || '').trim().toLowerCase().replace(/\/+$/, '');
+            return pSite && (pSite.includes(cleanSite) || cleanSite.includes(pSite));
+          });
+          if (hasPage) {
+            return {
+              email: u.email,
+              pages: pgs,
+              categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
+              automations: autos,
+              posts: parseJsonSafe(u.posts, getLocalPosts()),
+            };
+          }
+        }
+      }
+
+      // Default to first registered user
+      const first = allUsers[0];
       return {
-        pages: parsedPages.length > 0 ? parsedPages : DEMO_PAGES,
-        categories: parsedCats.length > 0 ? parsedCats : DEMO_CATEGORIES,
-        automations: parsedAutos,
-        posts: parseJsonSafe(row.posts, getLocalPosts()) as Post[],
+        email: first.email,
+        pages: parseJsonSafe(first.pages, DEMO_PAGES),
+        categories: parseJsonSafe(first.categories, DEMO_CATEGORIES),
+        automations: parseJsonSafe(first.automations, []),
+        posts: parseJsonSafe(first.posts, getLocalPosts()),
       };
     }
   } catch (err) {
-    console.warn('[WP Webhook] Database read error, using fallback:', err);
+    console.warn('[WP Webhook] Database user resolve error, using fallback:', err);
   }
 
   return {
+    email: fallbackEmail,
     pages: DEMO_PAGES,
     categories: DEMO_CATEGORIES,
     automations: [] as AutomationFeed[],
@@ -167,13 +246,16 @@ export async function POST(request: NextRequest) {
       ? [payload.category]
       : [];
 
-    // 1. Fetch user pages, categories & automations
-    const userState = await getUserState();
+    const incomingSiteUrl = (payload.site_url || '').trim().replace(/\/+$/, '').toLowerCase();
+    const explicitEmail = (payload.user_email || payload.email || '').trim().toLowerCase();
+
+    // 1. Fetch user pages, categories & automations dynamically for this site's owner
+    const userState = await resolveUserState(incomingSiteUrl, explicitEmail);
+    const resolvedEmail = userState.email;
     const allPages: SocialPage[] = userState.pages || [];
     const allCategories: PageCategory[] = userState.categories || [];
     const allAutomations: AutomationFeed[] = (userState as any).automations || [];
 
-    const incomingSiteUrl = (payload.site_url || '').trim().replace(/\/+$/, '').toLowerCase();
     const postCategories = categories.map((c: string) => c.toLowerCase().trim());
 
     // 2. Resolve Automation Rule & Target Pages
@@ -371,7 +453,7 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    await persistPosts([newPostRecord]);
+    await persistPosts([newPostRecord], resolvedEmail);
 
     return NextResponse.json({
       success: true,

@@ -75,6 +75,7 @@ export default function AutomationsPage() {
 
 function AutomationsContent() {
   const {
+    user,
     automations,
     categories,
     pages,
@@ -561,6 +562,7 @@ function AutomationsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'dispatch',
+          email: user?.email,
           feedUrl: auto.feedUrl,
           targets: targetsPayload,
           processedGuids: auto.processedGuids || [],

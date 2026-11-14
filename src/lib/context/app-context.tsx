@@ -115,6 +115,7 @@ interface AppContextType {
       results?: PostResult[];
     }
   ) => Post;
+  refreshPosts: () => Promise<void>;
   retryPost: (postId: string) => void;
   approvePost: (postId: string) => Promise<void> | void;
   deletePost: (postId: string, options?: { deleteFromFacebook?: boolean }) => Promise<{ success: boolean; message?: string }> | void;
@@ -247,6 +248,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }),
+  refreshPosts: async () => {},
   retryPost: noop,
   approvePost: noop,
   deletePost: noop,
@@ -1337,6 +1339,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     return newPost;
   };
+
+  const refreshPosts = useCallback(async () => {
+    const cleanEmail = user?.email?.toLowerCase().trim();
+    if (!cleanEmail || typeof window === 'undefined') return;
+
+    try {
+      const res = await fetch(`/api/user/sync?email=${encodeURIComponent(cleanEmail)}`);
+      const data = await res.json();
+      if (data.success && data.data && Array.isArray(data.data.posts)) {
+        setPosts((prev) => {
+          const map = new Map<string, Post>();
+          data.data.posts.forEach((p: Post) => {
+            if (p && p.id) map.set(p.id, p);
+          });
+          prev.forEach((p: Post) => {
+            if (p && p.id && !map.has(p.id)) {
+              map.set(p.id, p);
+            }
+          });
+          const merged = Array.from(map.values());
+          merged.sort((a, b) => {
+            const timeA = new Date(a.createdAt || a.updatedAt || a.publishedAt || 0).getTime();
+            const timeB = new Date(b.createdAt || b.updatedAt || b.publishedAt || 0).getTime();
+            return timeB - timeA;
+          });
+          return merged;
+        });
+      }
+    } catch (e) {
+      console.warn('[refreshPosts] Error refreshing posts from cloud:', e);
+    }
+  }, [user?.email]);
 
   const retryPost = (postId: string) => {
     setPosts((prev) =>
@@ -3002,6 +3036,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateCategory,
         deleteCategory,
         createPost,
+        refreshPosts,
         retryPost,
         approvePost,
         deletePost,
