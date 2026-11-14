@@ -237,54 +237,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // C. Check Category Group Direct Match
-    if (targetPages.length === 0 && categories.length > 0) {
-      const matchedCat = allCategories.find((cat) => {
-        const catNameLower = cat.name.toLowerCase().trim();
-        return postCategories.some((lc) => catNameLower.includes(lc) || lc.includes(catNameLower));
-      });
-
-      if (matchedCat && matchedCat.pageIds && matchedCat.pageIds.length > 0) {
-        const catPageIds = new Set(matchedCat.pageIds);
-        targetPages = allPages.filter((p) => catPageIds.has(p.id) || catPageIds.has(p.pageId));
-        matchedRuleName = `Category Group: ${matchedCat.name}`;
-      }
-    }
-
-    // D. STRICT ANTI-SPAM PROTECTION:
-    // If NO rule and NO category matched, STOP! DO NOT POST TO ALL PAGES!
+    // STRICT ANTI-SPAM PROTECTION:
+    // If NO active Website to FB automation rule matched, STOP! DO NOT POST OR SAVE DRAFTS!
     if (targetPages.length === 0) {
       console.log(
-        `[WP Webhook] Post "${mainTitle}" in category [${categories.join(
+        `[WP Webhook] Post "${mainTitle}" for site "${incomingSiteUrl}" in categories [${categories.join(
           ', '
-        )}] was NOT dispatched. No Website to FB automation or Category Group is mapped. Prevents account spam.`
+        )}] was SKIPPED. No active Website to FB automation rule matches this category. Prevents spam.`
       );
-
-      // Record as draft / unmapped in posts history so user has audit log without spam
-      const unmappedRecord: Post = {
-        id: `post_wp_unmapped_${Date.now()}`,
-        workspaceId: 'ws_default',
-        postType: imageUrl ? 'image' : 'text',
-        title: mainTitle,
-        message: `${mainTitle}\n\n${excerpt}`.trim(),
-        mediaUrl: imageUrl || undefined,
-        linkUrl: permalink || undefined,
-        commentText: permalink ? `👉 पूरी खबर यहाँ पढ़ें: ${permalink}` : undefined,
-        pageIds: [],
-        status: 'draft',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        results: [],
-      };
-      await persistPosts([unmappedRecord]);
 
       return NextResponse.json({
         success: true,
         dispatched: false,
-        reason: 'unmapped_category',
+        skipped: true,
+        reason: 'no_matching_active_rule',
         message: `Post received for category "${categories.join(
           ', '
-        )}", but no Website to FB automation rule or Category Group is mapped to this category. Safely skipped to prevent spamming your pages.`,
+        )}", but no active Website to FB automation rule is mapped to this category. Safely skipped without creating any draft or post.`,
         category: categories[0] || 'General',
         site_url: payload.site_url,
       });

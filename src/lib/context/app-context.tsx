@@ -493,27 +493,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return p;
         })
       );
-
-      // Auto-populate SaaS broadcast categories
-      setCategories((prev) => {
-        const nextCats = [...prev];
-        newCategories.forEach((cat) => {
-          const catName = String(cat?.name || '').trim();
-          const catSlug = String(cat?.slug || catName).toLowerCase();
-          if (!catName) return;
-          const exists = nextCats.some((c) => c.name.toLowerCase().trim() === catName.toLowerCase());
-          if (!exists) {
-            nextCats.push({
-              id: `cat_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-              name: catName,
-              color: '#3B82F6',
-              pageIds: [],
-              tags: [`#${catSlug.replace(/[^a-zA-Z0-9]/g, '')}`, '#news'],
-            });
-          }
-        });
-        return nextCats;
-      });
     },
     []
   );

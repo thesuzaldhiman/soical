@@ -530,27 +530,7 @@ function AccountsContent() {
         wpCategories: fetchedCats,
       });
 
-      // Auto-populate SaaS broadcast categories from fetched WordPress categories
-      if (fetchedCats.length > 0) {
-        fetchedCats.forEach((cat: any) => {
-          const catName = String(cat?.name || '').trim();
-          const catSlug = String(cat?.slug || catName).toLowerCase();
-          if (!catName) return;
-          const exists = categories.some(
-            (c: any) => c.name.toLowerCase().trim() === catName.toLowerCase()
-          );
-          if (!exists) {
-            createCategory(
-              catName,
-              '#3B82F6',
-              [],
-              [`#${catSlug.replace(/[^a-zA-Z0-9]/g, '')}`, '#news']
-            );
-          }
-        });
-      }
-
-      const catNotice = fetchedCats.length > 0 ? ` (${fetchedCats.length} Categories Synced to Groups)` : '';
+      const catNotice = fetchedCats.length > 0 ? ` (${fetchedCats.length} Categories Synced)` : '';
       setConnectSuccess(
         `Successfully connected to "${finalName}"${catNotice} via ${
           wpConnectionMode === 'plugin-connector'
@@ -912,8 +892,8 @@ function AccountsContent() {
                           <RefreshCw className={`w-3 h-3 ${isSyncingWpCats ? 'animate-spin' : ''}`} />
                           <span>{isSyncingWpCats ? 'Syncing...' : 'Re-sync'}</span>
                         </button>
-                        <Link href="/categories" className="underline text-sky-700 hover:text-sky-900 font-semibold text-[10px]">
-                          Map Groups →
+                        <Link href="/automations" className="underline text-sky-700 hover:text-sky-900 font-semibold text-[10px]">
+                          Create Rule →
                         </Link>
                       </div>
                     </div>

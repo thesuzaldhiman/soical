@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
-import { PageCategory, SocialPage, WordPressCategory } from '@/types';
+import { PageCategory, SocialPage } from '@/types';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 import {
   Tags,
@@ -52,37 +52,6 @@ function CategoriesContent() {
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // WordPress Connected Accounts & Categories
-  const wpAccounts = useMemo(() => accounts.filter((a) => a.platform === 'wordpress'), [accounts]);
-  const wpCategoriesList = useMemo(() => {
-    const list: { siteName: string; siteUrl?: string; category: WordPressCategory }[] = [];
-    wpAccounts.forEach((acc) => {
-      if (Array.isArray(acc.wpCategories)) {
-        acc.wpCategories.forEach((cat) => {
-          list.push({ siteName: acc.name, siteUrl: acc.siteUrl, category: cat });
-        });
-      }
-    });
-    return list;
-  }, [wpAccounts]);
-
-  const handleAutoMapAllWpCategories = () => {
-    wpCategoriesList.forEach(({ category: cat }) => {
-      const exists = categories.some(
-        (c) => c.name.toLowerCase().trim() === cat.name.toLowerCase().trim()
-      );
-      if (!exists) {
-        const slug = cat.slug || cat.name.toLowerCase().replace(/\s+/g, '-');
-        createCategory(
-          cat.name,
-          '#3B82F6',
-          [],
-          [`#${slug.replace(/[^a-zA-Z0-9]/g, '')}`, '#news']
-        );
-      }
-    });
-  };
-
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<PageCategory | null>(null);
@@ -91,24 +60,6 @@ function CategoriesContent() {
   const [tagsInput, setTagsInput] = useState('');
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
   const [channelSearch, setChannelSearch] = useState('');
-
-  const handleMapWpCategory = (catName: string, catSlug?: string) => {
-    const slug = catSlug || catName.toLowerCase().replace(/\s+/g, '-');
-    const existing = categories.find(
-      (c) => c.name.toLowerCase().trim() === catName.toLowerCase().trim()
-    );
-    if (existing) {
-      handleOpenEditModal(existing);
-    } else {
-      setEditingCategory(null);
-      setName(catName);
-      setColor('#3B82F6');
-      setTagsInput(`#${slug.replace(/[^a-zA-Z0-9]/g, '')} #news`);
-      setSelectedPages([]);
-      setChannelSearch('');
-      setModalOpen(true);
-    }
-  };
 
   // Statistics
   const totalCategories = categories.length;
@@ -356,128 +307,7 @@ function CategoriesContent() {
         </div>
       </div>
 
-      {/* WordPress Category Synced Dispatcher Hub */}
-      {wpAccounts.length > 0 && wpCategoriesList.length > 0 && (
-        <div className="bg-gradient-to-r from-sky-50/90 via-white to-blue-50/40 rounded-2xl border border-sky-200/80 p-5 shadow-2xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-sky-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#21759B] text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
-                W
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="font-bold text-slate-900 text-sm sm:text-base">
-                    WordPress Connected Categories ({wpCategoriesList.length})
-                  </h2>
-                  <span className="text-[10px] font-bold bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full border border-sky-200">
-                    Live Auto-Dispatcher
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  WordPress par in categories mein post aate hi ye automatically aapke mapped Facebook Pages par unique titles ke sath publish ho jayengi.
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-              <button
-                type="button"
-                onClick={handleAutoMapAllWpCategories}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Auto-Create Groups for All WP Categories</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {wpCategoriesList.map(({ siteName, category: cat }) => {
-              const matchedGroup = categories.find(
-                (c) => c.name.toLowerCase().trim() === cat.name.toLowerCase().trim()
-              );
-              const mappedPages = matchedGroup
-                ? matchedGroup.pageIds
-                    .map((pid) => pages.find((p) => p.id === pid))
-                    .filter((p): p is SocialPage => Boolean(p))
-                : [];
-
-              return (
-                <div
-                  key={`${cat.id}-${cat.slug}`}
-                  className="bg-white rounded-xl border border-sky-100 p-4 shadow-2xs hover:border-sky-300 transition-all flex flex-col justify-between space-y-3"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
-                          <span>{cat.name}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-semibold">
-                            {cat.count} posts
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-mono truncate block mt-0.5">
-                          slug: {cat.slug} • {siteName}
-                        </span>
-                      </div>
-
-                      {matchedGroup && mappedPages.length > 0 ? (
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
-                          ✓ Mapped ({mappedPages.length})
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
-                          Pending Setup
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-2.5">
-                      {mappedPages.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {mappedPages.map((pg) => (
-                            <span
-                              key={pg.id}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200 text-[10px] text-slate-700 font-medium"
-                            >
-                              <SocialIcon platform={pg.platform} className="w-3 h-3 rounded-xs" />
-                              <span className="truncate max-w-[100px]">{pg.name}</span>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-400 italic">
-                          No Facebook pages mapped to this category yet.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => handleMapWpCategory(cat.name, cat.slug)}
-                      className="text-xs font-bold text-sky-700 hover:text-sky-900 flex items-center gap-1 cursor-pointer"
-                    >
-                      {matchedGroup ? (
-                        <>
-                          <Edit2 className="w-3 h-3" />
-                          <span>Edit Mapped Pages</span>
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-3 h-3" />
-                          <span>Map Facebook Pages Now</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* 3. Search & Platform Filter Bar */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 sm:p-5 shadow-2xs space-y-4">
