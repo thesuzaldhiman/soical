@@ -22,6 +22,8 @@ import {
   Lock,
   ExternalLink,
   BarChart3,
+  BookmarkCheck,
+  PenTool,
 } from 'lucide-react';
 
 export default function PagesManagementPage() {
@@ -378,8 +380,8 @@ function PagesContent() {
                 <th className="py-3.5 px-5">Platform</th>
                 <th className="py-3.5 px-5">Category</th>
                 <th className="py-3.5 px-5">Audience / Followers</th>
-                <th className="py-3.5 px-5">API Permissions</th>
-                <th className="py-3.5 px-5 text-right">Status & Actions</th>
+                <th className="py-3.5 px-5">Tools &amp; Permissions</th>
+                <th className="py-3.5 px-5 text-right">Status &amp; Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E2E8F0]">
@@ -441,9 +443,29 @@ function PagesContent() {
                       {(page.followersCount ?? page.fanCount ?? 0).toLocaleString()}
                     </td>
 
-                    {/* API Permissions & Deep Analytics */}
+                    {/* Tools, Post Library & Permissions */}
                     <td className="py-3.5 px-5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1.5">
+                        {/* New Post for this Page */}
+                        <Link
+                          href={`/composer?pageId=${page.id}`}
+                          className="inline-flex items-center justify-center p-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all shadow-2xs cursor-pointer"
+                          title={`Create new post for ${page.name}`}
+                          aria-label="Create Post"
+                        >
+                          <PenTool className="w-3.5 h-3.5 text-blue-600" />
+                        </Link>
+
+                        {/* View Post Library for this Page */}
+                        <Link
+                          href={`/library?search=${encodeURIComponent(page.name)}`}
+                          className="inline-flex items-center justify-center p-2 rounded-xl bg-[#F8F9FA] hover:bg-blue-50 text-slate-600 hover:text-blue-700 border border-[#E2E8F0] hover:border-blue-200 transition-all shadow-2xs cursor-pointer"
+                          title={`View Post Library history for ${page.name}`}
+                          aria-label="View Post Library"
+                        >
+                          <BookmarkCheck className="w-3.5 h-3.5 text-slate-600" />
+                        </Link>
+
                         <Link
                           href={`/analytics?pageId=${page.id}`}
                           className="inline-flex items-center justify-center p-2 rounded-xl bg-[#F8F9FA] hover:bg-pink-50 text-slate-600 hover:text-[#FF007A] border border-[#E2E8F0] hover:border-pink-200 transition-all group/ana shadow-2xs cursor-pointer"

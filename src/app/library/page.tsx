@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
-import { Post, PostStatus } from '@/types';
+import { Post, PostStatus, Platform } from '@/types';
 import {
   Layers,
   Search,
@@ -35,17 +35,25 @@ import { SocialIcon } from '@/components/ui/SocialIcon';
 export default function LibraryPage() {
   return (
     <AppShell>
-      <LibraryContent />
+      <Suspense fallback={<div className="p-12 text-center text-xs text-slate-400 font-bold">Loading Post Library...</div>}>
+        <LibraryContent />
+      </Suspense>
     </AppShell>
   );
 }
 
 function LibraryContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialPlatform = (searchParams?.get('platform') as 'all' | 'facebook' | Platform) || 'all';
+  const initialSearch = searchParams?.get('search') || '';
+  const initialStatus = (searchParams?.get('status') as 'all' | PostStatus) || 'all';
+
   const { posts, pages, retryPost, approvePost, deletePost, isQueueProcessing, processScheduledQueueNow } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'all' | PostStatus>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | PostStatus>(initialStatus);
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'facebook' | Platform>(initialPlatform);
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   // Inspection Modal State (Full image review before approval)
@@ -56,6 +64,12 @@ function LibraryContent() {
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [approvingPostId, setApprovingPostId] = useState<string | null>(null);
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+
+  const fbCount = posts.filter(
+    (p) =>
+      p.pageIds.some((pid) => pages.find((page) => page.id === pid)?.platform === 'facebook') ||
+      p.results.some((r) => r.platform === 'facebook')
+  ).length;
 
   const handleRunQueue = async () => {
     try {
@@ -75,10 +89,26 @@ function LibraryContent() {
   // Filter posts
   const filteredPosts = posts.filter((post) => {
     const matchesTab = activeTab === 'all' || post.status === activeTab;
+    const matchesPlatform =
+      platformFilter === 'all'
+        ? true
+        : post.pageIds.some((pid) => {
+            const page = pages.find((p) => p.id === pid);
+            return (page?.platform || '').toLowerCase() === platformFilter;
+          }) ||
+          post.results.some((r) => (r.platform || '').toLowerCase() === platformFilter);
+
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      post.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      post.postType.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesSearch;
+      !q ||
+      post.message.toLowerCase().includes(q) ||
+      post.postType.toLowerCase().includes(q) ||
+      post.pageIds.some((pid) => {
+        const page = pages.find((p) => p.id === pid);
+        return page?.name.toLowerCase().includes(q);
+      });
+
+    return matchesTab && matchesPlatform && matchesSearch;
   });
 
   const tabCounts = {
@@ -196,43 +226,100 @@ function LibraryContent() {
 
           <Link
             href="/composer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98]"
+            title="Create and broadcast a Facebook post"
+          >
+            <SocialIcon platform="facebook" className="w-3.5 h-3.5 rounded-xs" />
+            <span>Create Facebook Post</span>
+          </Link>
+
+          <Link
+            href="/composer"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs hover:scale-[1.02] active:scale-[0.98]"
           >
-            <span>+ Create New Post</span>
+            <span>+ Create Post</span>
           </Link>
         </div>
       </div>
 
       {/* Tabs and Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Status Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {(['all', 'draft', 'scheduled', 'published', 'failed'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all shrink-0 flex items-center gap-1.5 ${
-                activeTab === tab
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <span>{tab === 'draft' ? 'Drafts / Approvals' : tab}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                  activeTab === tab ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Status Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            {(['all', 'draft', 'scheduled', 'published', 'failed'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === tab
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                {tabCounts[tab] || 0}
-              </span>
-            </button>
-          ))}
+                <span>{tab === 'draft' ? 'Drafts / Approvals' : tab}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    activeTab === tab ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {tabCounts[tab] || 0}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Search Input */}
+          <div className="relative min-w-[240px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search captions or post types..."
+              className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-slate-500 font-medium"
+            />
+          </div>
         </div>
 
-        {/* Search Input */}
-        <div className="relative min-w-[240px]">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
+        {/* Platform Quick Filter Row (Facebook vs All) */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              Filter by Platform:
+            </span>
+            <div className="inline-flex items-center gap-1.5 p-1 rounded-xl bg-[#F8F9FA] border border-slate-200 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setPlatformFilter('all')}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  platformFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All Platforms ({posts.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlatformFilter('facebook')}
+                className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  platformFilter === 'facebook'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <SocialIcon platform="facebook" className="w-3.5 h-3.5 rounded-xs" />
+                <span>Facebook Posts Only ({fbCount})</span>
+              </button>
+            </div>
+          </div>
+
+          <span className="text-[11px] text-slate-400 font-medium">
+            Showing {filteredPosts.length} posts
+          </span>
+        </div>
+      </div>
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -381,6 +468,16 @@ function LibraryContent() {
                       <Eye className="w-3.5 h-3.5 text-slate-600" />
                       <span>Inspect</span>
                     </button>
+
+                    {/* Re-use / Edit in Composer */}
+                    <Link
+                      href={`/composer?clone=${post.id}`}
+                      className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1 transition-all border border-blue-200"
+                      title="Open and reuse this post in Composer"
+                    >
+                      <Repeat className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Re-use</span>
+                    </Link>
 
                     {post.status === 'failed' && (
                       <button

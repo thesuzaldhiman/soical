@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
-import { PostType, Platform, SocialPage } from '@/types';
+import { Post, PostType, Platform, SocialPage } from '@/types';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 import { findSensitiveWords, sanitizeText } from '@/lib/utils/sensitive-words';
 import {
@@ -39,8 +39,13 @@ import {
   Share2,
   MoreHorizontal,
   Bookmark,
+  BookmarkCheck,
   Repeat,
   Key,
+  X,
+  Layers,
+  ArrowRight,
+  Filter,
 } from 'lucide-react';
 
 const POST_TYPES: { id: PostType; label: string; desc: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -69,14 +74,17 @@ function getLocalDateTimeOffset(hoursAhead: number, fixedHour?: number): string 
 export default function ComposerPage() {
   return (
     <AppShell>
-      <ComposerContent />
+      <Suspense fallback={<div className="p-12 text-center text-xs text-slate-400 font-bold">Loading Post Composer...</div>}>
+        <ComposerContent />
+      </Suspense>
     </AppShell>
   );
 }
 
 function ComposerContent() {
   const router = useRouter();
-  const { pages, accounts, categories, settings, createPost } = useApp();
+  const searchParams = useSearchParams();
+  const { pages, accounts, categories, settings, createPost, posts } = useApp();
 
   // Selected Destinations (Page IDs)
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>(
@@ -92,6 +100,106 @@ function ComposerContent() {
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaFileName, setMediaFileName] = useState<string | null>(null);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
+
+  // Post Library Modal State
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [libraryPlatformFilter, setLibraryPlatformFilter] = useState<'all' | 'facebook' | Platform>('facebook');
+  const [libraryStatusFilter, setLibraryStatusFilter] = useState<'all' | 'published' | 'scheduled' | 'draft'>('all');
+  const [libraryPreviewPost, setLibraryPreviewPost] = useState<Post | null>(null);
+
+  // Load a post from Library into the composer
+  const handleLoadPostFromLibrary = (postToLoad: Post) => {
+    setMessage(postToLoad.message || '');
+    setPostType(postToLoad.postType || 'text');
+    if (postToLoad.mediaUrl) {
+      setMediaUrl(postToLoad.mediaUrl);
+      setMediaMode('url');
+    }
+    if (postToLoad.linkUrl) setLinkUrl(postToLoad.linkUrl);
+    if (postToLoad.commentText) setFirstComment(postToLoad.commentText);
+    if (postToLoad.pageIds && postToLoad.pageIds.length > 0) {
+      const validIds = postToLoad.pageIds.filter((pid) => pages.some((p) => p.id === pid));
+      if (validIds.length > 0) {
+        setSelectedPageIds(validIds);
+      }
+    }
+    setShowLibraryModal(false);
+    setStatusBanner({
+      type: 'success',
+      text: `Loaded content from Post Library (#${postToLoad.id.slice(-6)})! You can now review, edit, or broadcast.`,
+    });
+  };
+
+  // Check URL search parameters or session storage on mount
+  useEffect(() => {
+    const cloneId = searchParams?.get('clone') || searchParams?.get('fromLibrary');
+    const targetPageId = searchParams?.get('pageId');
+
+    if (targetPageId && pages.some((p) => p.id === targetPageId)) {
+      setSelectedPageIds([targetPageId]);
+    }
+
+    if (cloneId && posts.length > 0) {
+      const match = posts.find((p) => p.id === cloneId);
+      if (match) {
+        handleLoadPostFromLibrary(match);
+      }
+    }
+
+    try {
+      const pendingImg = sessionStorage.getItem('sap_pending_composer_image');
+      const pendingTxt = sessionStorage.getItem('sap_pending_composer_text');
+      if (pendingImg) {
+        setMediaUrl(pendingImg);
+        setMediaMode('url');
+        setPostType('image');
+        sessionStorage.removeItem('sap_pending_composer_image');
+      }
+      if (pendingTxt) {
+        setMessage(pendingTxt);
+        sessionStorage.removeItem('sap_pending_composer_text');
+      }
+    } catch {}
+  }, [searchParams, posts, pages]);
+
+  // Count FB posts
+  const fbPostsCount = useMemo(() => {
+    return posts.filter(
+      (p) =>
+        p.pageIds.some((pid) => pages.find((page) => page.id === pid)?.platform === 'facebook') ||
+        p.results.some((r) => r.platform === 'facebook')
+    ).length;
+  }, [posts, pages]);
+
+  // Filtered Library posts for modal
+  const filteredLibraryPosts = useMemo(() => {
+    return posts.filter((post) => {
+      const touchesPlatform =
+        libraryPlatformFilter === 'all'
+          ? true
+          : post.pageIds.some((pid) => {
+              const page = pages.find((p) => p.id === pid);
+              return (page?.platform || '').toLowerCase() === libraryPlatformFilter;
+            }) ||
+            post.results.some((r) => (r.platform || '').toLowerCase() === libraryPlatformFilter);
+
+      const matchesStatus =
+        libraryStatusFilter === 'all' || post.status === libraryStatusFilter;
+
+      const q = librarySearch.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        post.message.toLowerCase().includes(q) ||
+        post.postType.toLowerCase().includes(q) ||
+        post.pageIds.some((pid) => {
+          const page = pages.find((p) => p.id === pid);
+          return page?.name.toLowerCase().includes(q);
+        });
+
+      return touchesPlatform && matchesStatus && matchesSearch;
+    });
+  }, [posts, pages, libraryPlatformFilter, libraryStatusFilter, librarySearch]);
 
   // Scheduling
   const [isScheduleMode, setIsScheduleMode] = useState(false);
@@ -497,6 +605,23 @@ function ComposerContent() {
             <span>{showPreview ? 'Hide Preview' : 'Show Preview'}</span>
           </button>
 
+          {/* Post Library Quick-Access Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setLibraryPlatformFilter('facebook');
+              setShowLibraryModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-[#E2E8F0] hover:bg-[#F8F9FA] text-xs font-bold text-slate-800 shadow-2xs transition-colors cursor-pointer"
+            title="Browse and reuse past Facebook posts and drafts from library"
+          >
+            <BookmarkCheck className="w-3.5 h-3.5 text-blue-600" />
+            <span>Post Library</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px]">
+              {posts.length}
+            </span>
+          </button>
+
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-xs font-bold text-slate-800 shadow-2xs">
             <span
               className={`w-2 h-2 rounded-full ${
@@ -634,6 +759,18 @@ function ComposerContent() {
                     >
                       Paste URL
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLibraryPlatformFilter('facebook');
+                        setShowLibraryModal(true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-all flex items-center gap-1 cursor-pointer"
+                      title="Select media from Post Library"
+                    >
+                      <BookmarkCheck className="w-3 h-3 text-blue-600" />
+                      <span>From Library</span>
+                    </button>
                   </div>
 
                   {mediaUrl && (
@@ -766,9 +903,23 @@ function ComposerContent() {
           {/* 2. Message / Caption */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Message / Caption
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Message / Caption
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLibraryPlatformFilter('facebook');
+                    setShowLibraryModal(true);
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[10px] font-bold text-blue-700 transition-colors cursor-pointer"
+                  title="Browse past Facebook posts from library to insert caption or creative"
+                >
+                  <BookmarkCheck className="w-3 h-3 text-blue-600" />
+                  <span>Browse Library ({fbPostsCount} FB)</span>
+                </button>
+              </div>
 
               <div className="flex items-center gap-2.5">
                 <span
@@ -1196,6 +1347,23 @@ function ComposerContent() {
                       </div>
                     </div>
                   )}
+
+                  {/* Quick Link to Facebook Page's Post Library */}
+                  <div className="pt-2.5 mt-2 flex items-center justify-between text-[11px] border-t border-[#E2E8F0]">
+                    <span className="text-slate-400 font-medium">Page History:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLibraryPlatformFilter('facebook');
+                        if (previewPage?.name) setLibrarySearch(previewPage.name);
+                        setShowLibraryModal(true);
+                      }}
+                      className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <BookmarkCheck className="w-3.5 h-3.5" />
+                      <span>Browse {previewPage?.name ? `"${previewPage.name}"` : 'Page'} Posts in Library</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1869,6 +2037,291 @@ function ComposerContent() {
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* POST LIBRARY MODAL (Facebook & Multi-Platform Post Browser) */}
+      {/* ========================================================================= */}
+      {showLibraryModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-scale-in">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-[#E2E8F0] flex items-center justify-between gap-4 bg-[#F8F9FA]/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0 shadow-2xs">
+                  <BookmarkCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900">
+                      Post Library &amp; History
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase">
+                      {libraryPlatformFilter === 'facebook' ? 'Facebook Mode' : 'All Channels'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Browse past posts, inspect media &amp; captions, and click &ldquo;Use in Composer&rdquo; to load into your draft.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowLibraryModal(false)}
+                className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
+                title="Close Library"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="p-4 sm:p-5 border-b border-[#E2E8F0] bg-white space-y-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                {/* Search Box */}
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={librarySearch}
+                    onChange={(e) => setLibrarySearch(e.target.value)}
+                    placeholder="Search by caption, keyword, or page name..."
+                    className="w-full pl-9 pr-8 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] text-xs text-slate-900 focus:outline-none focus:border-slate-500 focus:bg-white transition-all font-medium"
+                  />
+                  {librarySearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLibrarySearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Platform Switcher */}
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs font-bold shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setLibraryPlatformFilter('facebook')}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      libraryPlatformFilter === 'facebook'
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <SocialIcon platform="facebook" className="w-3.5 h-3.5 rounded-xs" />
+                    <span>Facebook ({fbPostsCount})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLibraryPlatformFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      libraryPlatformFilter === 'all'
+                        ? 'bg-slate-900 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>All Platforms ({posts.length})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                {(['all', 'published', 'scheduled', 'draft'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setLibraryStatusFilter(st)}
+                    className={`px-2.5 py-1 rounded-lg font-bold capitalize transition-all cursor-pointer ${
+                      libraryStatusFilter === st
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-[#F8F9FA] text-slate-600 hover:bg-slate-200/70 border border-[#E2E8F0]'
+                    }`}
+                  >
+                    {st === 'all' ? 'All Statuses' : st}
+                  </button>
+                ))}
+                <span className="text-[11px] text-slate-400 font-semibold ml-auto">
+                  Showing {filteredLibraryPosts.length} posts
+                </span>
+              </div>
+            </div>
+
+            {/* Posts Grid (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#F8F9FA]/40 space-y-3.5">
+              {filteredLibraryPosts.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 space-y-2">
+                  <BookmarkCheck className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="text-xs font-bold text-slate-700">No posts match your filters in the library</p>
+                  <p className="text-[11px] text-slate-400">
+                    Try switching from &ldquo;Facebook&rdquo; to &ldquo;All Platforms&rdquo; or clear your search term.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLibrarySearch('');
+                      setLibraryPlatformFilter('all');
+                      setLibraryStatusFilter('all');
+                    }}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors shadow-2xs cursor-pointer mt-2"
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredLibraryPosts.map((post) => {
+                    const hasFB =
+                      post.pageIds.some((pid) => pages.find((p) => p.id === pid)?.platform === 'facebook') ||
+                      post.results.some((r) => r.platform === 'facebook');
+
+                    return (
+                      <div
+                        key={post.id}
+                        className="bg-white rounded-2xl border border-[#E2E8F0] hover:border-slate-300 p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between space-y-3"
+                      >
+                        <div className="space-y-2.5">
+                          {/* Header: Platform badge & Status */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {hasFB ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-black">
+                                  <SocialIcon platform="facebook" className="w-3 h-3 rounded-xs" />
+                                  <span>Facebook</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold capitalize">
+                                  {post.postType}
+                                </span>
+                              )}
+                              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                                #{post.id.slice(-6)}
+                              </span>
+                            </div>
+
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border capitalize ${
+                                post.status === 'published'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : post.status === 'scheduled'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : post.status === 'failed'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              {post.status}
+                            </span>
+                          </div>
+
+                          {/* Media Thumbnail preview if exists */}
+                          {post.mediaUrl && (
+                            <div className="h-32 rounded-xl overflow-hidden bg-slate-100 border border-[#E2E8F0] relative group/img">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={post.mediaUrl}
+                                alt="Post media"
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[9px] font-bold backdrop-blur-xs">
+                                {post.postType}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Caption Snippet */}
+                          <p className="text-xs text-slate-800 line-clamp-3 leading-relaxed whitespace-pre-line font-medium">
+                            {post.message || <span className="text-slate-400 italic">No caption text</span>}
+                          </p>
+
+                          {/* First Comment / Link indicator */}
+                          {(post.commentText || post.linkUrl) && (
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500 bg-[#F8F9FA] p-1.5 rounded-lg border border-[#E2E8F0]">
+                              {post.commentText && (
+                                <span className="flex items-center gap-1 font-semibold text-slate-600 truncate">
+                                  <MessageSquare className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span className="truncate">1st Comment: {post.commentText}</span>
+                                </span>
+                              )}
+                              {post.linkUrl && (
+                                <span className="flex items-center gap-1 font-mono text-slate-500 truncate">
+                                  <Link2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span className="truncate">{post.linkUrl}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Target Pages */}
+                          <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-500">
+                            <span className="font-bold text-slate-400 uppercase">Pages:</span>
+                            {post.pageIds.map((pid) => {
+                              const page = pages.find((p) => p.id === pid);
+                              return (
+                                <span
+                                  key={pid}
+                                  className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium truncate max-w-[120px]"
+                                >
+                                  {page?.name || pid}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {post.scheduledAt
+                              ? `Sched: ${new Date(post.scheduledAt).toLocaleDateString()}`
+                              : `Created: ${new Date(post.createdAt).toLocaleDateString()}`}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleLoadPostFromLibrary(post)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-2xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                            title="Load this post caption, media, and destinations into the Composer"
+                          >
+                            <span>Use in Composer</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-5 border-t border-[#E2E8F0] bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <span className="text-slate-500 text-[11px]">
+                Tip: &ldquo;Use in Composer&rdquo; fills in the caption, media, and target channels so you can quickly repost or schedule.
+              </span>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                <Link
+                  href="/library"
+                  className="inline-flex items-center gap-1 text-slate-700 hover:text-black font-bold text-xs underline"
+                >
+                  <span>Open Full Library Page</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setShowLibraryModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
