@@ -58,8 +58,11 @@ function AccountsContent() {
   const {
     accounts,
     pages,
+    categories,
+    createCategory,
     settings,
     addAccount,
+    syncFacebookPages,
     addPages,
     updatePage,
     removeAccount,
@@ -122,6 +125,16 @@ function AccountsContent() {
     }
   }, [searchParams]);
 
+  // Pre-fill WordPress Secret Key when connecting
+  useEffect(() => {
+    if (connectPlatformChoice === 'wordpress') {
+      const defaultSecret = settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f';
+      if (!wpBridgeKey) {
+        setWpBridgeKey(defaultSecret);
+      }
+    }
+  }, [connectPlatformChoice, settings?.webhookSecret, wpBridgeKey]);
+
   const currentOrigin =
     typeof window !== 'undefined'
       ? window.location.origin
@@ -182,40 +195,25 @@ function AccountsContent() {
         const effectiveMetaAppId = parsed.metaAppId || firstPage.metaAppId;
         const effectiveMetaAppName = parsed.metaAppName || firstPage.metaAppName || 'Meta App';
 
-        const newAcc = addAccount('facebook', `${firstPage.name} (${effectiveMetaAppName})`, {
-          accessToken: userToken,
-          avatarUrl: firstPage.avatarUrl || parsed.user?.avatarUrl || '/icons/social/facebook.png',
-          fanCount: firstPage.fanCount || 0,
-          metaAppId: effectiveMetaAppId,
-          metaAppName: effectiveMetaAppName,
-        });
+        syncFacebookPages(
+          {
+            name: `${firstPage.name} (${effectiveMetaAppName})`,
+            accountId: parsed.user?.id || `fb_${Date.now()}`,
+            accessToken: userToken,
+            avatarUrl: firstPage.avatarUrl || parsed.user?.avatarUrl || '/icons/social/facebook.png',
+            fanCount: firstPage.fanCount || 0,
+            metaAppId: effectiveMetaAppId,
+            metaAppName: effectiveMetaAppName,
+          },
+          parsed.pages
+        );
 
-        const pagesToAdd: SocialPage[] = parsed.pages.map((p: any, idx: number) => ({
-          id: p.id && !p.id.startsWith('pg_') ? `pg_fb_${p.pageId || p.id}_${Date.now()}` : (p.id || `pg_fb_${Date.now()}_${idx}`),
-          accountId: newAcc.id,
-          platform: 'facebook',
-          pageId: String(p.pageId || p.id),
-          name: p.name || 'Facebook Page',
-          avatarUrl: p.avatarUrl || p.picture?.data?.url || '/icons/social/facebook.png',
-          fanCount: p.fanCount || p.fan_count || 0,
-          isActive: true,
-          accessToken: p.accessToken || p.access_token || userToken,
-          targetUrl: `https://facebook.com/${p.pageId || p.id}`,
-          category: p.category || 'Facebook Page',
-          metaAppId: p.metaAppId || effectiveMetaAppId,
-          metaAppName: p.metaAppName || effectiveMetaAppName,
-          permissions: Array.isArray(p.permissions)
-            ? p.permissions
-            : (Array.isArray(p.tasks) ? p.tasks : ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list']),
-        }));
-
-        addPages(pagesToAdd);
-        setConnectSuccess(`Successfully imported ${parsed.pages.length} Facebook Page(s) live via OAuth!`);
+        setConnectSuccess(`Successfully synced ${parsed.pages.length} Facebook Page(s) live via OAuth!`);
       } catch (e) {
         console.error('Failed importing pending Facebook pages:', e);
       }
     }
-  }, [addAccount, addPages]);
+  }, [syncFacebookPages]);
 
   // Check for pending imported YouTube channel from OAuth callback
   useEffect(() => {
@@ -491,6 +489,8 @@ function AccountsContent() {
     setConnectSuccess(null);
     setIsVerifying(true);
 
+    const effectiveBridgeKey = (wpBridgeKey || settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f').trim();
+
     try {
       const res = await fetch('/api/connect/wordpress', {
         method: 'POST',
@@ -498,7 +498,7 @@ function AccountsContent() {
         body: JSON.stringify({
           siteUrl: wpSiteUrl,
           connectionMode: wpConnectionMode,
-          bridgeKey: wpBridgeKey,
+          bridgeKey: effectiveBridgeKey,
           username: wpUsername,
           appPassword: wpAppPassword,
         }),
@@ -519,7 +519,7 @@ function AccountsContent() {
       // Add to context state with fetched categories
       addAccount('wordpress', `${finalName} (WP)`, {
         siteUrl: cleanUrl,
-        bridgeApiKey: wpBridgeKey,
+        bridgeApiKey: effectiveBridgeKey,
         wpUsername,
         wpAppPassword,
         bridgeType: wpConnectionMode,
@@ -528,7 +528,27 @@ function AccountsContent() {
         wpCategories: fetchedCats,
       });
 
-      const catNotice = fetchedCats.length > 0 ? ` (${fetchedCats.length} Categories Fetched)` : '';
+      // Auto-populate SaaS broadcast categories from fetched WordPress categories
+      if (fetchedCats.length > 0) {
+        fetchedCats.forEach((cat: any) => {
+          const catName = String(cat?.name || '').trim();
+          const catSlug = String(cat?.slug || catName).toLowerCase();
+          if (!catName) return;
+          const exists = categories.some(
+            (c: any) => c.name.toLowerCase().trim() === catName.toLowerCase()
+          );
+          if (!exists) {
+            createCategory(
+              catName,
+              '#3B82F6',
+              [],
+              [`#${catSlug.replace(/[^a-zA-Z0-9]/g, '')}`, '#news']
+            );
+          }
+        });
+      }
+
+      const catNotice = fetchedCats.length > 0 ? ` (${fetchedCats.length} Categories Synced to Groups)` : '';
       setConnectSuccess(
         `Successfully connected to "${finalName}"${catNotice} via ${
           wpConnectionMode === 'plugin-connector'
@@ -829,11 +849,39 @@ function AccountsContent() {
                         ? 'Connected Pages:'
                         : plat.id === 'youtube'
                         ? 'Connected Channels:'
+                        : plat.id === 'wordpress'
+                        ? 'Connected Sites:'
                         : 'Connected Profiles:'}
                     </span>
                     <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-[#E2E8F0]">
                       {platformPages.length} Active
                     </span>
+                  </div>
+                )}
+
+                {/* WordPress Synced Categories display */}
+                {isConnected && plat.id === 'wordpress' && (platformAccount?.wpCategories?.length || 0) > 0 && (
+                  <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-100 text-[11px] text-sky-900 space-y-1.5">
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="flex items-center gap-1">
+                        📁 {platformAccount?.wpCategories?.length} Categories Synced:
+                      </span>
+                      <Link href="/categories" className="underline text-sky-700 hover:text-sky-900 font-semibold">
+                        Map to Groups →
+                      </Link>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {platformAccount?.wpCategories?.slice(0, 5).map((cat) => (
+                        <span key={cat.id} className="px-1.5 py-0.5 bg-white rounded border border-sky-200 text-[10px] font-medium text-slate-800">
+                          {cat.name} ({cat.count})
+                        </span>
+                      ))}
+                      {(platformAccount?.wpCategories?.length || 0) > 5 && (
+                        <span className="text-[10px] text-sky-600 font-bold self-center">
+                          +{ (platformAccount?.wpCategories?.length || 0) - 5 } more
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1712,19 +1760,43 @@ function AccountsContent() {
                 {/* Plugin Connector Secret Key */}
                 {wpConnectionMode === 'plugin-connector' && (
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                      Secret API Key
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
+                        Secret API Key
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const keyToCopy = wpBridgeKey || settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f';
+                          navigator.clipboard.writeText(keyToCopy);
+                          setCopiedWpSecret(true);
+                          setTimeout(() => setCopiedWpSecret(false), 2000);
+                        }}
+                        className="text-[11px] font-bold text-sky-700 hover:text-sky-900 flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedWpSecret ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span className="text-emerald-700">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy Secret Key</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <input
                       type="text"
                       required
-                      value={wpBridgeKey || settings?.webhookSecret || ''}
+                      value={wpBridgeKey || settings?.webhookSecret || 'sap_whsec_908f0a9sdf8a0sd8f'}
                       onChange={(e) => setWpBridgeKey(e.target.value)}
                       placeholder="e.g. sap_whsec_..."
-                      className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all"
+                      className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-mono text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 transition-all font-semibold"
                     />
-                    <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      Found in WordPress Admin &gt; Settings &gt; Social Auto Poster
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                      WordPress Admin &gt; Settings &gt; Social Auto Poster mein yahi Secret Key paste karein.
                     </span>
                   </div>
                 )}

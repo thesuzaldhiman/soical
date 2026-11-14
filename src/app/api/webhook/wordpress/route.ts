@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dispatchToTargets, PublishTarget } from '@/lib/services/publisher';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { DEMO_CATEGORIES, DEMO_PAGES } from '@/lib/state/mock-data';
-import { PageCategory, Post, SocialPage } from '@/types';
+import { AutomationFeed, PageCategory, Post, SocialPage } from '@/types';
 import fs from 'fs';
 import path from 'path';
 
@@ -32,9 +32,36 @@ function saveLocalPosts(posts: Post[]) {
   try {
     const dir = path.dirname(LOCAL_STORE_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(LOCAL_STORE_FILE, JSON.stringify(posts, null, 2), 'utf-8');
+    fs.writeFileSync(LOCAL_STORE_FILE, JSON.stringify(posts.slice(0, 300), null, 2), 'utf-8');
   } catch (err) {
     console.warn('[WP Webhook] Failed saving local posts cache:', err);
+  }
+}
+
+async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail.com') {
+  const localCurrent = getLocalPosts();
+  saveLocalPosts([...newPosts, ...localCurrent]);
+
+  const pool = getDbPool();
+  if (!pool) return;
+
+  try {
+    const cleanEmail = email.toLowerCase().trim();
+    const [rows] = await pool.query<any[]>(
+      'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+      [cleanEmail]
+    );
+
+    if (rows && rows.length > 0) {
+      const existingPosts = parseJsonSafe(rows[0].posts, []);
+      const updatedPosts = [...newPosts, ...existingPosts].slice(0, 300);
+      await pool.query(
+        'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
+        [JSON.stringify(updatedPosts), cleanEmail]
+      );
+    }
+  } catch (err) {
+    console.warn('[WP Webhook] Failed persisting posts to MySQL:', err);
   }
 }
 
@@ -45,6 +72,7 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
     return {
       pages: DEMO_PAGES,
       categories: DEMO_CATEGORIES,
+      automations: [] as AutomationFeed[],
       posts: getLocalPosts(),
     };
   }
@@ -52,7 +80,7 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
   try {
     await initDbTables();
     const [rows] = await pool.query<any[]>(
-      'SELECT pages, categories, posts FROM app_user_data WHERE email = ? LIMIT 1',
+      'SELECT pages, categories, posts, automations FROM app_user_data WHERE email = ? LIMIT 1',
       [cleanEmail]
     );
 
@@ -60,9 +88,11 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
       const row = rows[0];
       const parsedPages = parseJsonSafe(row.pages, DEMO_PAGES) as SocialPage[];
       const parsedCats = parseJsonSafe(row.categories, DEMO_CATEGORIES) as PageCategory[];
+      const parsedAutos = parseJsonSafe(row.automations, []) as AutomationFeed[];
       return {
         pages: parsedPages.length > 0 ? parsedPages : DEMO_PAGES,
         categories: parsedCats.length > 0 ? parsedCats : DEMO_CATEGORIES,
+        automations: parsedAutos,
         posts: parseJsonSafe(row.posts, getLocalPosts()) as Post[],
       };
     }
@@ -73,6 +103,7 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
   return {
     pages: DEMO_PAGES,
     categories: DEMO_CATEGORIES,
+    automations: [] as AutomationFeed[],
     posts: getLocalPosts(),
   };
 }
@@ -81,12 +112,14 @@ export async function GET() {
   return NextResponse.json({
     status: 'active',
     service: 'Social Auto Poster WordPress Ingestion Engine',
-    version: '2.0.0',
+    version: '2.5.0',
     capabilities: [
+      'website_to_fb_automation',
+      'anti_spam_category_isolation',
       'multi_title_per_page',
+      'ai_image_and_link_formats',
       'first_comment_link',
-      'category_based_targeting',
-      'instant_publish_hook'
+      'instant_publish_hook',
     ],
     timestamp: new Date().toISOString(),
   });
@@ -134,56 +167,139 @@ export async function POST(request: NextRequest) {
       ? [payload.category]
       : [];
 
-    // 1. Fetch user pages & categories
+    // 1. Fetch user pages, categories & automations
     const userState = await getUserState();
     const allPages: SocialPage[] = userState.pages || [];
     const allCategories: PageCategory[] = userState.categories || [];
+    const allAutomations: AutomationFeed[] = (userState as any).automations || [];
 
-    // 2. Resolve Target Pages
+    const incomingSiteUrl = (payload.site_url || '').trim().replace(/\/+$/, '').toLowerCase();
+    const postCategories = categories.map((c: string) => c.toLowerCase().trim());
+
+    // 2. Resolve Automation Rule & Target Pages
     let targetPages: SocialPage[] = [];
+    let dispatchFormat: 'ai_image' | 'featured_image' | 'link_card' | 'text_only' = 'ai_image';
+    let enableMultiTitles = true;
+    let addFirstComment = true;
+    let matchedRuleName = '';
 
-    // If explicit targets provided in payload
+    // A. Explicit targets passed directly in payload
     if (Array.isArray(payload.targets) && payload.targets.length > 0) {
       const explicitIds = new Set(payload.targets.map((t: any) => t.id || t.pageId));
       targetPages = allPages.filter((p) => explicitIds.has(p.id) || explicitIds.has(p.pageId));
+      matchedRuleName = 'Explicit Target Payload';
     }
 
-    // Otherwise, match against category
+    // B. Check Website to FB Automation Rules
+    if (targetPages.length === 0 && allAutomations.length > 0) {
+      const matchingRule = allAutomations.find((rule) => {
+        if (rule.isActive === false) return false;
+        if (rule.type !== 'website_to_fb' && rule.type !== 'wordpress') return false;
+
+        // Check Site Match
+        const ruleSite = (rule.siteUrl || rule.feedUrl || '').trim().replace(/\/+$/, '').toLowerCase();
+        const siteMatches =
+          !ruleSite ||
+          ruleSite === '*' ||
+          !incomingSiteUrl ||
+          ruleSite.includes(incomingSiteUrl) ||
+          incomingSiteUrl.includes(ruleSite);
+
+        if (!siteMatches) return false;
+
+        // Check Category Match
+        const ruleCategory = (rule.wpCategory || '').trim().toLowerCase();
+        if (!ruleCategory || ruleCategory === '*' || ruleCategory === 'all') {
+          return true;
+        }
+
+        return postCategories.some(
+          (c) => c.includes(ruleCategory) || ruleCategory.includes(c)
+        );
+      });
+
+      if (matchingRule) {
+        matchedRuleName = matchingRule.name;
+        dispatchFormat = matchingRule.format || (matchingRule.autoGenerateImage ? 'ai_image' : 'featured_image');
+        enableMultiTitles = matchingRule.enableMultiTitle !== false;
+        addFirstComment = matchingRule.linkInComment ?? true;
+
+        if (Array.isArray(matchingRule.targetPageIds) && matchingRule.targetPageIds.length > 0) {
+          const rulePageIds = new Set(matchingRule.targetPageIds);
+          targetPages = allPages.filter((p) => rulePageIds.has(p.id) || rulePageIds.has(p.pageId));
+        } else if (matchingRule.targetCategoryId) {
+          const catGroup = allCategories.find((c) => c.id === matchingRule.targetCategoryId);
+          if (catGroup && catGroup.pageIds) {
+            const catPageIds = new Set(catGroup.pageIds);
+            targetPages = allPages.filter((p) => catPageIds.has(p.id) || catPageIds.has(p.pageId));
+          }
+        }
+      }
+    }
+
+    // C. Check Category Group Direct Match
     if (targetPages.length === 0 && categories.length > 0) {
-      const lowerCats = categories.map((c) => c.toLowerCase().trim());
       const matchedCat = allCategories.find((cat) => {
-        const catNameLower = cat.name.toLowerCase();
-        return lowerCats.some((lc) => catNameLower.includes(lc) || lc.includes(catNameLower));
+        const catNameLower = cat.name.toLowerCase().trim();
+        return postCategories.some((lc) => catNameLower.includes(lc) || lc.includes(catNameLower));
       });
 
       if (matchedCat && matchedCat.pageIds && matchedCat.pageIds.length > 0) {
         const catPageIds = new Set(matchedCat.pageIds);
         targetPages = allPages.filter((p) => catPageIds.has(p.id) || catPageIds.has(p.pageId));
+        matchedRuleName = `Category Group: ${matchedCat.name}`;
       }
     }
 
-    // Fallback: If still no target pages, pick all active Facebook pages
+    // D. STRICT ANTI-SPAM PROTECTION:
+    // If NO rule and NO category matched, STOP! DO NOT POST TO ALL PAGES!
     if (targetPages.length === 0) {
-      targetPages = allPages.filter((p) => p.platform === 'facebook' && p.isActive !== false);
-    }
+      console.log(
+        `[WP Webhook] Post "${mainTitle}" in category [${categories.join(
+          ', '
+        )}] was NOT dispatched. No Website to FB automation or Category Group is mapped. Prevents account spam.`
+      );
 
-    // If still empty, use all active pages regardless of platform
-    if (targetPages.length === 0) {
-      targetPages = allPages.filter((p) => p.isActive !== false);
+      // Record as draft / unmapped in posts history so user has audit log without spam
+      const unmappedRecord: Post = {
+        id: `post_wp_unmapped_${Date.now()}`,
+        workspaceId: 'ws_default',
+        postType: imageUrl ? 'image' : 'text',
+        title: mainTitle,
+        message: `${mainTitle}\n\n${excerpt}`.trim(),
+        mediaUrl: imageUrl || undefined,
+        linkUrl: permalink || undefined,
+        commentText: permalink ? `👉 पूरी खबर यहाँ पढ़ें: ${permalink}` : undefined,
+        pageIds: [],
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        results: [],
+      };
+      await persistPosts([unmappedRecord]);
+
+      return NextResponse.json({
+        success: true,
+        dispatched: false,
+        reason: 'unmapped_category',
+        message: `Post received for category "${categories.join(
+          ', '
+        )}", but no Website to FB automation rule or Category Group is mapped to this category. Safely skipped to prevent spamming your pages.`,
+        category: categories[0] || 'General',
+        site_url: payload.site_url,
+      });
     }
 
     // 3. Prepare Multi-Title Mapping
     // [Main Title (Page 1), Extra Title 1 (Page 2), Extra Title 2 (Page 3), Extra Title 3 (Page 4)]
-    const allTitles = [mainTitle, ...socialTitles];
-
+    const allTitles = enableMultiTitles ? [mainTitle, ...socialTitles] : [mainTitle];
     const dispatchResults: any[] = [];
-    const commentText = permalink ? `👉 पूरी खबर यहाँ पढ़ें: ${permalink}` : '';
+    const commentText = addFirstComment && permalink ? `👉 पूरी खबर यहाँ पढ़ें: ${permalink}` : '';
 
-    // Loop through each target page and dispatch with unique title
+    // Loop through each target page and dispatch according to selected format
     for (let i = 0; i < targetPages.length; i++) {
       const page = targetPages[i];
-      // Title for this page: either specific title or fallback to mainTitle
-      const assignedTitle = allTitles[i] || mainTitle;
+      const assignedTitle = enableMultiTitles ? allTitles[i] || mainTitle : mainTitle;
       const message = `${assignedTitle}\n\n${excerpt}`.trim();
 
       const targetItem: PublishTarget = {
@@ -198,14 +314,36 @@ export async function POST(request: NextRequest) {
         category: page.category,
       };
 
+      let postTypeToSend: 'image' | 'link' | 'text' = 'image';
+      let mediaToSend: string = '';
+      let linkToSend: string = '';
+
+      if (dispatchFormat === 'link_card') {
+        postTypeToSend = 'link';
+        linkToSend = permalink;
+      } else if (dispatchFormat === 'text_only') {
+        postTypeToSend = 'text';
+        linkToSend = addFirstComment ? '' : permalink;
+      } else if (dispatchFormat === 'featured_image') {
+        postTypeToSend = imageUrl ? 'image' : 'text';
+        mediaToSend = imageUrl;
+        linkToSend = permalink;
+      } else {
+        // ai_image (canvas/banner with title text)
+        postTypeToSend = 'image';
+        mediaToSend = imageUrl;
+        linkToSend = permalink;
+      }
+
       try {
         const singleResult = await dispatchToTargets({
-          postType: imageUrl ? 'image' : 'text',
+          postType: postTypeToSend,
           title: assignedTitle,
           message,
-          mediaUrl: imageUrl,
-          linkUrl: permalink,
+          mediaUrl: mediaToSend,
+          linkUrl: linkToSend,
           commentText,
+          isAiGenerated: dispatchFormat === 'ai_image',
           targets: [targetItem],
         });
 
@@ -239,13 +377,13 @@ export async function POST(request: NextRequest) {
     const newPostRecord: Post = {
       id: `post_wp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       workspaceId: 'ws_default',
-      postType: imageUrl ? 'image' : 'text',
+      postType: dispatchFormat === 'link_card' ? 'link' : dispatchFormat === 'text_only' ? 'text' : 'image',
       title: mainTitle,
       message: `${mainTitle}\n\n${excerpt}`.trim(),
-      mediaUrl: imageUrl || undefined,
+      mediaUrl: (dispatchFormat === 'ai_image' || dispatchFormat === 'featured_image') ? imageUrl || undefined : undefined,
       thumbnailUrl: imageUrl || undefined,
       linkUrl: permalink || undefined,
-      commentText,
+      commentText: commentText || undefined,
       pageIds: targetPages.map((p) => p.id),
       status: dispatchResults.some((r) => r.status === 'success') ? 'published' : 'failed',
       scheduledAt: new Date().toISOString(),
@@ -264,12 +402,14 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    const currentLocalPosts = getLocalPosts();
-    saveLocalPosts([newPostRecord, ...currentLocalPosts]);
+    await persistPosts([newPostRecord]);
 
     return NextResponse.json({
       success: true,
-      message: `Ingested & dispatched to ${targetPages.length} pages with ${allTitles.length} title variations.`,
+      dispatched: true,
+      ruleMatched: matchedRuleName,
+      dispatchFormat,
+      message: `Ingested & dispatched to ${targetPages.length} pages (${matchedRuleName}) with ${allTitles.length} title variations.`,
       mainTitle,
       totalVariations: allTitles.length,
       assignedPagesCount: targetPages.length,

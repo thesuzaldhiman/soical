@@ -3,7 +3,7 @@
  * Plugin Name: Social Auto Poster Connector (Multi-Titles & Instant Dispatch)
  * Plugin URI: https://game.khabarmonkey.com
  * Description: Connects WordPress directly to Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line) and automatically pushes published posts to your Facebook Pages and social channels with unique titles and first-comment links.
- * Version: 1.0.0
+ * Version: 1.2.0
  * Author: Suzal Dhiman (Khabar Monkey Media)
  * Author URI: https://game.khabarmonkey.com
  * License: GPL-2.0+
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-define('SAP_CONNECTOR_VERSION', '1.0.0');
+define('SAP_CONNECTOR_VERSION', '1.2.0');
 define('SAP_CONNECTOR_DIR', plugin_dir_path(__FILE__));
 define('SAP_CONNECTOR_URL', plugin_dir_url(__FILE__));
 
@@ -391,24 +391,27 @@ class Social_Auto_Poster_Connector {
     }
 
     public function check_plugin_update($transient) {
-        if (empty($transient->checked)) {
-            return $transient;
+        if (!is_object($transient)) {
+            $transient = new stdClass();
         }
 
         $remote = $this->fetch_remote_info();
-        if ($remote && version_compare(SAP_CONNECTOR_VERSION, $remote['version'], '<')) {
+        if ($remote && !empty($remote['version']) && version_compare(SAP_CONNECTOR_VERSION, $remote['version'], '<')) {
             $plugin_file = plugin_basename(__FILE__);
             $obj = new stdClass();
             $obj->slug = 'social-auto-poster-connector';
             $obj->plugin = $plugin_file;
             $obj->new_version = $remote['version'];
             $obj->url = isset($remote['homepage']) ? $remote['homepage'] : '';
-            $obj->package = isset($remote['package']) ? $remote['package'] : '';
+            $obj->package = !empty($remote['package']) ? $remote['package'] : (isset($remote['download_url']) ? $remote['download_url'] : '');
             $obj->tested = isset($remote['tested']) ? $remote['tested'] : '';
             $obj->requires_php = isset($remote['requires_php']) ? $remote['requires_php'] : '';
             $obj->icons = isset($remote['banners']) ? $remote['banners'] : array();
             $obj->banners = isset($remote['banners']) ? $remote['banners'] : array();
 
+            if (!isset($transient->response) || !is_array($transient->response)) {
+                $transient->response = array();
+            }
             $transient->response[$plugin_file] = $obj;
         }
 

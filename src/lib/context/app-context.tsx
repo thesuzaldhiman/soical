@@ -84,6 +84,18 @@ interface AppContextType {
       metaAppName?: string;
     }
   ) => SocialAccount;
+  syncFacebookPages: (
+    accountPayload: {
+      name: string;
+      accountId: string;
+      accessToken: string;
+      avatarUrl?: string;
+      fanCount?: number;
+      metaAppId?: string;
+      metaAppName?: string;
+    },
+    newPages: SocialPage[]
+  ) => SocialAccount;
   addPages: (pagesToAdd: SocialPage[]) => void;
   updatePage: (id: string, pageData: Partial<SocialPage>) => void;
   removeAccount: (id: string) => void;
@@ -193,6 +205,15 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   settings: INITIAL_SETTINGS,
   isHydrated: true,
   addAccount: () => ({
+    id: '',
+    platform: 'facebook',
+    accountId: '',
+    name: '',
+    avatarUrl: '',
+    status: 'active',
+    lastCheckedAt: new Date().toISOString(),
+  }),
+  syncFacebookPages: () => ({
     id: '',
     platform: 'facebook',
     accountId: '',
@@ -462,7 +483,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (parsed.postPerformances) setPostPerformances(parsed.postPerformances);
           if (parsed.postComments) setPostComments(parsed.postComments);
           if (parsed.automations) setAutomations(parsed.automations);
-          if (parsed.settings) setSettings((prev) => ({ ...prev, ...parsed.settings }));
+          if (parsed.settings) {
+            setSettings((prev) => {
+              const incomingMetaApps = Array.isArray(parsed.settings.metaApps) ? parsed.settings.metaApps : [];
+              const localMetaApps = Array.isArray(prev.metaApps) ? prev.metaApps : [];
+              const mergedApps = [...incomingMetaApps];
+              localMetaApps.forEach((la) => {
+                if (!mergedApps.some((ma) => ma.id === la.id || ma.appId === la.appId)) {
+                  mergedApps.push(la);
+                }
+              });
+              return {
+                ...prev,
+                ...parsed.settings,
+                metaApps: mergedApps.length > 0 ? mergedApps : prev.metaApps,
+              };
+            });
+          }
           if (parsed.workspace) setWorkspace(parsed.workspace);
         } catch (e) {
           console.error('Failed to parse local user state:', e);
@@ -498,9 +535,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => {
           if (res.success && res.data) {
             const db = res.data;
-            if (Array.isArray(db.accounts)) setAccounts(sanitizeAccounts(db.accounts));
+            if (Array.isArray(db.accounts)) {
+              const cleanedAccs = sanitizeAccounts(db.accounts).filter((a) => {
+                if (a.platform === 'facebook' && !a.metaAppId) {
+                  return !db.accounts.some((other: any) => other.platform === 'facebook' && other.metaAppId && other.accountId === a.accountId);
+                }
+                return true;
+              });
+              setAccounts(cleanedAccs);
+            }
             if (Array.isArray(db.pages)) {
-              const healedPages = sanitizePages(db.pages);
+              const validAccountIds = new Set((db.accounts || []).map((a: any) => a.id));
+              const healedPages = sanitizePages(db.pages).filter((p) => {
+                if (p.platform === 'facebook' && !p.metaAppId) {
+                  if (p.accountId && !validAccountIds.has(p.accountId)) return false;
+                }
+                return true;
+              });
               setPages(healedPages);
               if (healedPages.length > 0) {
                 setTimeout(() => syncPageLiveFollowers(), 400);
@@ -514,7 +565,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(db.postComments)) setPostComments(db.postComments);
             if (Array.isArray(db.automations)) setAutomations(db.automations);
             if (db.settings && typeof db.settings === 'object') {
-              setSettings((prev) => ({ ...prev, ...db.settings }));
+              setSettings((prev) => {
+                const incomingMetaApps = Array.isArray(db.settings.metaApps) ? db.settings.metaApps : [];
+                const localMetaApps = Array.isArray(prev.metaApps) ? prev.metaApps : [];
+                const mergedApps = [...incomingMetaApps];
+                localMetaApps.forEach((la) => {
+                  if (!mergedApps.some((ma) => ma.id === la.id || ma.appId === la.appId)) {
+                    mergedApps.push(la);
+                  }
+                });
+                return {
+                  ...prev,
+                  ...db.settings,
+                  metaApps: mergedApps.length > 0 ? mergedApps : prev.metaApps,
+                };
+              });
             }
             if (db.workspace) setWorkspace(db.workspace);
 
@@ -823,6 +888,80 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return [...updatedPrev, ...fresh];
     });
     setTimeout(() => syncPageLiveFollowers(), 300);
+  };
+
+  const syncFacebookPages = (
+    accountPayload: {
+      name: string;
+      accountId: string;
+      accessToken: string;
+      avatarUrl?: string;
+      fanCount?: number;
+      metaAppId?: string;
+      metaAppName?: string;
+    },
+    newPages: SocialPage[]
+  ): SocialAccount => {
+    const newAccountId = `acc_facebook_${Date.now()}`;
+    const newAccount: SocialAccount = {
+      id: newAccountId,
+      platform: 'facebook',
+      accountId: accountPayload.accountId,
+      name: accountPayload.name,
+      avatarUrl: accountPayload.avatarUrl || '/icons/social/facebook.png',
+      status: 'active',
+      accessToken: accountPayload.accessToken,
+      tokenExpiresAt: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
+      lastCheckedAt: new Date().toISOString(),
+      metaAppId: accountPayload.metaAppId,
+      metaAppName: accountPayload.metaAppName,
+    };
+
+    // 1. Replace Facebook accounts:
+    // Remove existing Facebook accounts for this user ID, or linked to this metaAppId, or untagged legacy Facebook accounts
+    setAccounts((prev) => [
+      newAccount,
+      ...prev.filter((a) => {
+        if (a.platform !== 'facebook') return true;
+        if (a.accountId === accountPayload.accountId) return false;
+        if (accountPayload.metaAppId && a.metaAppId === accountPayload.metaAppId) return false;
+        if (!a.metaAppId) return false;
+        return true;
+      }),
+    ]);
+
+    // 2. Format new incoming pages
+    const sanitizedIncoming = sanitizePages(
+      newPages.map((p, idx) => ({
+        ...p,
+        id: p.id && !p.id.startsWith('pg_') ? `pg_fb_${p.pageId || p.id}_${Date.now()}` : (p.id || `pg_fb_${Date.now()}_${idx}`),
+        accountId: newAccountId,
+        platform: 'facebook',
+        metaAppId: p.metaAppId || accountPayload.metaAppId,
+        metaAppName: p.metaAppName || accountPayload.metaAppName,
+        isActive: true,
+      }))
+    );
+
+    // 3. Replace Facebook pages:
+    // Keep pages from other platforms, and Facebook pages belonging to other Meta Apps
+    // Remove all old Facebook pages from this Meta App or legacy untagged Facebook pages
+    setPages((prev) => {
+      const remainingOtherPages = prev.filter((p) => {
+        if (p.platform !== 'facebook') return true;
+        // Keep Facebook pages from other Meta Apps
+        if (p.metaAppId && accountPayload.metaAppId && p.metaAppId !== accountPayload.metaAppId) {
+          return true;
+        }
+        // Discard pages from this Meta App or legacy untagged
+        return false;
+      });
+
+      return [...sanitizedIncoming, ...remainingOtherPages];
+    });
+
+    setTimeout(() => syncPageLiveFollowers(), 300);
+    return newAccount;
   };
 
   const updatePage = (id: string, pageData: Partial<SocialPage>) => {
@@ -2430,6 +2569,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         settings,
         isHydrated,
         addAccount,
+        syncFacebookPages,
         addPages,
         updatePage,
         removeAccount,

@@ -176,7 +176,18 @@ function SettingsContent() {
           },
         ];
       }
-      setMetaApps(apps);
+      setMetaApps((prev) => {
+        if (prev.length > apps.length) {
+          const merged = [...apps];
+          prev.forEach((p) => {
+            if (!merged.some((m) => m.id === p.id || m.appId === p.appId)) {
+              merged.push(p);
+            }
+          });
+          return merged;
+        }
+        return apps;
+      });
       if (settings.ytClientId !== undefined) setYtClientId(settings.ytClientId);
       if (settings.ytClientSecret !== undefined) setYtClientSecret(settings.ytClientSecret);
       if (settings.ytApiKey !== undefined) setYtApiKey(settings.ytApiKey);
@@ -429,12 +440,38 @@ function SettingsContent() {
       setFbAppSecret(defaultApp.appSecret);
     }
 
-    updateSettings({
+    const newSettings = {
+      ...(settings || {}),
       metaApps: updatedApps,
       metaAppId: defaultApp ? defaultApp.appId : fbAppId,
       metaAppSecret: defaultApp ? defaultApp.appSecret : fbAppSecret,
-    });
+    };
 
+    updateSettings(newSettings);
+
+    // Direct instant cloud sync
+    if (user?.email) {
+      try {
+        const cleanEmail = user.email.toLowerCase().trim();
+        const userKey = `sap_user_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}_v1`;
+        const userStored = localStorage.getItem(userKey);
+        const payload = userStored ? JSON.parse(userStored) : { accounts, pages, workspace };
+        payload.settings = newSettings;
+        localStorage.setItem(userKey, JSON.stringify(payload));
+        localStorage.setItem('sap_app_settings', JSON.stringify(newSettings));
+
+        fetch('/api/user/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, payload, user }),
+        }).catch((err) => console.warn('[Direct Cloud Sync] Warning:', err));
+      } catch (e) {
+        console.warn('Storage sync error:', e);
+      }
+    }
+
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
     setShowMetaAppModal(false);
   };
 
@@ -463,11 +500,37 @@ function SettingsContent() {
       setFbAppSecret(defaultApp.appSecret);
     }
 
-    updateSettings({
+    const newSettings = {
+      ...(settings || {}),
       metaApps: updatedApps,
       metaAppId: defaultApp ? defaultApp.appId : '',
       metaAppSecret: defaultApp ? defaultApp.appSecret : '',
-    });
+    };
+
+    updateSettings(newSettings);
+
+    if (user?.email) {
+      try {
+        const cleanEmail = user.email.toLowerCase().trim();
+        const userKey = `sap_user_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}_v1`;
+        const userStored = localStorage.getItem(userKey);
+        const payload = userStored ? JSON.parse(userStored) : { accounts, pages, workspace };
+        payload.settings = newSettings;
+        localStorage.setItem(userKey, JSON.stringify(payload));
+        localStorage.setItem('sap_app_settings', JSON.stringify(newSettings));
+
+        fetch('/api/user/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, payload, user }),
+        }).catch((err) => console.warn('[Direct Cloud Sync] Warning:', err));
+      } catch (e) {
+        console.warn('Storage sync error:', e);
+      }
+    }
+
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   const handleSetDefaultMetaApp = (id: string) => {
@@ -480,11 +543,31 @@ function SettingsContent() {
     if (defaultApp) {
       setFbAppId(defaultApp.appId);
       setFbAppSecret(defaultApp.appSecret);
-      updateSettings({
+      const newSettings = {
+        ...(settings || {}),
         metaApps: updatedApps,
         metaAppId: defaultApp.appId,
         metaAppSecret: defaultApp.appSecret,
-      });
+      };
+      updateSettings(newSettings);
+
+      if (user?.email) {
+        try {
+          const cleanEmail = user.email.toLowerCase().trim();
+          const userKey = `sap_user_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}_v1`;
+          const userStored = localStorage.getItem(userKey);
+          const payload = userStored ? JSON.parse(userStored) : { accounts, pages, workspace };
+          payload.settings = newSettings;
+          localStorage.setItem(userKey, JSON.stringify(payload));
+          localStorage.setItem('sap_app_settings', JSON.stringify(newSettings));
+
+          fetch('/api/user/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, payload, user }),
+          }).catch((err) => console.warn('[Direct Cloud Sync] Warning:', err));
+        } catch {}
+      }
     }
   };
 

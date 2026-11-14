@@ -317,10 +317,14 @@ export interface PageAnalyticsSnapshot {
 export interface AutomationFeed {
   id: string;
   name: string;
-  type: 'blogger' | 'rss' | 'wordpress';
+  type: 'website_to_fb' | 'wordpress' | 'rss' | 'blogger';
   feedUrl: string;
+  siteUrl?: string; // Connected WordPress Site URL
+  wpCategory?: string; // Specific WP Category (e.g. "Himachal News", "Health", "Dharm", or "*")
   targetCategoryId: string;
   targetPageIds?: string[]; // Specific targets (WordPress, Facebook, Telegram, etc.)
+  format?: 'ai_image' | 'featured_image' | 'link_card' | 'text_only'; // Dispatch format
+  enableMultiTitle?: boolean; // Distribute 1 unique title per page
   isActive: boolean;
   intervalMinutes: number;
   lastCheckedAt?: string;

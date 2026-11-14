@@ -264,13 +264,28 @@ export async function GET(request: NextRequest) {
             metaAppName: effectiveMetaAppName,
           }));
 
-          const existingPageIds = new Set(newPagesToAdd.map((p: any) => p.pageId));
-          const filteredCurrentPages = currentPages.filter((p: any) => !existingPageIds.has(p.pageId));
-          const updatedPages = [...newPagesToAdd, ...filteredCurrentPages];
-          const updatedAccounts = [
-            newAccount,
-            ...currentAccounts.filter((a: any) => !(a.platform === 'facebook' && a.accountId === payload.user.id && (a.metaAppId === effectiveMetaAppId)))
-          ];
+          // 1. Account Filtering:
+          // Replace existing accounts for this user (payload.user.id), or this metaAppId, or untagged legacy facebook accounts
+          const remainingAccounts = currentAccounts.filter((a: any) => {
+            if (a.platform !== 'facebook') return true;
+            if (a.accountId === payload.user.id) return false;
+            if (effectiveMetaAppId && a.metaAppId === effectiveMetaAppId) return false;
+            if (!a.metaAppId) return false;
+            return true;
+          });
+          const updatedAccounts = [newAccount, ...remainingAccounts];
+
+          // 2. Page Filtering (Authoritative Replace for this App / Account):
+          // Keep non-facebook pages, and keep facebook pages from OTHER Meta Apps.
+          // Remove all old facebook pages from this Meta App or legacy untagged facebook pages so only the user's fresh selection remains!
+          const remainingPages = currentPages.filter((p: any) => {
+            if (p.platform !== 'facebook') return true;
+            if (p.metaAppId && effectiveMetaAppId && p.metaAppId !== effectiveMetaAppId) {
+              return true;
+            }
+            return false;
+          });
+          const updatedPages = [...newPagesToAdd, ...remainingPages];
 
           // Generate baseline analytics snapshot so /analytics is never 0/blank
           normalizedPages.forEach((p: any) => {
@@ -305,15 +320,58 @@ export async function GET(request: NextRequest) {
             };
           });
 
-          // Ensure settings record Facebook App credentials
-          if (appId && appSecret) {
-            currentSettings.metaAppId = appId;
-            currentSettings.metaAppSecret = appSecret;
+          // Clean up analytics for deleted pages
+          const activePageIds = new Set(updatedPages.map((p: any) => p.id));
+          const cleanedPageAnalytics: Record<string, any> = {};
+          for (const [pid, val] of Object.entries(currentPageAnalytics)) {
+            if (activePageIds.has(pid)) {
+              cleanedPageAnalytics[pid] = val;
+            }
           }
+
+          // Ensure settings record Facebook App credentials AND preserves ALL metaApps!
+          let currentMetaApps: any[] = Array.isArray(currentSettings.metaApps) ? currentSettings.metaApps : [];
+
+          // If legacy single app was set, make sure it is represented
+          if (currentSettings.metaAppId && !currentMetaApps.some((a: any) => a.appId === currentSettings.metaAppId)) {
+            currentMetaApps.push({
+              id: 'meta_app_primary',
+              name: 'Primary Meta Developer App',
+              appId: currentSettings.metaAppId,
+              appSecret: currentSettings.metaAppSecret || '',
+              isDefault: true,
+              createdAt: new Date().toISOString(),
+            });
+          }
+
+          // Ensure the app that just authenticated is in metaApps with fresh secret and name
+          if (appId) {
+            const existingIdx = currentMetaApps.findIndex((a: any) => a.id === effectiveMetaAppId || a.appId === appId);
+            if (existingIdx >= 0) {
+              currentMetaApps[existingIdx] = {
+                ...currentMetaApps[existingIdx],
+                name: effectiveMetaAppName || currentMetaApps[existingIdx].name,
+                appSecret: appSecret || currentMetaApps[existingIdx].appSecret,
+              };
+            } else {
+              currentMetaApps.push({
+                id: effectiveMetaAppId,
+                name: effectiveMetaAppName,
+                appId: appId,
+                appSecret: appSecret,
+                isDefault: currentMetaApps.length === 0,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
+
+          currentSettings.metaApps = currentMetaApps;
+          if (appId) currentSettings.metaAppId = appId;
+          if (appSecret) currentSettings.metaAppSecret = appSecret;
 
           await pool.query(
             'UPDATE app_user_data SET accounts = ?, pages = ?, page_analytics = ?, settings = ? WHERE email = ?',
-            [JSON.stringify(updatedAccounts), JSON.stringify(updatedPages), JSON.stringify(currentPageAnalytics), JSON.stringify(currentSettings), loggedInEmail]
+            [JSON.stringify(updatedAccounts), JSON.stringify(updatedPages), JSON.stringify(cleanedPageAnalytics), JSON.stringify(currentSettings), loggedInEmail]
           );
           console.log(`[Facebook Auth Callback] Synced ${normalizedPages.length} pages directly to MySQL for ${loggedInEmail}`);
         }
