@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
     name: 'Social Auto Poster Connector',
     slug: 'social-auto-poster-connector',
     plugin: 'social-auto-poster-connector/social-auto-poster-connector.php',
-    version: '1.3.2',
-    new_version: '1.3.2',
+    version: '1.3.3',
+    new_version: '1.3.3',
     author: 'Suzal Dhiman (Khabar Monkey Media)',
     author_profile: 'https://game.khabarmonkey.com',
     homepage: 'https://game.khabarmonkey.com',
@@ -41,14 +41,14 @@ export async function GET(request: NextRequest) {
     last_updated: new Date().toISOString().split('T')[0],
     download_url: downloadUrl,
     package: downloadUrl,
-    upgrade_notice: 'Version 1.3.2: Automated first article image extraction from body (including lazyload & Gutenberg figures) and full content sync.',
+    upgrade_notice: 'Version 1.3.3: Solved Auto Engine inline content image race conditions with shutdown queue, full figure extraction, and REST API sync.',
     sections: {
       description:
         'Connects WordPress directly to CreatorFlow Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line), automatic multi-page image variations, category sync, and first-comment article links for maximum reach.',
       installation:
         '1. Click "Update Now" in WordPress Plugins dashboard, or upload the zip archive.\n2. Configure Webhook URL & Secret Key in Settings > Social Auto Poster.\n3. Publish posts with multi-line social titles!',
       changelog:
-        '<h4>1.3.2</h4><ul><li>Automated first article image extraction directly in PHP from post content (lazy load & figure support).</li><li>Synchronous HTML body payload transfer to avoid PHP worker deadlocks.</li><li>High-reliability blocking webhook dispatch with 15s timeout.</li><li>Live Social Auto Poster Status banner in WordPress Post Editor showing instant dispatch/skipped status.</li></ul>',
+        '<h4>1.3.3</h4><ul><li>Shutdown hook dispatch queue: Guarantees Auto Engine finishes downloading and embedding inline content images before dispatch.</li><li>Top article content image extraction: Seamlessly detects &lt;figure class="ae-inline-image"&gt;&lt;img ...&gt;, Gutenberg blocks, and external image meta.</li><li>REST API featured image fix: /wp-json/social-poster/v1/posts now extracts real content images when featured thumbnail is not set.</li><li>Duplicate dispatch prevention within 90-second debounce window.</li></ul>',
     },
     banners: {
       high: `${origin}/icons/social/wordpress.png`,

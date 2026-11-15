@@ -276,6 +276,59 @@ export async function POST(request: NextRequest) {
       return true;
     }
 
+    function extractUrlFromImgAttributes(tagHtml: string): string | null {
+      if (!tagHtml || typeof tagHtml !== 'string') return null;
+      const attrRegex = /(?:src|data-src|data-lazy-src|data-original|data-actualsrc)=["']([^"']+)["']/gi;
+      let m;
+      while ((m = attrRegex.exec(tagHtml)) !== null) {
+        const val = m[1]?.trim();
+        if (isValidArticleImage(val)) {
+          return val;
+        }
+      }
+      return null;
+    }
+
+    function extractFirstContentImage(htmlOrContent: string): string | null {
+      if (!htmlOrContent || typeof htmlOrContent !== 'string') return null;
+
+      // 1. First priority: Check <figure class="ae-inline-image"> or any <figure> with <img>
+      // (This is where Auto Engine and news editors place the top featured image inside the post body)
+      const figureRegex = /<figure[^>]*>([\s\S]*?)<\/figure>/gi;
+      let figMatch;
+      while ((figMatch = figureRegex.exec(htmlOrContent)) !== null) {
+        const url = extractUrlFromImgAttributes(figMatch[1]);
+        if (url) return url;
+      }
+
+      // 2. Second priority: Any <img> tag in order of appearance
+      const imgRegex = /<img\b[^>]*>/gi;
+      let imgMatch;
+      while ((imgMatch = imgRegex.exec(htmlOrContent)) !== null) {
+        const url = extractUrlFromImgAttributes(imgMatch[0]);
+        if (url) return url;
+      }
+
+      // 3. Third priority: Gutenberg block comments <!-- wp:image {"url":"..."} -->
+      const wpImgRegex = /<!--\s*wp:image\b[^>]*?(\{[\s\S]*?\})\s*-->/gi;
+      let wpMatch;
+      while ((wpMatch = wpImgRegex.exec(htmlOrContent)) !== null) {
+        try {
+          const parsed = JSON.parse(wpMatch[1]);
+          if (parsed.url && isValidArticleImage(parsed.url)) return parsed.url.trim();
+        } catch {}
+      }
+
+      // 4. Fourth priority: Markdown images ![alt](url)
+      const mdRegex = /!\[.*?\]\((https?:\/\/[^\s\)\"\']+)\)/gi;
+      let mdMatch;
+      while ((mdMatch = mdRegex.exec(htmlOrContent)) !== null) {
+        if (isValidArticleImage(mdMatch[1])) return mdMatch[1].trim();
+      }
+
+      return null;
+    }
+
     let imageUrl = (payload.image_url || payload.featured_image || '').trim();
     if (!isValidArticleImage(imageUrl)) {
       imageUrl = '';
@@ -286,15 +339,9 @@ export async function POST(request: NextRequest) {
       const rawContent = String(
         payload.content_html || payload.content || payload.body || payload.post_content || ''
       );
-      if (rawContent) {
-        const imgRegex = /<img[^>]+(?:src|data-src|data-lazy-src|data-original)=["']([^"']+)["'][^>]*>/gi;
-        let match;
-        while ((match = imgRegex.exec(rawContent)) !== null) {
-          if (isValidArticleImage(match[1])) {
-            imageUrl = match[1].trim();
-            break;
-          }
-        }
+      const extracted = extractFirstContentImage(rawContent);
+      if (extracted) {
+        imageUrl = extracted;
       }
     }
 
@@ -303,7 +350,7 @@ export async function POST(request: NextRequest) {
       try {
         const siteBase = (payload.site_url || incomingSiteUrl).replace(/\/+$/, '');
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3500);
+        const timeout = setTimeout(() => controller.abort(), 7000);
         const wpApiRes = await fetch(`${siteBase}/wp-json/wp/v2/posts/${payload.post_id}?_embed`, {
           signal: controller.signal,
           headers: {
@@ -318,55 +365,70 @@ export async function POST(request: NextRequest) {
           if (mediaItem && isValidArticleImage(mediaItem)) {
             imageUrl = mediaItem.trim();
           } else if (wpPost.content?.rendered) {
-            const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-            let m;
-            while ((m = imgRegex.exec(wpPost.content.rendered)) !== null) {
-              if (isValidArticleImage(m[1])) {
-                imageUrl = m[1].trim();
-                break;
-              }
+            const extracted = extractFirstContentImage(wpPost.content.rendered);
+            if (extracted) {
+              imageUrl = extracted;
             }
           }
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[WP Webhook] Fallback 2 REST error:', err);
+      }
     }
 
-    // Fallback 3: If still no image and permalink exists, fetch live article HTML with container targeting
-    if (!imageUrl && permalink) {
+    // Fallback 3: Live permalink / ?p=post_id scrape (with UTF-8 and ID query support)
+    if (!imageUrl && (permalink || payload.post_id)) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4000);
-        const pageRes = await fetch(permalink, {
-          signal: controller.signal,
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          },
-        });
-        clearTimeout(timeout);
-        if (pageRes.ok) {
-          const html = await pageRes.text();
-          const ogMatch =
-            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-          if (ogMatch && isValidArticleImage(ogMatch[1])) {
-            imageUrl = ogMatch[1].trim();
-          } else {
-            const containerMatch = html.match(
-              /<(?:div|article|main|section)[^>]+(?:id=["'](?:post-body-content|content)["']|class=["'][^"']*(?:post-content|entry-content|article-content|wp-block-post-content)[^"']*["'])[^>]*>([\s\S]*?)<\/(?:div|article|main|section)>/i
-            );
-            const searchArea = containerMatch ? containerMatch[1] : html;
-            const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-            let m;
-            while ((m = imgRegex.exec(searchArea)) !== null) {
-              if (isValidArticleImage(m[1])) {
-                imageUrl = m[1].trim();
-                break;
-              }
-            }
+        const candidateUrls: string[] = [];
+        if (permalink) {
+          candidateUrls.push(permalink);
+          if (permalink.startsWith('http://')) {
+            candidateUrls.push(permalink.replace('http://', 'https://'));
           }
         }
-      } catch {}
+        if (payload.post_id && (payload.site_url || incomingSiteUrl)) {
+          const siteBase = (payload.site_url || incomingSiteUrl).replace(/\/+$/, '');
+          candidateUrls.push(`${siteBase}/?p=${payload.post_id}`);
+        }
+
+        for (const testUrl of candidateUrls) {
+          if (imageUrl) break;
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 7000);
+            const pageRes = await fetch(testUrl, {
+              signal: controller.signal,
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              },
+            });
+            clearTimeout(timeout);
+            if (pageRes.ok) {
+              const html = await pageRes.text();
+              const ogMatch =
+                html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+                html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+                html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i) ||
+                html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
+              if (ogMatch && isValidArticleImage(ogMatch[1])) {
+                imageUrl = ogMatch[1].trim();
+              } else {
+                const containerMatch = html.match(
+                  /<(?:div|article|main|section)[^>]+(?:id=["'](?:post-body-content|content)["']|class=["'][^"']*(?:post-content|entry-content|article-content|wp-block-post-content)[^"']*["'])[^>]*>([\s\S]*?)<\/(?:div|article|main|section)>/i
+                );
+                const searchArea = containerMatch ? containerMatch[1] : html;
+                const extracted = extractFirstContentImage(searchArea);
+                if (extracted) {
+                  imageUrl = extracted;
+                }
+              }
+            }
+          } catch {}
+        }
+      } catch (err) {
+        console.warn('[WP Webhook] Fallback 3 scrape error:', err);
+      }
     }
 
     console.log(`[WP Webhook] Article image extraction resolved to: ${imageUrl || '(none)'}`);

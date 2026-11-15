@@ -148,7 +148,10 @@ export async function scrapeArticlePage(url: string): Promise<{ imageUrl?: strin
       html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
 
     if (ogMatch && ogMatch[1]) {
-      imageUrl = ogMatch[1].trim();
+      const cand = ogMatch[1].trim();
+      if (!cand.includes('avatar') && !cand.endsWith('.svg') && !cand.includes('favicon')) {
+        imageUrl = cand;
+      }
     }
 
     // 2. Extract full article body using common news container patterns
@@ -180,6 +183,20 @@ export async function scrapeArticlePage(url: string): Promise<{ imageUrl?: strin
           .filter((t) => t.length > 40 && !t.includes('cookie') && !t.includes('subscribe') && !t.includes('copyright'));
         if (paragraphs.length >= 2) {
           fullContent = paragraphs.map((p) => `<p>${p}</p>`).join('\n');
+        }
+      }
+    }
+
+    // Fallback: Extract first genuine image from article body / figure if og:image was not present
+    if (!imageUrl) {
+      const searchTarget = fullContent || html;
+      const figMatch = searchTarget.match(/<figure[^>]*>[\s\S]*?<img\b[^>]+(?:src|data-src|data-lazy-src|data-original)=["']([^"']+)["']/i);
+      if (figMatch && figMatch[1] && !figMatch[1].includes('avatar') && !figMatch[1].endsWith('.svg') && !figMatch[1].includes('favicon')) {
+        imageUrl = figMatch[1].trim();
+      } else {
+        const imgMatch = searchTarget.match(/<img\b[^>]+(?:src|data-src|data-lazy-src|data-original)=["']([^"']+)["']/i);
+        if (imgMatch && imgMatch[1] && !imgMatch[1].includes('avatar') && !imgMatch[1].endsWith('.svg') && !imgMatch[1].includes('favicon')) {
+          imageUrl = imgMatch[1].trim();
         }
       }
     }

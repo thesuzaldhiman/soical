@@ -3,7 +3,7 @@
  * Plugin Name: Social Auto Poster Connector (Multi-Titles & Instant Dispatch)
  * Plugin URI: https://game.khabarmonkey.com
  * Description: Connects WordPress directly to Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line) and automatically pushes published posts to your Facebook Pages and social channels with unique titles and first-comment links.
- * Version: 1.3.2
+ * Version: 1.3.3
  * Author: Suzal Dhiman (Khabar Monkey Media)
  * Author URI: https://game.khabarmonkey.com
  * License: GPL-2.0+
@@ -14,13 +14,14 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-define('SAP_CONNECTOR_VERSION', '1.3.2');
+define('SAP_CONNECTOR_VERSION', '1.3.3');
 define('SAP_CONNECTOR_DIR', plugin_dir_path(__FILE__));
 define('SAP_CONNECTOR_URL', plugin_dir_url(__FILE__));
 
 class Social_Auto_Poster_Connector {
 
     private static $instance = null;
+    private $pending_dispatch_posts = array();
 
     public static function get_instance() {
         if (null === self::$instance) {
@@ -40,8 +41,11 @@ class Social_Auto_Poster_Connector {
         add_action('add_meta_boxes', array($this, 'add_social_titles_meta_box'));
         add_action('save_post', array($this, 'save_social_titles_meta_box'), 10, 2);
 
-        // Instant publish hook
+        // Instant publish & Auto Engine sync hooks
         add_action('transition_post_status', array($this, 'handle_post_transition'), 10, 3);
+        add_action('save_post_post', array($this, 'handle_save_post'), 30, 2);
+        add_action('shutdown', array($this, 'handle_shutdown_dispatch'));
+        register_shutdown_function(array($this, 'handle_shutdown_dispatch'));
 
         // REST API verification endpoint
         add_action('rest_api_init', array($this, 'register_rest_routes'));
@@ -664,12 +668,12 @@ class Social_Auto_Poster_Connector {
        ========================================================================== */
 
     public function handle_post_transition($new_status, $old_status, $post) {
-        if ($post->post_type !== 'post') {
+        if (!is_object($post) || $post->post_type !== 'post') {
             return;
         }
 
         // Only fire when post becomes published
-        if ($new_status !== 'publish' || $old_status === 'publish') {
+        if ($new_status !== 'publish') {
             return;
         }
 
@@ -678,7 +682,68 @@ class Social_Auto_Poster_Connector {
             return;
         }
 
-        $this->dispatch_post_payload($post);
+        // Queue post ID for shutdown dispatch (allows Auto Engine, watermarks and SEO to finish saving image & content)
+        if ($old_status !== 'publish') {
+            $this->pending_dispatch_posts[$post->ID] = true;
+        }
+    }
+
+    public function handle_save_post($post_id, $post) {
+        if (!is_object($post) || $post->post_type !== 'post') {
+            return;
+        }
+
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+
+        if (wp_is_post_revision($post_id)) {
+            return;
+        }
+
+        if ($post->post_status !== 'publish') {
+            return;
+        }
+
+        $auto_publish = get_option('sap_auto_publish', '1');
+        if ($auto_publish !== '1') {
+            return;
+        }
+
+        // Check if recently dispatched within 90 seconds
+        $last_dispatched = get_post_meta($post_id, '_sap_dispatched_at', true);
+        if ($last_dispatched && (time() - intval($last_dispatched)) < 90) {
+            return;
+        }
+
+        $this->pending_dispatch_posts[$post_id] = true;
+    }
+
+    public function handle_shutdown_dispatch() {
+        if (empty($this->pending_dispatch_posts)) {
+            return;
+        }
+
+        $posts_to_process = array_keys($this->pending_dispatch_posts);
+        $this->pending_dispatch_posts = array(); // Clear to prevent recursive loops
+
+        foreach ($posts_to_process as $post_id) {
+            // Prevent duplicate dispatch within 90 seconds
+            $last_dispatched = get_post_meta($post_id, '_sap_dispatched_at', true);
+            if ($last_dispatched && (time() - intval($last_dispatched)) < 90) {
+                continue;
+            }
+
+            $fresh_post = get_post($post_id);
+            if (!$fresh_post || $fresh_post->post_status !== 'publish') {
+                continue;
+            }
+
+            $result = $this->dispatch_post_payload($fresh_post, true);
+            if ($result && !empty($result['success'])) {
+                update_post_meta($post_id, '_sap_dispatched_at', time());
+            }
+        }
     }
 
     public function ajax_manual_dispatch() {
@@ -695,10 +760,145 @@ class Social_Auto_Poster_Connector {
 
         $result = $this->dispatch_post_payload($post, true);
         if ($result['success']) {
+            update_post_meta($post_id, '_sap_dispatched_at', time());
             wp_send_json_success($result);
         } else {
             wp_send_json_error($result);
         }
+    }
+
+    public function is_valid_image_url($url) {
+        if (empty($url) || !is_string($url)) return false;
+        $clean = trim($url);
+        $lower = strtolower($clean);
+        if (strpos($clean, 'http://') !== 0 && strpos($clean, 'https://') !== 0) return false;
+        if (strpos($lower, 'avatar') !== false ||
+            strpos($lower, 'gravatar') !== false ||
+            strpos($lower, 'editoricon') !== false ||
+            strpos($lower, 'emoji') !== false ||
+            strpos($lower, 'wp-includes') !== false ||
+            strpos($lower, 'favicon') !== false ||
+            strpos($lower, 'picsum.photos') !== false ||
+            substr($lower, -4) === '.svg') {
+            return false;
+        }
+        return true;
+    }
+
+    public function extract_url_from_img_tag($html) {
+        if (empty($html) || !is_string($html)) return '';
+        // Match src, data-src, data-lazy-src, data-original, data-actualsrc
+        if (preg_match_all('/(?:src|data-src|data-lazy-src|data-original|data-actualsrc)=["\']([^"\']+)["\']/i', $html, $matches)) {
+            foreach ($matches[1] as $candidate) {
+                $cand = trim($candidate);
+                if ($this->is_valid_image_url($cand)) {
+                    return $cand;
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Unified multi-strategy image extractor.
+     * Priority:
+     * 1. Standard WordPress featured image (thumbnail)
+     * 2. Auto Engine external image post meta (_ae_external_featured_image)
+     * 3. Known external featured image plugins post meta (fifu_image_url, featured_image_url, etc.)
+     * 4. Top article content image (<figure class="ae-inline-image"><img ...>, Gutenberg wp:image, standard <img>)
+     * 5. Attached image media in WordPress library
+     */
+    public function extract_post_image($post_or_id) {
+        $post = is_object($post_or_id) ? $post_or_id : get_post($post_or_id);
+        if (!$post) {
+            return '';
+        }
+        $post_id = $post->ID;
+
+        // 1. Standard WordPress Featured Image (Thumbnail)
+        $thumbnail_id = get_post_thumbnail_id($post_id);
+        if ($thumbnail_id) {
+            $img_src = wp_get_attachment_image_src($thumbnail_id, 'full');
+            if ($img_src && !empty($img_src[0]) && $this->is_valid_image_url($img_src[0])) {
+                return esc_url_raw($img_src[0]);
+            }
+        }
+
+        // 2. Auto Engine External Featured Image Meta (_ae_external_featured_image)
+        $ae_img = get_post_meta($post_id, '_ae_external_featured_image', true);
+        if (!empty($ae_img) && is_string($ae_img) && $this->is_valid_image_url($ae_img)) {
+            return esc_url_raw($ae_img);
+        }
+
+        // 3. Known external featured image plugins meta
+        $meta_keys = array(
+            'featured_image_url',
+            '_featured_image_url',
+            'fifu_image_url',
+            '_knawatfmp_featured_post',
+            'kd_featured_image',
+            'external_image_url',
+        );
+        foreach ($meta_keys as $mk) {
+            $val = get_post_meta($post_id, $mk, true);
+            if (!empty($val) && is_string($val) && $this->is_valid_image_url($val)) {
+                return esc_url_raw($val);
+            }
+        }
+
+        // 4. Extract first genuine content image from $post->post_content
+        // (Supports <figure class="ae-inline-image"><img ...>, Gutenberg blocks, lazyload attributes)
+        if (!empty($post->post_content)) {
+            $content = $post->post_content;
+
+            // Strategy 4A: Check for <figure class="ae-inline-image"> or any <figure> with <img>
+            if (preg_match_all('/<figure[^>]*>([\s\S]*?)<\/figure>/i', $content, $fig_matches)) {
+                foreach ($fig_matches[1] as $fig_html) {
+                    $cand = $this->extract_url_from_img_tag($fig_html);
+                    if (!empty($cand)) {
+                        return esc_url_raw($cand);
+                    }
+                }
+            }
+
+            // Strategy 4B: Check all <img> tags in content
+            if (preg_match_all('/<img\b[^>]*>/i', $content, $img_tags)) {
+                foreach ($img_tags[0] as $tag) {
+                    $cand = $this->extract_url_from_img_tag($tag);
+                    if (!empty($cand)) {
+                        return esc_url_raw($cand);
+                    }
+                }
+            }
+
+            // Strategy 4C: Check Gutenberg block comments <!-- wp:image {"url":"..."} -->
+            if (preg_match_all('/<!--\s*wp:image\b[^>]*?(\{[\s\S]*?\})\s*-->/i', $content, $wp_matches)) {
+                foreach ($wp_matches[1] as $json_str) {
+                    $data = json_decode($json_str, true);
+                    if (!empty($data['url']) && $this->is_valid_image_url($data['url'])) {
+                        return esc_url_raw($data['url']);
+                    }
+                }
+            }
+        }
+
+        // 5. Check attached media in WordPress Media Library
+        $attachments = get_posts(array(
+            'post_type'      => 'attachment',
+            'post_mime_type' => 'image',
+            'posts_per_page' => 1,
+            'post_parent'    => $post_id,
+            'orderby'        => 'menu_order',
+            'order'          => 'ASC',
+        ));
+        if (!empty($attachments)) {
+            $att_src = wp_get_attachment_image_src($attachments[0]->ID, 'full');
+            if ($att_src && !empty($att_src[0]) && $this->is_valid_image_url($att_src[0])) {
+                return esc_url_raw($att_src[0]);
+            }
+        }
+
+        return '';
     }
 
     public function dispatch_post_payload($post, $blocking = false) {
@@ -725,55 +925,8 @@ class Social_Auto_Poster_Connector {
             }
         }
 
-        // Featured Image extraction with prioritized fallback to first genuine article image
-        $featured_image = '';
-        $thumbnail_id = get_post_thumbnail_id($post_id);
-        if ($thumbnail_id) {
-            $img_src = wp_get_attachment_image_src($thumbnail_id, 'full');
-            if ($img_src && !empty($img_src[0])) {
-                $featured_image = $img_src[0];
-            }
-        }
-
-        // Fallback 1: Extract first genuine image from post HTML body (supports standard, lazyload, figure & Gutenberg)
-        if (empty($featured_image) && !empty($post->post_content)) {
-            // Find all <img> tags in content with src, data-src, data-lazy-src, data-original
-            if (preg_match_all('/<img[^>]+(?:src|data-src|data-lazy-src|data-original)=["\']([^"\']+)["\']/i', $post->post_content, $img_matches)) {
-                foreach ($img_matches[1] as $candidate) {
-                    $c_clean = trim($candidate);
-                    $c_lower = strtolower($c_clean);
-                    if (strpos($c_clean, 'http') === 0 &&
-                        strpos($c_lower, 'avatar') === false &&
-                        strpos($c_lower, 'gravatar') === false &&
-                        strpos($c_lower, 'editoricon') === false &&
-                        strpos($c_lower, 'emoji') === false &&
-                        strpos($c_lower, 'wp-includes') === false &&
-                        strpos($c_lower, 'favicon') === false &&
-                        substr($c_lower, -4) !== '.svg') {
-                        $featured_image = esc_url_raw($c_clean);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Fallback 2: Check attached media gallery
-        if (empty($featured_image)) {
-            $attachments = get_posts(array(
-                'post_type'      => 'attachment',
-                'post_mime_type' => 'image',
-                'posts_per_page' => 1,
-                'post_parent'    => $post_id,
-                'orderby'        => 'menu_order',
-                'order'          => 'ASC',
-            ));
-            if (!empty($attachments)) {
-                $att_src = wp_get_attachment_image_src($attachments[0]->ID, 'full');
-                if ($att_src && !empty($att_src[0])) {
-                    $featured_image = $att_src[0];
-                }
-            }
-        }
+        // Robust multi-strategy featured image extraction (content, figure, AE meta, thumbnail)
+        $featured_image = $this->extract_post_image($post);
 
         // Categories
         $categories = wp_get_post_categories($post_id, array('fields' => 'names'));
@@ -979,12 +1132,7 @@ class Social_Auto_Poster_Connector {
                     }
                 }
 
-                $thumbnail_id = get_post_thumbnail_id($pid);
-                $img_url = '';
-                if ($thumbnail_id) {
-                    $src = wp_get_attachment_image_src($thumbnail_id, 'full');
-                    if ($src && !empty($src[0])) $img_url = $src[0];
-                }
+                $img_url = $this->extract_post_image($pid);
 
                 $posts_data[] = array(
                     'id'             => $pid,
@@ -992,6 +1140,8 @@ class Social_Auto_Poster_Connector {
                     'social_titles'  => $social_titles,
                     'permalink'      => get_permalink(),
                     'featured_image' => $img_url,
+                    'image_url'      => $img_url,
+                    'content_html'   => get_the_content(),
                     'categories'     => wp_get_post_categories($pid, array('fields' => 'names')),
                     'excerpt'        => get_the_excerpt(),
                     'published_at'   => get_the_date('c'),
