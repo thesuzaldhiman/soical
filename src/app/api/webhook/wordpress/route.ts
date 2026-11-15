@@ -247,46 +247,8 @@ export async function POST(request: NextRequest) {
       : [];
 
     const permalink = (payload.permalink || '').trim();
-    let imageUrl = (payload.image_url || payload.featured_image || '').trim();
-
-    // Fallback: If no featured image in payload, extract first <img> from article body content
-    if (!imageUrl) {
-      const rawContent = String(payload.content_html || payload.content || payload.body || payload.post_content || payload.excerpt || '');
-      const imgMatch = rawContent.match(/<img[^>]+src=["']([^"']+)["']/i);
-      if (imgMatch && imgMatch[1]) {
-        imageUrl = imgMatch[1].trim();
-      }
-    }
-
-    // Fallback 2: If still no image and permalink exists, fetch article HTML with quick timeout to get og:image or first <img>
-    if (!imageUrl && permalink) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2500);
-        const pageRes = await fetch(permalink, {
-          signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SocialPosterBot/2.0)' },
-        });
-        clearTimeout(timeout);
-        if (pageRes.ok) {
-          const html = await pageRes.text();
-          const ogMatch =
-            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-          if (ogMatch && ogMatch[1]) {
-            imageUrl = ogMatch[1].trim();
-          } else {
-            const bodyImg =
-              html.match(/<article[^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["']/i) ||
-              html.match(/<img[^>]+src=["']([^"']+)["']/i);
-            if (bodyImg && bodyImg[1]) {
-              imageUrl = bodyImg[1].trim();
-            }
-          }
-        }
-      } catch {}
-    }
-
+    const incomingSiteUrl = (payload.site_url || '').trim().replace(/\/+$/, '').toLowerCase();
+    const explicitEmail = (payload.user_email || payload.email || '').trim().toLowerCase();
     const excerpt = (payload.excerpt || '').trim();
     const categories: string[] = Array.isArray(payload.categories)
       ? payload.categories
@@ -294,8 +256,120 @@ export async function POST(request: NextRequest) {
       ? [payload.category]
       : [];
 
-    const incomingSiteUrl = (payload.site_url || '').trim().replace(/\/+$/, '').toLowerCase();
-    const explicitEmail = (payload.user_email || payload.email || '').trim().toLowerCase();
+    // Helper: validate if URL is a genuine article photo (not an avatar, author icon, or placeholder)
+    function isValidArticleImage(url?: string | null): boolean {
+      if (!url || typeof url !== 'string') return false;
+      const clean = url.trim().toLowerCase();
+      if (!clean.startsWith('http://') && !clean.startsWith('https://')) return false;
+      if (
+        clean.includes('editoricon') ||
+        clean.includes('avatar') ||
+        clean.includes('gravatar') ||
+        clean.includes('picsum.photos') ||
+        clean.includes('wp-includes') ||
+        clean.includes('favicon') ||
+        clean.endsWith('.svg') ||
+        clean.includes('data:image/svg')
+      ) {
+        return false;
+      }
+      return true;
+    }
+
+    let imageUrl = (payload.image_url || payload.featured_image || '').trim();
+    if (!isValidArticleImage(imageUrl)) {
+      imageUrl = '';
+    }
+
+    // Fallback 1: Extract first genuine image from article body content sent in payload
+    if (!imageUrl) {
+      const rawContent = String(
+        payload.content_html || payload.content || payload.body || payload.post_content || ''
+      );
+      if (rawContent) {
+        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+        let match;
+        while ((match = imgRegex.exec(rawContent)) !== null) {
+          if (isValidArticleImage(match[1])) {
+            imageUrl = match[1].trim();
+            break;
+          }
+        }
+      }
+    }
+
+    // Fallback 2: Check WordPress REST API directly if post_id and site_url exist
+    if (!imageUrl && payload.post_id && (payload.site_url || incomingSiteUrl)) {
+      try {
+        const siteBase = (payload.site_url || incomingSiteUrl).replace(/\/+$/, '');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
+        const wpApiRes = await fetch(`${siteBase}/wp-json/wp/v2/posts/${payload.post_id}?_embed`, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          },
+        });
+        clearTimeout(timeout);
+        if (wpApiRes.ok) {
+          const wpPost = await wpApiRes.json();
+          const mediaItem = wpPost._embedded?.['wp:featuredmedia']?.[0]?.source_url;
+          if (mediaItem && isValidArticleImage(mediaItem)) {
+            imageUrl = mediaItem.trim();
+          } else if (wpPost.content?.rendered) {
+            const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+            let m;
+            while ((m = imgRegex.exec(wpPost.content.rendered)) !== null) {
+              if (isValidArticleImage(m[1])) {
+                imageUrl = m[1].trim();
+                break;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Fallback 3: If still no image and permalink exists, fetch live article HTML with container targeting
+    if (!imageUrl && permalink) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        const pageRes = await fetch(permalink, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          },
+        });
+        clearTimeout(timeout);
+        if (pageRes.ok) {
+          const html = await pageRes.text();
+          const ogMatch =
+            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+          if (ogMatch && isValidArticleImage(ogMatch[1])) {
+            imageUrl = ogMatch[1].trim();
+          } else {
+            const containerMatch = html.match(
+              /<(?:div|article|main|section)[^>]+(?:id=["'](?:post-body-content|content)["']|class=["'][^"']*(?:post-content|entry-content|article-content|wp-block-post-content)[^"']*["'])[^>]*>([\s\S]*?)<\/(?:div|article|main|section)>/i
+            );
+            const searchArea = containerMatch ? containerMatch[1] : html;
+            const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+            let m;
+            while ((m = imgRegex.exec(searchArea)) !== null) {
+              if (isValidArticleImage(m[1])) {
+                imageUrl = m[1].trim();
+                break;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    console.log(`[WP Webhook] Article image extraction resolved to: ${imageUrl || '(none)'}`);
 
     // 1. Fetch user pages, categories & automations dynamically for this site's owner
     const userState = await resolveUserState(incomingSiteUrl, explicitEmail);
@@ -357,6 +431,9 @@ export async function POST(request: NextRequest) {
         enableMultiTitles = matchingRule.enableMultiTitle !== false;
         addFirstComment = matchingRule.linkInComment ?? true;
         isDraftMode = matchingRule.postStatus === 'draft';
+        if (payload.test === true || payload.is_test === true || payload.draft === true || payload.status === 'draft') {
+          isDraftMode = true;
+        }
         selectedSigTemplateId = matchingRule.sigTemplateId;
 
         if (Array.isArray(matchingRule.targetPageIds) && matchingRule.targetPageIds.length > 0) {
