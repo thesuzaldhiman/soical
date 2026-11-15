@@ -15,6 +15,7 @@ import {
   Rss,
   Globe,
   Palette,
+  Film,
   BarChart3,
   DollarSign,
   FileText,
@@ -98,6 +99,12 @@ export function AppSidebar() {
       items: [
         { href: '/automations', label: 'Website → FB', icon: Globe },
         { href: '/image-generator', label: 'Image Generator', icon: Palette },
+        {
+          href: '/reel-studio',
+          label: 'Reel Studio',
+          icon: Film,
+          badge: { text: 'New', variant: 'pink' },
+        },
       ],
     },
     {

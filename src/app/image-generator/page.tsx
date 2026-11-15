@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { SigTemplate } from '@/types';
 import { renderTemplateToCanvas } from '@/lib/services/image-compositor';
+import { ReelStudioTab } from '@/components/image-generator/ReelStudioTab';
 import {
   Palette,
   Sparkles,
@@ -29,6 +30,7 @@ import {
   ArrowRight,
   Upload,
   Music,
+  Film,
   FolderOpen,
   ZoomIn,
   ZoomOut,
@@ -142,8 +144,8 @@ function SocialImageGeneratorContent() {
   const router = useRouter();
   const { sigTemplates, saveSigTemplate } = useApp();
 
-  // Active top-level tab: 'templates' | 'editor' | 'generator'
-  const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'generator'>('templates');
+  // Active top-level tab: 'templates' | 'editor' | 'generator' | 'reels'
+  const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'generator' | 'reels'>('templates');
 
   // Currently loaded template for editing
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
@@ -335,6 +337,7 @@ function SocialImageGeneratorContent() {
       layerMode,
       featuredImageBox: fBox,
       titleBox: tBox,
+      videoConfig: activeTemplate.videoConfig,
       isDefault: activeTemplate.isDefault,
     };
     saveSigTemplate(updated);
@@ -636,7 +639,7 @@ function SocialImageGeneratorContent() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5 bg-[#F8F9FD] p-1 rounded-xl border border-[#EEF1F6] self-start sm:self-auto shrink-0">
+        <div className="flex items-center gap-1.5 bg-[#F8F9FD] p-1 rounded-xl border border-[#EEF1F6] self-start sm:self-auto shrink-0 flex-wrap">
           <button
             type="button"
             onClick={() => setActiveTab('templates')}
@@ -658,6 +661,18 @@ function SocialImageGeneratorContent() {
             }`}
           >
             🎯 Visual Editor
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('reels')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'reels'
+                ? 'bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-xs'
+                : 'text-rose-700 bg-rose-50/70 hover:bg-rose-100 hover:text-rose-900'
+            }`}
+          >
+            <span>🎬</span>
+            <span>Reel Studio</span>
           </button>
           <button
             type="button"
@@ -743,6 +758,12 @@ function SocialImageGeneratorContent() {
                             Default
                           </span>
                         )}
+                        {t.videoConfig?.enabled && (
+                          <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs">
+                            <span>🎬</span>
+                            <span>{t.videoConfig.durationSeconds || 15}s Reel</span>
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -758,11 +779,11 @@ function SocialImageGeneratorContent() {
                   </div>
 
                   {/* Actions */}
-                  <div className="pt-2 border-t border-[#F0F2F6] flex items-center justify-between gap-2">
+                  <div className="pt-2 border-t border-[#F0F2F6] flex items-center justify-between gap-1.5 flex-wrap">
                     <button
                       type="button"
                       onClick={() => handleOpenVisualEditor(t.id)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer transition-colors"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer transition-colors"
                     >
                       <Layout className="w-3.5 h-3.5" />
                       <span>Visual Editor</span>
@@ -772,12 +793,24 @@ function SocialImageGeneratorContent() {
                       type="button"
                       onClick={() => {
                         setSelectedTemplateId(t.id);
+                        setActiveTab('reels');
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer transition-colors border border-rose-200"
+                    >
+                      <Film className="w-3.5 h-3.5" />
+                      <span>Reel</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedTemplateId(t.id);
                         setActiveTab('generator');
                       }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#FF007A] text-xs font-bold cursor-pointer transition-colors border border-pink-100"
+                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#FF007A] text-xs font-bold cursor-pointer transition-colors border border-pink-100"
                     >
                       <Eye className="w-3.5 h-3.5" />
-                      <span>Test Card</span>
+                      <span>Test</span>
                     </button>
                   </div>
                 </div>
@@ -1413,7 +1446,25 @@ function SocialImageGeneratorContent() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* TAB 3: TEST CARD GENERATOR */}
+      {/* TAB 3: REEL & MOTION STUDIO */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'reels' && (
+        <ReelStudioTab
+          sigTemplates={sigTemplates}
+          selectedTemplateId={selectedTemplateId}
+          onSelectTemplate={(id) => setSelectedTemplateId(id)}
+          onSaveTemplate={(updatedTmpl) => {
+            saveSigTemplate(updatedTmpl);
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 2500);
+          }}
+          sampleHeadline={genHeadline}
+          sampleImageUrl={genPhotoUrl}
+        />
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* TAB 4: TEST CARD GENERATOR */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'generator' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">

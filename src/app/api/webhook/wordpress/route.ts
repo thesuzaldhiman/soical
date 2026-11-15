@@ -4,6 +4,7 @@ import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES } from '@/lib/state/mock-data';
 import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate } from '@/types';
 import { generateServerCardImage } from '@/lib/services/server-image-generator';
+import { generateServerVideoReel } from '@/lib/services/server-video-generator';
 import fs from 'fs';
 import path from 'path';
 
@@ -468,7 +469,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Resolve Automation Rule & Target Pages
     let targetPages: SocialPage[] = [];
-    let dispatchFormat: 'ai_image' | 'featured_image' | 'link_card' | 'text_only' = 'ai_image';
+    let dispatchFormat: 'ai_image' | 'featured_image' | 'link_card' | 'text_only' | 'ai_reel' | 'image_and_reel' = 'ai_image';
     let enableMultiTitles = true;
     let addFirstComment = true;
     let matchedRuleName = '';
@@ -576,7 +577,7 @@ export async function POST(request: NextRequest) {
       const assignedTitle = enableMultiTitles ? allTitles[i] || mainTitle : mainTitle;
       const message = `${assignedTitle}\n\n${excerpt}`.trim();
 
-      let postTypeToSend: 'image' | 'link' | 'text' = 'image';
+      let postTypeToSend: 'image' | 'link' | 'text' | 'video' = 'image';
       let mediaToSend: string = '';
       let linkToSend: string = '';
 
@@ -590,6 +591,37 @@ export async function POST(request: NextRequest) {
         postTypeToSend = imageUrl ? 'image' : 'text';
         mediaToSend = imageUrl;
         linkToSend = permalink;
+      } else if (dispatchFormat === 'ai_reel') {
+        // AI Video Reel (9:16 Video with motion effects and background music)
+        postTypeToSend = 'video';
+        linkToSend = permalink;
+
+        try {
+          const cardBase64 = await generateServerCardImage({
+            headline: assignedTitle,
+            featuredImageUrl: imageUrl || undefined,
+            template: templateToUse,
+            category: categories[0] || 'News',
+            siteName: payload.site_name || incomingSiteUrl || '',
+          });
+          if (!firstGeneratedCardUrl) {
+            firstGeneratedCardUrl = cardBase64;
+          }
+
+          const vConfig = templateToUse.videoConfig;
+          const reelRes = await generateServerVideoReel({
+            imageBase64: cardBase64,
+            durationSeconds: vConfig?.durationSeconds || 15,
+            effect: vConfig?.effect || 'shake',
+            musicUrl: vConfig?.musicUrl,
+          });
+          mediaToSend = reelRes.videoUrl;
+          console.log(`[WP Webhook] Video Reel generated for Page ${page.name}: ${reelRes.videoUrl}`);
+        } catch (reelErr) {
+          console.error('[WP Webhook] Reel generation error, fallback to card image:', reelErr);
+          postTypeToSend = 'image';
+          mediaToSend = firstGeneratedCardUrl || imageUrl;
+        }
       } else {
         // dispatchFormat === 'ai_image' (Canvas branded card with bold headline overlay)
         postTypeToSend = 'image';

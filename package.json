@@ -18,6 +18,7 @@
     "@typescript-eslint/parser": "^8.72.2",
     "@typescript-eslint/typescript-estree": "^8.72.2",
     "clsx": "^2.1.1",
+    "ffmpeg-static": "^5.3.0",
     "lucide-react": "^1.71.0",
     "mysql2": "^3.12.0",
     "next": "16.4.6",

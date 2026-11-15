@@ -115,7 +115,9 @@ function AutomationsContent() {
   }, [accounts, wpPages]);
   const [selectedWpAccountId, setSelectedWpAccountId] = useState<string>('');
   const [selectedWpCategory, setSelectedWpCategory] = useState<string>('*');
-  const [dispatchFormat, setDispatchFormat] = useState<'ai_image' | 'featured_image' | 'link_card' | 'text_only'>('ai_image');
+  const [dispatchFormat, setDispatchFormat] = useState<
+    'ai_image' | 'featured_image' | 'link_card' | 'text_only' | 'ai_reel' | 'image_and_reel'
+  >('ai_image');
   const [enableMultiTitle, setEnableMultiTitle] = useState<boolean>(true);
 
   const activeWpAccount = React.useMemo(() => {
@@ -1398,6 +1400,13 @@ function AutomationsContent() {
                           desc: 'Generates branded canvas image with bold Title overlay + puts post link in 1st comment.',
                         },
                         {
+                          id: 'ai_reel' as const,
+                          icon: '🎬',
+                          title: 'AI Video Reel (9:16 Shorts)',
+                          badge: 'Viral Motion',
+                          desc: 'Auto-renders 9:16 vertical video reel with motion effects (shake/glitter/zoom) + custom background music.',
+                        },
+                        {
                           id: 'featured_image' as const,
                           icon: '📸',
                           title: 'Native Featured Image',
@@ -1449,31 +1458,52 @@ function AutomationsContent() {
                       })}
                     </div>
 
-                    {dispatchFormat === 'ai_image' && (
-                      <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-3">
-                        <div className="flex-1">
-                          <label className="text-[10px] font-bold text-amber-900 block mb-1">
-                            Select Canvas Template Layout:
-                          </label>
-                          <select
-                            value={selectedSigTemplateId}
-                            onChange={(e) => setSelectedSigTemplateId(e.target.value)}
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-slate-800"
+                    {(dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel') && (
+                      <div className="pt-2 border-t border-amber-200/60 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex-1">
+                            <label className="text-[10px] font-bold text-amber-900 block mb-1">
+                              Select Canvas {dispatchFormat === 'ai_reel' ? 'Reel' : 'Card'} Template:
+                            </label>
+                            <select
+                              value={selectedSigTemplateId}
+                              onChange={(e) => setSelectedSigTemplateId(e.target.value)}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-slate-800"
+                            >
+                              {sigTemplates.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name} ({t.canvasWidth}×{t.canvasHeight})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <Link
+                            href="/image-generator"
+                            target="_blank"
+                            className="text-[11px] font-bold text-amber-800 hover:underline shrink-0"
                           >
-                            {sigTemplates.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                {t.name} ({t.canvasWidth}×{t.canvasHeight})
-                              </option>
-                            ))}
-                          </select>
+                            Edit Template &rarr;
+                          </Link>
                         </div>
-                        <Link
-                          href="/image-generator"
-                          target="_blank"
-                          className="text-[11px] font-bold text-amber-800 hover:underline shrink-0"
-                        >
-                          Edit Layout &rarr;
-                        </Link>
+
+                        {dispatchFormat === 'ai_reel' && (() => {
+                          const currTmpl = sigTemplates.find((t) => t.id === selectedSigTemplateId) || sigTemplates[0];
+                          const vConfig = currTmpl?.videoConfig;
+                          return (
+                            <div className="p-2.5 rounded-lg bg-amber-100/70 border border-amber-300/80 text-[11px] text-amber-950 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold">⚡ Motion: {vConfig?.effect || 'Camera Shake'}</span>
+                                <span>•</span>
+                                <span className="font-bold">⏱️ Duration: {vConfig?.durationSeconds || 15}s</span>
+                                <span>•</span>
+                                <span className="font-bold">🎵 Music: {vConfig?.musicName || 'Breaking Beat'}</span>
+                              </div>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-bold">
+                                Auto-Published as 9:16 Reel
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

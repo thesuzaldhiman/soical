@@ -217,6 +217,17 @@ export interface Post {
   updatedAt: string;
 }
 
+export type VideoMotionEffect = 'none' | 'shake' | 'glitter' | 'zoom_in' | 'zoom_out' | 'pulse';
+
+export interface SigTemplateVideoConfig {
+  enabled?: boolean;
+  durationSeconds?: number; // e.g. 10, 15, 30, 60
+  effect?: VideoMotionEffect;
+  musicUrl?: string; // audio file or URL
+  musicName?: string;
+  targetPlatforms?: ('facebook' | 'instagram' | 'youtube')[];
+}
+
 export interface SigTemplate {
   id: string;
   name: string;
@@ -225,6 +236,7 @@ export interface SigTemplate {
   templateImageUrl: string;
   layerMode?: 'overlay' | 'background'; // 'overlay' = photo behind transparent PNG frame (default); 'background' = template behind photo
   customFontUrl?: string;
+  videoConfig?: SigTemplateVideoConfig;
   featuredImageBox: {
     x: number;
     y: number;
@@ -344,7 +356,9 @@ export interface AutomationFeed {
   wpCategory?: string; // Specific WP Category (e.g. "Himachal News", "Health", "Dharm", or "*")
   targetCategoryId: string;
   targetPageIds?: string[]; // Specific targets (WordPress, Facebook, Telegram, etc.)
-  format?: 'ai_image' | 'featured_image' | 'link_card' | 'text_only'; // Dispatch format
+  targetReelPageIds?: string[]; // Targets for Reels (Facebook Reels, Instagram, YouTube)
+  format?: 'ai_image' | 'featured_image' | 'link_card' | 'text_only' | 'ai_reel' | 'image_and_reel'; // Dispatch format
+  generateVideoReel?: boolean; // Auto-generate 9:16 Video Reel from card image
   enableMultiTitle?: boolean; // Distribute 1 unique title per page
   isActive: boolean;
   intervalMinutes: number;
