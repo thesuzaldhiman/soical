@@ -65,6 +65,7 @@ function LibraryContent() {
     postComments,
     createPostComment,
     fetchPostComments,
+    deleteComment,
     retryPost,
     approvePost,
     deletePost,
@@ -928,6 +929,7 @@ function LibraryContent() {
           statusBadge={statusBadge}
           createPostComment={createPostComment}
           fetchPostComments={fetchPostComments}
+          deleteComment={deleteComment}
         />
       )}
 
@@ -1101,8 +1103,9 @@ interface PostInspectorDrawerProps {
   getTargetLiveLink: (post: Post, pageId: string) => { url: string; label: string } | null;
   formatArrivalTime: (iso?: string) => string;
   statusBadge: (status: PostStatus) => string;
-  createPostComment: (postId: string, message: string, pageId?: string, accessToken?: string) => Promise<void> | void;
-  fetchPostComments: (postId: string, pageId?: string, accessToken?: string) => Promise<PostComment[]>;
+  createPostComment: (postId: string, message: string, pageId?: string, accessToken?: string, externalPostId?: string) => Promise<void> | void;
+  fetchPostComments: (postId: string, pageId?: string, accessToken?: string, externalPostId?: string) => Promise<PostComment[]>;
+  deleteComment: (commentId: string, pageId?: string, accessToken?: string) => Promise<void> | void;
 }
 
 function PostInspectorDrawer({
@@ -1119,6 +1122,7 @@ function PostInspectorDrawer({
   statusBadge,
   createPostComment,
   fetchPostComments,
+  deleteComment,
 }: PostInspectorDrawerProps) {
   const [newCommentText, setNewCommentText] = useState('');
   const [selectedCommentPageId, setSelectedCommentPageId] = useState<string>(post.pageIds[0] || '');
@@ -1126,6 +1130,7 @@ function PostInspectorDrawer({
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -1142,11 +1147,13 @@ function PostInspectorDrawer({
       (p) => post.pageIds.includes(p.id) && (p.platform === 'facebook' || p.accessToken)
     );
     if (targetFbPage) {
+      const matchResult = post.results?.find((r) => r.pageId === targetFbPage.id && r.externalPostId);
+      const extPostId = matchResult?.externalPostId || post.externalPostId;
       setIsLoadingComments(true);
-      Promise.resolve(fetchPostComments(post.id, targetFbPage.id, targetFbPage.accessToken))
+      Promise.resolve(fetchPostComments(post.id, targetFbPage.id, targetFbPage.accessToken, extPostId))
         .finally(() => setIsLoadingComments(false));
     }
-  }, [post.id, post.pageIds, pages, fetchPostComments]);
+  }, [post.id, post.pageIds, post.results, post.externalPostId, pages, fetchPostComments]);
 
   // Comments for this post
   const commentsForThisPost = useMemo(() => {
@@ -1169,12 +1176,38 @@ function PostInspectorDrawer({
     setIsSubmittingComment(true);
     try {
       const page = pages.find((p) => p.id === selectedCommentPageId);
-      await createPostComment(post.id, newCommentText.trim(), selectedCommentPageId, page?.accessToken);
+      const matchResult = post.results?.find(
+        (r) => (r.pageId === selectedCommentPageId || r.pageId === page?.id || r.pageId === page?.pageId) && r.externalPostId
+      );
+      const targetExtPostId = matchResult?.externalPostId || post.externalPostId;
+
+      await createPostComment(
+        post.id,
+        newCommentText.trim(),
+        selectedCommentPageId,
+        page?.accessToken,
+        targetExtPostId
+      );
       setNewCommentText('');
     } catch (err) {
       console.error('Failed to post comment:', err);
     } finally {
       setIsSubmittingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string, pageId?: string) => {
+    if (!confirm('Are you sure you want to delete this comment from Facebook and the tool?')) {
+      return;
+    }
+    setDeletingCommentId(commentId);
+    try {
+      const targetPage = pages.find((p) => p.id === pageId || p.pageId === pageId || post.pageIds.includes(p.id));
+      await deleteComment(commentId, targetPage?.id || pageId, targetPage?.accessToken);
+    } catch (err) {
+      console.error('Failed to delete comment:', err);
+    } finally {
+      setDeletingCommentId(null);
     }
   };
 
@@ -1505,7 +1538,7 @@ function PostInspectorDrawer({
                 commentsForThisPost.map((c) => (
                   <div
                     key={c.id}
-                    className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-1.5 text-xs"
+                    className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-1.5 text-xs group transition-all"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1523,9 +1556,24 @@ function PostInspectorDrawer({
                         )}
                         <span className="font-bold text-slate-900">{c.authorName}</span>
                       </div>
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={deletingCommentId === c.id}
+                          onClick={() => handleDeleteComment(c.id, c.pageId || selectedCommentPageId)}
+                          title="Delete comment from Facebook & Tool"
+                          className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {deletingCommentId === c.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
                     </div>
 
                     <p className="text-slate-800 font-medium pl-8">{c.message}</p>

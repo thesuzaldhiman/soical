@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 export interface PublishTarget {
   id: string;
   platform: string;
@@ -292,17 +295,37 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                   fbResData = await fbRes.json();
                 }
               } else {
-                const formData = new URLSearchParams();
-                formData.append('file_url', mediaUrl);
-                if (message) formData.append('description', message);
-                formData.append('access_token', accessToken);
+                // Check if local file in public directory (e.g. /uploads/...)
+                const cleanRelPath = mediaUrl.replace(/^\/+/, '');
+                const localFilePath = path.join(process.cwd(), 'public', cleanRelPath);
 
-                const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/videos`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                  body: formData.toString(),
-                });
-                fbResData = await fbRes.json();
+                if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://') && fs.existsSync(localFilePath)) {
+                  const fileBuffer = fs.readFileSync(localFilePath);
+                  const ext = path.extname(localFilePath).replace('.', '') || 'mp4';
+                  const blob = new Blob([fileBuffer], { type: `video/${ext}` });
+                  const form = new FormData();
+                  form.append('source', blob, `video_${Date.now()}.${ext}`);
+                  if (message) form.append('description', message);
+                  form.append('access_token', accessToken);
+
+                  const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/videos`, {
+                    method: 'POST',
+                    body: form,
+                  });
+                  fbResData = await fbRes.json();
+                } else {
+                  const formData = new URLSearchParams();
+                  formData.append('file_url', mediaUrl);
+                  if (message) formData.append('description', message);
+                  formData.append('access_token', accessToken);
+
+                  const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/videos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData.toString(),
+                  });
+                  fbResData = await fbRes.json();
+                }
               }
             } else {
               // Photo post
@@ -328,20 +351,44 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                   fbResData = await fbRes.json();
                 }
               } else {
-                const formData = new URLSearchParams();
-                formData.append('url', mediaUrl);
-                if (message) formData.append('caption', message);
-                formData.append('access_token', accessToken);
-                if (options.isAiGenerated) {
-                  formData.append('is_ai_generated', 'true');
-                }
+                // Check if local file in public directory (e.g. /uploads/...)
+                const cleanRelPath = mediaUrl.replace(/^\/+/, '');
+                const localFilePath = path.join(process.cwd(), 'public', cleanRelPath);
 
-                const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                  body: formData.toString(),
-                });
-                fbResData = await fbRes.json();
+                if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://') && fs.existsSync(localFilePath)) {
+                  const fileBuffer = fs.readFileSync(localFilePath);
+                  const ext = path.extname(localFilePath).replace('.', '') || 'jpg';
+                  const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+                  const blob = new Blob([fileBuffer], { type: mimeType });
+                  const form = new FormData();
+                  form.append('source', blob, `photo_${Date.now()}.${ext}`);
+                  if (message) form.append('caption', message);
+                  form.append('access_token', accessToken);
+                  if (options.isAiGenerated) {
+                    form.append('is_ai_generated', 'true');
+                  }
+
+                  const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+                    method: 'POST',
+                    body: form,
+                  });
+                  fbResData = await fbRes.json();
+                } else {
+                  const formData = new URLSearchParams();
+                  formData.append('url', mediaUrl);
+                  if (message) formData.append('caption', message);
+                  formData.append('access_token', accessToken);
+                  if (options.isAiGenerated) {
+                    formData.append('is_ai_generated', 'true');
+                  }
+
+                  const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData.toString(),
+                  });
+                  fbResData = await fbRes.json();
+                }
               }
             }
           } else {

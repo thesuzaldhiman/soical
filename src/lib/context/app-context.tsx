@@ -174,8 +174,8 @@ interface AppContextType {
   toggleHideComment: (commentId: string, pageId?: string, accessToken?: string) => Promise<void> | void;
   deleteComment: (commentId: string, pageId?: string, accessToken?: string) => Promise<void> | void;
   sendPrivateReply: (commentId: string, message: string, pageId?: string, accessToken?: string) => Promise<void> | void;
-  createPostComment: (postId: string, message: string, pageId?: string, accessToken?: string) => Promise<void> | void;
-  fetchPostComments: (postId: string, pageId?: string, accessToken?: string) => Promise<PostComment[]>;
+  createPostComment: (postId: string, message: string, pageId?: string, accessToken?: string, externalPostId?: string) => Promise<void> | void;
+  fetchPostComments: (postId: string, pageId?: string, accessToken?: string, externalPostId?: string) => Promise<PostComment[]>;
   simulateWebhookEvent: (pageId?: string) => string;
   syncMonetizationAll: () => void;
   isQueueProcessing: boolean;
@@ -3276,7 +3276,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const fetchPostComments = async (postId: string, pageId?: string, accessToken?: string): Promise<PostComment[]> => {
+  const fetchPostComments = async (
+    postId: string,
+    pageId?: string,
+    accessToken?: string,
+    externalPostId?: string
+  ): Promise<PostComment[]> => {
     let resolvedToken = accessToken;
     if (!resolvedToken && pageId) {
       const p = pages.find((pg) => pg.id === pageId || pg.pageId === pageId);
@@ -3286,15 +3291,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const q = new URLSearchParams({ postId });
+      if (externalPostId) q.append('externalPostId', externalPostId);
       if (pageId) q.append('pageId', pageId);
       if (resolvedToken) q.append('accessToken', resolvedToken);
+      if (user?.email) q.append('email', user.email);
 
       const res = await fetch(`/api/facebook/comments?${q.toString()}`);
       const data = await res.json();
 
       if (data.success && Array.isArray(data.comments)) {
         setPostComments((prev) => {
-          const otherComments = prev.filter((c) => c.externalPostId !== postId && c.postId !== postId);
+          const otherComments = prev.filter(
+            (c) =>
+              c.externalPostId !== postId &&
+              c.postId !== postId &&
+              (!externalPostId || (c.externalPostId !== externalPostId && c.postId !== externalPostId))
+          );
           return [...otherComments, ...data.comments];
         });
         return data.comments;
@@ -3367,7 +3379,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const createPostComment = async (postId: string, message: string, pageId?: string, accessToken?: string) => {
+  const createPostComment = async (
+    postId: string,
+    message: string,
+    pageId?: string,
+    accessToken?: string,
+    externalPostId?: string
+  ) => {
     if (!message.trim()) return;
     const cleanMsg = message.trim();
 
@@ -3386,7 +3404,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: `cmt_${Date.now()}`,
       postId,
       pageId: pageId || '',
-      externalPostId: postId,
+      externalPostId: externalPostId || postId,
       authorName: resolvedAuthor,
       authorAvatar: resolvedAvatar,
       message: cleanMsg,
@@ -3406,11 +3424,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({
           action: 'create_comment',
           postId,
+          externalPostId,
           message: cleanMsg,
           pageId,
           accessToken: resolvedToken,
           authorName: resolvedAuthor,
           authorAvatar: resolvedAvatar,
+          email: user?.email,
         }),
       });
       const data = await res.json();
@@ -3487,6 +3507,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deleteComment = async (commentId: string, pageId?: string, accessToken?: string) => {
     setPostComments((prev) => prev.filter((c) => c.id !== commentId));
     try {
+      let resolvedToken = accessToken;
+      if (!resolvedToken && pageId) {
+        const p = pages.find((pg) => pg.id === pageId || pg.pageId === pageId);
+        const acc = accounts.find((a) => a.id === p?.accountId);
+        resolvedToken = p?.accessToken || acc?.accessToken;
+      }
+
       await fetch('/api/facebook/comments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3494,7 +3521,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           action: 'delete',
           commentId,
           pageId,
-          accessToken,
+          accessToken: resolvedToken,
+          email: user?.email,
         }),
       });
     } catch (err) {
