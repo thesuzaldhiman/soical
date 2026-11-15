@@ -28,6 +28,9 @@ export async function GET(request: NextRequest) {
   }
 
   const email = rawEmail.toLowerCase().trim();
+  if (email !== 'suzaldhiman@gmail.com') {
+    return NextResponse.json({ success: false, error: 'Access restricted to suzaldhiman@gmail.com' }, { status: 403 });
+  }
   const pool = getDbPool();
 
   if (!pool) {
@@ -109,6 +112,9 @@ export async function POST(request: NextRequest) {
     }
 
     const email = rawEmail.toLowerCase().trim();
+    if (email !== 'suzaldhiman@gmail.com') {
+      return NextResponse.json({ success: false, error: 'Access restricted to suzaldhiman@gmail.com' }, { status: 403 });
+    }
     const pool = getDbPool();
 
     if (!pool) {

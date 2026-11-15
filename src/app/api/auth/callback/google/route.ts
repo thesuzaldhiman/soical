@@ -60,47 +60,74 @@ export async function GET(request: NextRequest) {
     console.log('[Google Auth Callback] User profile received for email:', userData.email);
 
     const userEmail = (userData.email || '').toLowerCase().trim();
-    const isOwner =
-      userEmail === 'suzaldhiman@gmail.com' ||
-      userEmail === 'suzal@khabarmonkey.com' ||
-      userEmail.includes('suzal') ||
-      userEmail.includes('khabarmonkey') ||
-      userEmail.startsWith('admin@');
 
-    let role = isOwner ? 'owner' : 'member';
-    let approvalStatus = isOwner ? 'approved' : 'pending';
+    // STRICT LOCKDOWN: Only suzaldhiman@gmail.com is permitted
+    if (userEmail !== 'suzaldhiman@gmail.com') {
+      console.warn(`[Google Auth Callback] Blocked unauthorized login attempt: ${userEmail}`);
+      const blockedHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Access Restricted | Social Auto Poster</title>
+</head>
+<body style="background:#0F172A;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box;">
+  <div style="background:#1E293B;padding:36px 32px;border-radius:20px;max-width:420px;width:100%;text-align:center;border:1px solid #334155;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);">
+    <div style="width:48px;height:48px;border-radius:50%;background:#EF444420;color:#EF4444;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:24px;font-weight:bold;">✕</div>
+    <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#F8FAFC;">Access Restricted</h2>
+    <p style="color:#94A3B8;font-size:13.5px;line-height:1.5;margin:0 0 20px;">
+      This platform is strictly private. Only <strong>suzaldhiman@gmail.com</strong> is authorized to access this workspace.
+    </p>
+    <a href="/login" style="display:inline-block;padding:10px 24px;background:#3B82F6;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:13px;">Return to Sign In</a>
+  </div>
+  <script>
+    try {
+      document.cookie = "sap_google_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      document.cookie = "sap_user_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (e) {}
+    setTimeout(function() {
+      window.location.replace('/login?error=' + encodeURIComponent('Access restricted. Only suzaldhiman@gmail.com is authorized.'));
+    }, 2500);
+  </script>
+</body>
+</html>`;
+      const res = new NextResponse(blockedHtml, {
+        status: 403,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        },
+      });
+      res.cookies.delete('sap_google_user');
+      res.cookies.delete('sap_user_session');
+      return res;
+    }
+
+    const role = 'owner';
+    const approvalStatus = 'approved';
 
     // Verify or insert user in MySQL database
     const pool = getDbPool();
     if (pool) {
       try {
         await initDbTables();
-        const [existing] = await pool.query<any[]>(
-          'SELECT role, approval_status FROM app_users WHERE email = ? LIMIT 1',
-          [userEmail]
+        await pool.query(
+          `INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
+           VALUES (?, ?, ?, ?, 'owner', 'approved', 'google', 'agency')
+           ON DUPLICATE KEY UPDATE
+             name = VALUES(name),
+             avatar = VALUES(avatar),
+             role = 'owner',
+             approval_status = 'approved',
+             subscription_tier = 'agency'`,
+          [
+            userData.sub || 'usr_01',
+            userEmail,
+            userData.name || 'Suzal Dhiman',
+            userData.picture || '',
+          ]
         );
-        if (existing && existing.length > 0) {
-          role = existing[0].role || role;
-          approvalStatus = existing[0].approval_status || approvalStatus;
-        } else {
-          await pool.query(
-            `INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE
-               name = VALUES(name),
-               avatar = VALUES(avatar)`,
-            [
-              userData.sub || `google_${Date.now()}`,
-              userEmail,
-              userData.name || userEmail.split('@')[0],
-              userData.picture || '',
-              role,
-              approvalStatus,
-              'google',
-              isOwner ? 'agency' : 'starter',
-            ]
-          );
-        }
       } catch (err) {
         console.error('[Google Auth Callback] Database sync error:', err);
       }

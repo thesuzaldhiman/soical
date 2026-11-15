@@ -94,26 +94,18 @@ export async function initDbTables(): Promise<boolean> {
           subscription_tier = 'agency';
       `);
 
-      // Also ensure suzal@khabarmonkey.com is approved
+      // Strictly purge ALL other accounts and data from database so ONLY suzaldhiman@gmail.com exists
       await connection.query(`
-        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
-        VALUES ('usr_01b', 'suzal@khabarmonkey.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'google', 'agency')
-        ON DUPLICATE KEY UPDATE
-          role = 'owner',
-          approval_status = 'approved',
-          subscription_tier = 'agency';
+        DELETE FROM app_users WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com';
       `);
-
-      // Ensure Super Admin user Sumeet Dhiman (me.sumitji@gmail.com) always exists and is approved in app_users
       await connection.query(`
-        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
-        VALUES ('usr_sumit', 'me.sumitji@gmail.com', 'Sumeet Dhiman', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'email', 'agency')
-        ON DUPLICATE KEY UPDATE
-          id = 'usr_sumit',
-          role = 'owner',
-          approval_status = 'approved',
-          subscription_tier = 'agency';
+        DELETE FROM app_user_data WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com';
       `);
+      try {
+        await connection.query(`
+          DELETE FROM app_audit_logs WHERE LOWER(TRIM(admin_email)) != 'suzaldhiman@gmail.com';
+        `);
+      } catch {}
 
       await connection.query(`
         CREATE TABLE IF NOT EXISTS app_user_data (

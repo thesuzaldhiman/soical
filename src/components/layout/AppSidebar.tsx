@@ -57,9 +57,7 @@ export function AppSidebar() {
   const pendingApprovalsCount = allUsers.filter((u) => u.approvalStatus === 'pending').length;
   const isElevated =
     user?.role === 'owner' ||
-    user?.role === 'admin' ||
-    user?.email?.toLowerCase().includes('suzal') ||
-    user?.email?.toLowerCase().includes('khabarmonkey');
+    user?.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
 
   const navGroups: NavGroup[] = [
     {
@@ -166,7 +164,7 @@ export function AppSidebar() {
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 font-medium truncate">
-                {workspace.name || 'landerstudio@gmail.com'}
+                {workspace.name || 'Social Auto Poster'}
               </div>
             </div>
           </div>

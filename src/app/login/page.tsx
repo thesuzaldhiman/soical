@@ -79,13 +79,18 @@ function LoginContent() {
       setFormError('Please enter a valid email address.');
       return;
     }
+    const cleanEmail = email.toLowerCase().trim();
+    if (cleanEmail !== 'suzaldhiman@gmail.com') {
+      setFormError('Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.');
+      return;
+    }
     if (!password) {
       setFormError('Please enter your password.');
       return;
     }
 
     setSubmitting(true);
-    const res = await loginWithEmail(email, password);
+    const res = await loginWithEmail(cleanEmail, password);
     if (res.success) {
       router.push('/dashboard');
     } else {
@@ -115,7 +120,7 @@ function LoginContent() {
 
       {/* Main Login Card (Tasklify Clean Neutral Studio Aesthetic) */}
       <div className="max-w-md w-full mx-auto my-auto animate-fade-in">
-        {isAuthenticated && user?.email ? (
+        {isAuthenticated && user?.email && user.email.toLowerCase().trim() === 'suzaldhiman@gmail.com' ? (
           <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6 text-center animate-fade-in">
             <div className="w-16 h-16 rounded-2xl bg-slate-900 border-2 border-white shadow-xs mx-auto overflow-hidden flex items-center justify-center text-white font-bold text-xl">
               {user.avatar ? (
@@ -276,12 +281,9 @@ function LoginContent() {
               <span>Continue with Google</span>
             </a>
 
-            {/* Link to Signup */}
-            <div className="text-center text-xs text-slate-500 pt-1">
-              New to Social Auto Poster?{' '}
-              <Link href="/signup" className="font-bold text-slate-900 hover:underline">
-                Create an Account (Signup)
-              </Link>
+            {/* Private workspace badge */}
+            <div className="text-center text-xs text-slate-500 pt-1 font-medium">
+              Private Platform &bull; Restricted to Authorized Administrator
             </div>
 
             {/* Trust & Compliance Badge */}

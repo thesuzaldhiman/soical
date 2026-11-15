@@ -9,14 +9,17 @@ import { ApprovalGate } from '@/components/auth/ApprovalGate';
 import { Loader2 } from 'lucide-react';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isHydrated } = useApp();
+  const { isAuthenticated, isHydrated, user } = useApp();
   const router = useRouter();
 
+  const isAuthorized =
+    isAuthenticated && user?.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
+
   useEffect(() => {
-    if (isHydrated && !isAuthenticated) {
+    if (isHydrated && !isAuthorized) {
       router.replace('/login');
     }
-  }, [isHydrated, isAuthenticated, router]);
+  }, [isHydrated, isAuthorized, router]);
 
   // While checking hydration / session, show clean Tasklify loader
   if (!isHydrated) {
@@ -28,8 +31,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If unauthenticated, hold render until redirect finishes
-  if (!isAuthenticated) {
+  // If unauthenticated or unauthorized, hold render until redirect finishes
+  if (!isAuthorized) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#F8F9FA] text-slate-600 gap-3">
         <Loader2 className="w-6 h-6 animate-spin text-slate-900" />

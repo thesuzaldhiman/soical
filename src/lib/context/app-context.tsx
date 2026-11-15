@@ -26,6 +26,7 @@ import {
   MetaAppConfig,
 } from '@/types';
 import {
+  INITIAL_USER,
   INITIAL_ALL_USERS,
   INITIAL_WORKSPACE,
   INITIAL_ACCOUNTS,
@@ -414,18 +415,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Strictly filter out mock/dummy accounts (usr_02..usr_10)
+            // Strictly filter so only suzaldhiman@gmail.com is retained
             const cleaned = parsed.filter(
-              (u: User) =>
-                u.id === 'usr_01' ||
-                u.id === 'usr_sumit' ||
-                u.email === 'me.sumitji@gmail.com' ||
-                (!u.id.startsWith('usr_0') &&
-                  !u.email.includes('rahul.creator') &&
-                  !u.email.includes('amit.newsmedia') &&
-                  !u.email.includes('priya.digital') &&
-                  !u.email.includes('vikas.mediahub') &&
-                  !u.email.includes('neha.blogger'))
+              (u: User) => u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com'
             );
             return cleaned.length > 0 ? cleaned : INITIAL_ALL_USERS;
           }
@@ -443,20 +435,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((data) => {
         if (data.success && Array.isArray(data.users) && data.users.length > 0) {
           const cleanUsers = data.users.filter(
-            (u: User) =>
-              u.id === 'usr_01' ||
-              u.id === 'usr_sumit' ||
-              u.email === 'me.sumitji@gmail.com' ||
-              (!u.id.startsWith('usr_0') &&
-                !u.email.includes('rahul.creator') &&
-                !u.email.includes('amit.newsmedia') &&
-                !u.email.includes('priya.digital') &&
-                !u.email.includes('vikas.mediahub') &&
-                !u.email.includes('neha.blogger'))
+            (u: User) => u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com'
           );
-          setAllUsers(cleanUsers);
+          const finalUsers = cleanUsers.length > 0 ? cleanUsers : INITIAL_ALL_USERS;
+          setAllUsers(finalUsers);
           if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('sap_all_registered_users', JSON.stringify(cleanUsers));
+            localStorage.setItem('sap_all_registered_users', JSON.stringify(finalUsers));
           }
         }
       })
@@ -526,7 +510,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // 1. Instant local cache load
     if (typeof localStorage !== 'undefined') {
       let stored = localStorage.getItem(userKey);
-      if (!stored && (cleanEmail.includes('suzal') || cleanEmail.includes('khabarmonkey'))) {
+      if (!stored && cleanEmail === 'suzaldhiman@gmail.com') {
         stored = localStorage.getItem('sap_saas_live_v1') || localStorage.getItem('sap_saas_app_state_v2');
       }
 
@@ -921,47 +905,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (loggedInUser && loggedInUser.email) {
         const clean = loggedInUser.email.toLowerCase().trim();
-        const existing = currentUsers.find((u) => u.email.toLowerCase() === clean);
-        if (existing) {
-          loggedInUser = {
-            ...existing,
-            name: loggedInUser.name || existing.name,
-            avatar: loggedInUser.avatar || existing.avatar,
-            lastLoginAt: new Date().toISOString(),
-          };
+        // Strict lockdown: only suzaldhiman@gmail.com is permitted
+        if (clean !== 'suzaldhiman@gmail.com') {
+          console.warn(`[Security Guard] Evicting unauthorized user session: ${clean}`);
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.removeItem('sap_current_user_email');
+              localStorage.removeItem(`sap_user_profile_${clean.replace(/[^a-z0-9_]/g, '_')}`);
+              localStorage.removeItem(`sap_saas_user_${clean.replace(/[^a-z0-9_]/g, '_')}`);
+            }
+            if (typeof document !== 'undefined') {
+              document.cookie = 'sap_user_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+              document.cookie = 'sap_google_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            }
+          } catch {}
+          loggedInUser = null;
         } else {
-          const isOwner =
-            clean.includes('suzal') ||
-            clean.includes('khabarmonkey') ||
-            clean.startsWith('admin') ||
-            clean.includes('sumit') ||
-            clean === 'me.sumitji@gmail.com';
           loggedInUser = {
-            ...loggedInUser,
-            role: isOwner ? 'owner' : 'member',
-            approvalStatus: isOwner ? 'approved' : 'pending',
-            createdAt: new Date().toISOString(),
+            ...INITIAL_USER,
+            name: loggedInUser.name || INITIAL_USER.name,
+            avatar: loggedInUser.avatar || INITIAL_USER.avatar,
+            role: 'owner',
+            approvalStatus: 'approved',
             lastLoginAt: new Date().toISOString(),
-            subscription: isOwner
-              ? {
-                  tier: 'agency',
-                  status: 'active',
-                  expiresAt: null,
-                  maxConnectedPages: 50,
-                  maxDailyPosts: 500,
-                  features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: true, canUseAnalytics: true },
-                }
-              : {
-                  tier: 'starter',
-                  status: 'trial',
-                  expiresAt: null,
-                  maxConnectedPages: 5,
-                  maxDailyPosts: 30,
-                  features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: false, canUseAnalytics: true },
-                },
           };
         }
+      }
 
+      if (loggedInUser && loggedInUser.email === 'suzaldhiman@gmail.com') {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setUser(loggedInUser);
         setIsAuthenticated(true);
@@ -976,6 +947,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setIsHydrated(true);
     }
   }, []);
+
+  // Active security guard: if any user other than suzaldhiman@gmail.com is loaded, instantly evict
+  useEffect(() => {
+    if (!isHydrated) return;
+    const currentEmail = (user?.email || '').toLowerCase().trim();
+    if (currentEmail && currentEmail !== 'suzaldhiman@gmail.com') {
+      console.warn(`[Security Guard] Evicting active session for: ${currentEmail}`);
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('sap_current_user_email');
+          localStorage.removeItem('sap_all_registered_users');
+          localStorage.removeItem(`sap_user_profile_${currentEmail.replace(/[^a-z0-9_]/g, '_')}`);
+          localStorage.removeItem(`sap_saas_user_${currentEmail.replace(/[^a-z0-9_]/g, '_')}`);
+        }
+        if (typeof document !== 'undefined') {
+          document.cookie = 'sap_user_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          document.cookie = 'sap_google_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        }
+      } catch {}
+      setUser(GUEST_USER);
+      setIsAuthenticated(false);
+      if (typeof window !== 'undefined') {
+        window.location.replace('/login?error=' + encodeURIComponent('Access restricted. Only suzaldhiman@gmail.com is authorized.'));
+      }
+    }
+  }, [isHydrated, user]);
 
   // Save to user-isolated localStorage and sync to Hostinger MySQL Database
   useEffect(() => {
@@ -2556,56 +2553,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Real & Live Utilities
   const loginWithGoogle = (profile: { id?: string; name: string; email: string; avatar?: string }) => {
     const cleanEmail = profile.email.toLowerCase().trim();
-    const isOwner =
-      cleanEmail.includes('suzal') ||
-      cleanEmail.includes('khabarmonkey') ||
-      cleanEmail.startsWith('admin') ||
-      cleanEmail.includes('sumit') ||
-      cleanEmail === 'me.sumitji@gmail.com';
-
-    const existing = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
-    let googleUser: User;
-
-    if (existing) {
-      googleUser = {
-        ...existing,
-        name: profile.name || existing.name,
-        avatar: profile.avatar || existing.avatar,
-        lastLoginAt: new Date().toISOString(),
-      };
-      setAllUsers((prev) => prev.map((u) => (u.id === googleUser.id ? googleUser : u)));
-    } else {
-      googleUser = {
-        id: profile.id || `google_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
-        name: profile.name || cleanEmail.split('@')[0],
-        email: cleanEmail,
-        avatar: profile.avatar || '/icons/social/google.png',
-        role: isOwner ? 'owner' : 'member',
-        provider: 'google',
-        approvalStatus: isOwner ? 'approved' : 'pending',
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-        subscription: isOwner
-          ? {
-              tier: 'agency',
-              status: 'active',
-              expiresAt: null,
-              maxConnectedPages: 50,
-              maxDailyPosts: 500,
-              features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: true, canUseAnalytics: true },
-            }
-          : {
-              tier: 'starter',
-              status: 'trial',
-              expiresAt: null,
-              maxConnectedPages: 5,
-              maxDailyPosts: 30,
-              features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: false, canUseAnalytics: true },
-            },
-      };
-      setAllUsers((prev) => [googleUser, ...prev]);
+    if (cleanEmail !== 'suzaldhiman@gmail.com') {
+      alert('Access restricted. Only suzaldhiman@gmail.com is authorized to access this platform.');
+      return;
     }
 
+    const googleUser: User = {
+      ...INITIAL_USER,
+      name: profile.name || INITIAL_USER.name,
+      avatar: profile.avatar || INITIAL_USER.avatar,
+      lastLoginAt: new Date().toISOString(),
+    };
+
+    setAllUsers([googleUser]);
     setUser(googleUser);
     setIsAuthenticated(true);
     if (typeof document !== 'undefined') {
@@ -2627,6 +2587,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { success: false, message: 'Please enter a valid email address.' };
+    }
+    if (cleanEmail !== 'suzaldhiman@gmail.com') {
+      return { success: false, message: 'Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.' };
     }
     if (!password) {
       return { success: false, message: 'Please enter your password.' };
@@ -2712,74 +2675,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const registerUser = async (
-    name: string,
-    email: string,
-    tierPreference: SubscriptionTier = 'starter',
-    password?: string
+    _name: string,
+    _email: string,
+    _tierPreference: SubscriptionTier = 'starter',
+    _password?: string
   ) => {
-    const cleanEmail = email.toLowerCase().trim();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      return { success: false, user: GUEST_USER, message: 'Please provide a valid email address.' };
-    }
-
-    try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'register',
-          name: name.trim() || cleanEmail.split('@')[0],
-          email: cleanEmail,
-          password,
-          tierPreference,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        return {
-          success: false,
-          user: GUEST_USER,
-          message: data.message || 'Registration failed.',
-        };
-      }
-
-      const createdUser: User = data.user;
-
-      setAllUsers((prev) => [createdUser, ...prev.filter((u) => u.email.toLowerCase() !== cleanEmail)]);
-
-      const isOwner =
-        cleanEmail === 'suzaldhiman@gmail.com' ||
-        cleanEmail === 'suzal@khabarmonkey.com' ||
-        createdUser.role === 'owner';
-
-      if (isOwner) {
-        setUser(createdUser);
-        setIsAuthenticated(true);
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('sap_current_user_email', cleanEmail);
-          localStorage.setItem(
-            `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
-            JSON.stringify(createdUser)
-          );
-        }
-      }
-
-      return {
-        success: true,
-        isPending: Boolean(data.isPending),
-        user: createdUser,
-        message: data.message || (data.isPending ? 'Awaiting approval' : 'Registered successfully!'),
-      };
-    } catch (err) {
-      console.error('[registerUser] Network error:', err);
-      return {
-        success: false,
-        user: GUEST_USER,
-        message: 'Network error during registration. Please try again.',
-      };
-    }
+    return {
+      success: false,
+      user: GUEST_USER,
+      message: 'Public registration is closed. Platform access is restricted to suzaldhiman@gmail.com.',
+    };
   };
 
   const approveUser = (

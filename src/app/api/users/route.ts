@@ -3,16 +3,10 @@ import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { INITIAL_USER } from '@/lib/state/mock-data';
 import { User, SubscriptionTier, UserSubscription } from '@/types';
 
-// Helper to determine if an email belongs to super admin
+// Helper to determine if an email belongs to super admin (Suzal Dhiman ONLY)
 const isOwnerEmail = (email: string) => {
   const clean = email.toLowerCase().trim();
-  return (
-    clean === 'suzaldhiman@gmail.com' ||
-    clean === 'suzal@khabarmonkey.com' ||
-    clean.includes('suzal') ||
-    clean.includes('khabarmonkey') ||
-    clean.startsWith('admin@')
-  );
+  return clean === 'suzaldhiman@gmail.com';
 };
 
 // Map DB row to TypeScript User interface
@@ -56,12 +50,11 @@ function mapRowToUser(row: any): User {
   };
 }
 
-// GET: Retrieve all registered users for Admin panel and Auth synchronization
+// GET: Retrieve registered user for Auth synchronization (Suzal Dhiman ONLY)
 export async function GET() {
   const pool = getDbPool();
 
   if (!pool) {
-    // If DB is offline / not yet connected, return super admin user
     return NextResponse.json({
       success: true,
       users: [INITIAL_USER],
@@ -71,24 +64,16 @@ export async function GET() {
 
   try {
     await initDbTables();
+
+    // Actively delete any rogue non-Suzal users from MySQL
+    await pool.query("DELETE FROM app_users WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com'");
+    await pool.query("DELETE FROM app_user_data WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com'");
+
     const [rows] = await pool.query<any[]>(
-      'SELECT * FROM app_users ORDER BY created_at DESC'
+      "SELECT * FROM app_users WHERE LOWER(TRIM(email)) = 'suzaldhiman@gmail.com' LIMIT 1"
     );
 
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({
-        success: true,
-        users: [INITIAL_USER],
-        source: 'mysql_empty',
-      });
-    }
-
-    const users: User[] = rows.map(mapRowToUser);
-
-    // Make sure owner always exists in the returned list
-    if (!users.some((u) => isOwnerEmail(u.email))) {
-      users.unshift(INITIAL_USER);
-    }
+    const users: User[] = (rows && rows.length > 0) ? rows.map(mapRowToUser) : [INITIAL_USER];
 
     return NextResponse.json({
       success: true,
@@ -125,7 +110,18 @@ export async function POST(request: NextRequest) {
       }
 
       const email = rawEmail.toLowerCase().trim();
-      const isOwner = isOwnerEmail(email);
+      if (email !== 'suzaldhiman@gmail.com') {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'ACCESS_RESTRICTED',
+            message: 'Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.',
+          },
+          { status: 403 }
+        );
+      }
+
+      const isOwner = true;
 
       if (pool) {
         await initDbTables();
@@ -224,92 +220,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. REGISTRATION
+    // 2. REGISTRATION (Closed - Single User System)
     if (action === 'register') {
-      const { name, email: rawEmail, password, tierPreference } = body;
-      if (!rawEmail || !rawEmail.includes('@')) {
-        return NextResponse.json({ success: false, message: 'Valid email required' }, { status: 400 });
-      }
-
-      const email = rawEmail.toLowerCase().trim();
-      const isOwner = isOwnerEmail(email);
-      const role = isOwner ? 'owner' : 'member';
-      const approvalStatus = isOwner ? 'approved' : 'pending';
-      const tier = isOwner ? 'agency' : tierPreference || 'starter';
-      const userId = `usr_${Date.now()}`;
-      const defaultAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80';
-
-      const subscriptionData: UserSubscription = {
-        tier,
-        status: isOwner ? 'active' : 'trial',
-        expiresAt: null,
-        maxConnectedPages: tier === 'agency' ? 50 : tier === 'pro' ? 15 : 5,
-        maxDailyPosts: tier === 'agency' ? 500 : tier === 'pro' ? 100 : 30,
-        features: {
-          canUseAI: true,
-          canUseBulkScheduler: tier !== 'free',
-          canUseAutomationFeed: tier === 'agency',
-          canUseAnalytics: true,
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'REGISTRATION_CLOSED',
+          message: 'Public registration is closed. This system is private and restricted to suzaldhiman@gmail.com.',
         },
-      };
-
-      if (pool) {
-        await initDbTables();
-
-        // Check if user already exists in DB
-        const [existing] = await pool.query<any[]>(
-          'SELECT email FROM app_users WHERE LOWER(email) = LOWER(?) LIMIT 1',
-          [email]
-        );
-
-        if (existing && existing.length > 0) {
-          return NextResponse.json({
-            success: false,
-            message: 'This email is already registered. Please sign in.',
-          }, { status: 409 });
-        }
-
-        await pool.query(
-          `INSERT INTO app_users (
-            id, email, name, avatar, role, approval_status, provider,
-            password, subscription_tier, subscription_data
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            userId,
-            email,
-            name?.trim() || email.split('@')[0],
-            defaultAvatar,
-            role,
-            approvalStatus,
-            'email',
-            password || null,
-            tier,
-            JSON.stringify(subscriptionData),
-          ]
-        );
-      }
-
-      const createdUser: User = {
-        id: userId,
-        name: name?.trim() || email.split('@')[0],
-        email,
-        avatar: defaultAvatar,
-        role,
-        approvalStatus,
-        provider: 'email',
-        password,
-        createdAt: new Date().toISOString(),
-        subscription: subscriptionData,
-      };
-
-      return NextResponse.json({
-        success: true,
-        isPending: !isOwner,
-        user: createdUser,
-        message: isOwner
-          ? 'Super Admin registered successfully!'
-          : 'Registration request submitted. Awaiting admin approval.',
-      });
+        { status: 403 }
+      );
     }
 
     // 2. APPROVE USER (Admin only)
