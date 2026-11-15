@@ -125,25 +125,6 @@ export function AppSidebar() {
         { href: '/debug', label: 'Debug', icon: Bug },
       ],
     },
-    ...(isElevated
-      ? [
-          {
-            id: 'admin',
-            title: 'ADMINISTRATION',
-            items: [
-              {
-                href: '/admin',
-                label: 'Admin Portal',
-                icon: ShieldCheck,
-                badge:
-                  pendingApprovalsCount > 0
-                    ? ({ text: `${pendingApprovalsCount} pending`, variant: 'pink' } as const)
-                    : undefined,
-              },
-            ],
-          },
-        ]
-      : []),
   ];
 
   // State to manage collapsed groups

@@ -650,21 +650,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const db = res.data;
             const dbMetaApps: MetaAppConfig[] = Array.isArray(db.settings?.metaApps) ? db.settings.metaApps : [];
 
-            // Read cached custom meta apps from localStorage to preserve renamed app names across cloud sync
+            // Read cached custom meta apps strictly from user-scoped localStorage (never global)
             let cachedCustomMetaApps: MetaAppConfig[] = [];
             if (typeof localStorage !== 'undefined') {
               try {
-                const rawSet = localStorage.getItem('sap_app_settings');
-                if (rawSet) {
-                  const p = JSON.parse(rawSet);
-                  if (Array.isArray(p.metaApps)) cachedCustomMetaApps = p.metaApps;
-                }
-                if (cachedCustomMetaApps.length === 0) {
-                  const rawU = localStorage.getItem(userKey);
-                  if (rawU) {
-                    const p = JSON.parse(rawU);
-                    if (Array.isArray(p.settings?.metaApps)) cachedCustomMetaApps = p.settings.metaApps;
-                  }
+                const rawU = localStorage.getItem(userKey);
+                if (rawU) {
+                  const p = JSON.parse(rawU);
+                  if (Array.isArray(p.settings?.metaApps)) cachedCustomMetaApps = p.settings.metaApps;
                 }
               } catch {}
             }
@@ -757,12 +750,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   return prev;
                 }
                 const cloudIds = new Set(db.posts.map((p: any) => p.id));
-                const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
-                const localRecent = prev.filter((p) => {
-                  if (cloudIds.has(p.id)) return false;
-                  return new Date(p.createdAt || 0).getTime() > threeMinutesAgo;
-                });
-                return [...localRecent, ...db.posts];
+                const localOnly = prev.filter((p) => !cloudIds.has(p.id));
+                if (localOnly.length > 0) {
+                  // Push local unsynced posts to cloud permanently
+                  syncToCloud(cleanEmail, { ...authoritativePayload, posts: [...localOnly, ...db.posts] }, user);
+                }
+                return [...localOnly, ...db.posts];
               });
             }
             if (Array.isArray(db.sigTemplates)) setSigTemplates(db.sigTemplates);
@@ -801,12 +794,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   metaApps: finalMetaApps,
                 };
                 finalSettingsObj = finalSettings;
-
-                if (typeof localStorage !== 'undefined') {
-                  try {
-                    localStorage.setItem('sap_app_settings', JSON.stringify(finalSettings));
-                  } catch {}
-                }
 
                 return finalSettings;
               });
@@ -982,16 +969,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } else {
         setIsAuthenticated(false);
         setUser(GUEST_USER);
-      }
-
-      // Always load settings from sap_app_settings if present
-      if (typeof localStorage !== 'undefined') {
-        const storedSettings = localStorage.getItem('sap_app_settings');
-        if (storedSettings) {
-          try {
-            setSettings((prev) => ({ ...prev, ...JSON.parse(storedSettings) }));
-          } catch {}
-        }
       }
     } catch (e) {
       console.error('Failed to load state during hydration:', e);
@@ -2327,19 +2304,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           return acc;
         });
-        if (typeof localStorage !== 'undefined') {
-          try {
-            localStorage.setItem('sap_social_accounts', JSON.stringify(nextAccounts));
-          } catch {}
-        }
         return nextAccounts;
       });
 
       if (typeof localStorage !== 'undefined') {
         try {
-          if (nextSettingsObj) {
-            localStorage.setItem('sap_app_settings', JSON.stringify(nextSettingsObj));
-          }
           if (user?.email) {
             const userKey = getStorageKeyForEmail(user.email);
             const userStored = localStorage.getItem(userKey);
@@ -2379,11 +2348,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
             return p;
           });
-          if (hasDiff && typeof localStorage !== 'undefined') {
-            try {
-              localStorage.setItem('sap_social_pages', JSON.stringify(nextPgs));
-            } catch {}
-          }
           return hasDiff ? nextPgs : prevPages;
         });
 
@@ -2400,18 +2364,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
             return a;
           });
-          if (hasDiff && typeof localStorage !== 'undefined') {
-            try {
-              localStorage.setItem('sap_social_accounts', JSON.stringify(nextAccs));
-            } catch {}
-          }
           return hasDiff ? nextAccs : prevAccounts;
         });
       }
 
       if (typeof localStorage !== 'undefined') {
         try {
-          localStorage.setItem('sap_app_settings', JSON.stringify(updated));
           if (user?.email) {
             const userKey = getStorageKeyForEmail(user.email);
             const userStored = localStorage.getItem(userKey);
@@ -2421,12 +2379,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
             // Immediately persist updated credentials/settings to Hostinger MySQL
             syncToCloud(user.email, userPayload, user);
-          }
-          const liveStored = localStorage.getItem(STORAGE_KEY);
-          if (liveStored) {
-            const liveParsed = JSON.parse(liveStored);
-            liveParsed.settings = updated;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(liveParsed));
           }
         } catch (e) {
           console.error('Failed to sync settings:', e);

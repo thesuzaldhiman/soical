@@ -10,6 +10,7 @@ import { SocialIcon } from '@/components/ui/SocialIcon';
 import { findSensitiveWords, sanitizeText } from '@/lib/utils/sensitive-words';
 import {
   UploadCloud,
+  Loader2,
   Check,
   Clock,
   ShieldAlert,
@@ -100,6 +101,7 @@ function ComposerContent() {
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaFileName, setMediaFileName] = useState<string | null>(null);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
 
   // Post Library Modal State
   const [showLibraryModal, setShowLibraryModal] = useState(false);
@@ -351,24 +353,58 @@ function ComposerContent() {
   const allSelected = pages.length > 0 && pages.every((p) => selectedPageIds.includes(p.id));
 
   // Handlers
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setMediaFileName(file.name);
-    if (file.type.startsWith('video/')) {
+    const isVideo = file.type.startsWith('video/');
+    if (isVideo) {
       setPostType('video');
     } else {
       setPostType('image');
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setMediaUrl(event.target.result as string);
+    // Fast local preview while uploading
+    const objectUrl = URL.createObjectURL(file);
+    setMediaUrl(objectUrl);
+    setIsUploadingMedia(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success && data.url) {
+        // Replace temporary objectUrl with permanent server URL
+        setMediaUrl(data.url);
+      } else {
+        console.warn('[handleFileUpload] Server upload failed, using base64 fallback:', data.error);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            setMediaUrl(event.target.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.warn('[handleFileUpload] Upload error, falling back to base64:', err);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setMediaUrl(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsUploadingMedia(false);
+    }
   };
 
   const removeMedia = () => {
@@ -852,6 +888,13 @@ function ComposerContent() {
               ) : mediaUrl ? (
                 <div className="rounded-2xl border border-[#E2E8F0] bg-slate-50 p-3 space-y-2.5">
                   <div className="relative rounded-xl overflow-hidden max-h-72 w-full bg-slate-950/5 border border-[#E2E8F0] flex items-center justify-center p-2">
+                    {isUploadingMedia && (
+                      <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-xs flex flex-col items-center justify-center text-white p-3 z-10 rounded-xl">
+                        <Loader2 className="w-6 h-6 animate-spin text-pink-400 mb-1.5" />
+                        <span className="text-xs font-bold">Uploading media to server...</span>
+                        <span className="text-[10px] text-slate-300">Optimizing for permanent fast storage</span>
+                      </div>
+                    )}
                     {postType === 'video' ? (
                       <video src={mediaUrl} controls className="max-h-68 w-auto rounded-lg object-contain" />
                     ) : (
@@ -1167,11 +1210,16 @@ function ComposerContent() {
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
-                disabled={isSubmitting || selectedPageIds.length === 0}
+                disabled={isSubmitting || isUploadingMedia || selectedPageIds.length === 0}
                 onClick={() => handlePublish(isScheduleMode ? 'schedule' : 'now')}
                 className="px-5 py-3 rounded-xl bg-slate-900 hover:bg-black disabled:opacity-50 text-white font-bold text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer"
               >
-                {isSubmitting ? (
+                {isUploadingMedia ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-pink-400" />
+                    <span>Uploading Media...</span>
+                  </>
+                ) : isSubmitting ? (
                   <>
                     <RotateCw className="w-4 h-4 animate-spin" />
                     <span>{publishingMessage || 'Processing...'}</span>
@@ -1191,9 +1239,9 @@ function ComposerContent() {
 
               <button
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploadingMedia}
                 onClick={() => handlePublish('draft')}
-                className="px-4 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8F9FA] disabled:opacity-50 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5 text-slate-500" />
                 <span>Save Draft</span>
