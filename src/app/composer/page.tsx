@@ -33,6 +33,8 @@ import {
   Globe,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Eraser,
   ThumbsUp,
   ThumbsDown,
@@ -45,6 +47,7 @@ import {
   Key,
   X,
   Layers,
+  Tags,
   ArrowRight,
   Filter,
 } from 'lucide-react';
@@ -87,10 +90,12 @@ function ComposerContent() {
   const searchParams = useSearchParams();
   const { user, pages, accounts, categories, settings, createPost, posts, resolveMetaAppName } = useApp();
 
-  // Selected Destinations (Page IDs)
-  const [selectedPageIds, setSelectedPageIds] = useState<string[]>(
-    pages.filter((p) => p.isActive).map((p) => p.id)
-  );
+  // Selected Destinations (Page IDs) - By default no page is selected
+  const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
+
+  // Destination View Mode: 'pages' | 'categories'
+  const [destinationViewMode, setDestinationViewMode] = useState<'pages' | 'categories'>('pages');
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
 
   // Post Content
   const [postType, setPostType] = useState<PostType>('text');
@@ -1895,253 +1900,431 @@ function ComposerContent() {
             </div>
           )}
 
-          {/* Card 2: Select Pages (Quick Select by Category + Account Grouping) */}
+          {/* Card 2: Select Destinations (Pages List OR Category List with Tick Checkboxes) */}
           <div className="bg-white rounded-3xl border border-[#E2E8F0] shadow-2xs overflow-hidden">
             {/* Header */}
-            <div className="px-5 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <h2 className="text-sm font-black text-slate-900">Select Pages</h2>
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-[#E2E8F0] text-[11px] font-bold text-slate-700">
-                  {pages.length}
-                </span>
-              </div>
-
-              {pages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={toggleSelectAll}
-                  className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-black cursor-pointer"
-                >
+            <div className="px-5 py-4 border-b border-[#E2E8F0] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-sm font-black text-slate-900">Select Destinations</h2>
                   <span
-                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
-                      allSelected
-                        ? 'bg-slate-900 border-slate-900 text-white'
-                        : 'bg-white border-slate-300'
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold border transition-colors ${
+                      selectedPageIds.length > 0
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-500 border-slate-200'
                     }`}
                   >
-                    {allSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                    {selectedPageIds.length > 0 ? `${selectedPageIds.length} Selected` : 'None Selected'}
                   </span>
-                  <span>Select All</span>
-                </button>
-              )}
-            </div>
-
-            {/* Quick Select by Category */}
-            {categoriesWithCounts.length > 0 && (
-              <div className="px-5 py-4 border-b border-[#E2E8F0] bg-[#F8F9FA]/70 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-slate-400" />
-                    <span>Quick Select by Category</span>
-                  </span>
-                  <Link
-                    href="/categories"
-                    className="text-[10px] font-bold text-slate-500 hover:text-slate-900"
-                  >
-                    Manage
-                  </Link>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPageIds([])}
-                    className={`px-3 py-1 rounded-full border text-[11px] font-bold transition-all cursor-pointer ${
-                      selectedPageIds.length === 0
-                        ? 'bg-slate-900 border-slate-900 text-white'
-                        : 'bg-white border-[#E2E8F0] text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    None
-                  </button>
-
-                  {categoriesWithCounts.map((cat) => (
+                <div className="flex items-center gap-2">
+                  {selectedPageIds.length > 0 && (
                     <button
-                      key={cat.id}
                       type="button"
-                      onClick={() => toggleCategoryPages(cat.validIds, cat.allSelected)}
-                      style={{
-                        borderColor: cat.allSelected ? cat.color : undefined,
-                        backgroundColor: cat.allSelected ? `${cat.color}18` : undefined,
-                      }}
-                      className={`px-3 py-1 rounded-full border text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                        cat.allSelected
-                          ? 'text-slate-900 shadow-2xs'
-                          : 'bg-white border-[#E2E8F0] text-slate-700 hover:border-slate-400'
-                      }`}
+                      onClick={() => setSelectedPageIds([])}
+                      className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer"
+                      title="Unselect all pages"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {pages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-black cursor-pointer"
                     >
                       <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: cat.color }}
-                      />
-                      <span>{cat.name}</span>
-                      <span className="text-[10px] opacity-70">{cat.validIds.length}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Search & Platform Filter */}
-            {pages.length > 0 && (
-              <div className="px-5 py-3 border-b border-[#E2E8F0] space-y-2.5">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={pageSearch}
-                    onChange={(e) => setPageSearch(e.target.value)}
-                    placeholder="Search pages or channels..."
-                    className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
-                  />
-                </div>
-
-                {availablePlatforms.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setPlatformFilter('all')}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                        platformFilter === 'all'
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-[#F8F9FA] text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      All
-                    </button>
-                    {availablePlatforms.map((plat) => (
-                      <button
-                        key={plat}
-                        type="button"
-                        onClick={() => setPlatformFilter(plat)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold capitalize flex items-center gap-1 transition-colors cursor-pointer ${
-                          platformFilter === plat
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-[#F8F9FA] text-slate-600 hover:text-slate-900'
+                        className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                          allSelected
+                            ? 'bg-slate-900 border-slate-900 text-white'
+                            : 'bg-white border-slate-300'
                         }`}
                       >
-                        <SocialIcon platform={plat} className="w-3 h-3 rounded-xs" />
-                        <span>{plat}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                        {allSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                      </span>
+                      <span>{allSelected ? 'All Selected' : 'Select All'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
 
-            {/* Account-Grouped Pages Checklist */}
-            {pages.length === 0 ? (
-              <div className="p-6 text-center space-y-2.5">
-                <p className="text-xs font-bold text-slate-700">No channels connected yet</p>
-                <p className="text-[11px] text-slate-400">
-                  Connect your Facebook Pages, YouTube, or Telegram channels to start broadcasting.
-                </p>
-                <Link
-                  href="/accounts"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs mt-1 transition-all"
+              {/* Segmented Switcher: Pages List vs Categories List */}
+              <div className="grid grid-cols-2 p-1 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setDestinationViewMode('pages')}
+                  className={`py-1.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    destinationViewMode === 'pages'
+                      ? 'bg-white text-slate-900 shadow-2xs border border-[#E2E8F0]'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Connect Account</span>
-                </Link>
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Pages List ({pages.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDestinationViewMode('categories')}
+                  className={`py-1.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    destinationViewMode === 'categories'
+                      ? 'bg-white text-slate-900 shadow-2xs border border-[#E2E8F0]'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Tags className="w-3.5 h-3.5" />
+                  <span>Categories List ({categories.length})</span>
+                </button>
               </div>
-            ) : filteredPages.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">
-                No pages match &ldquo;{pageSearch}&rdquo;
-              </div>
-            ) : (
-              <div className="p-4 max-h-80 overflow-y-auto space-y-4">
-                {groupedPages.map((group) => {
-                  const allGroupChecked = group.pages.every((p) => selectedPageIds.includes(p.id));
-                  return (
-                    <div key={group.id} className="space-y-1.5">
-                      <div className="px-2 flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 truncate">
-                          {group.accountName}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => toggleAccountGroup(group.pages)}
-                          className="text-[10px] font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
-                        >
-                          {allGroupChecked ? 'Unselect' : 'Select all'}
-                        </button>
-                      </div>
+            </div>
 
-                      <div className="space-y-1">
-                        {group.pages.map((page) => {
-                          const isSelected = selectedPageIds.includes(page.id);
-                          return (
+            {/* TAB 1: CATEGORIES LIST VIEW */}
+            {destinationViewMode === 'categories' ? (
+              <div className="p-4 space-y-3">
+                {categories.length === 0 ? (
+                  <div className="py-8 text-center space-y-2">
+                    <Tags className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">No categories created yet</p>
+                    <p className="text-[11px] text-slate-400">
+                      Create categories to group your Facebook pages, channels, and websites.
+                    </p>
+                    <Link
+                      href="/categories"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-2xs mt-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Create Category</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold px-1">
+                      <span>Tick category to select all pages inside it:</span>
+                      <Link
+                        href="/categories"
+                        className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline"
+                      >
+                        Manage
+                      </Link>
+                    </div>
+
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-0.5">
+                      {categoriesWithCounts.map((cat) => {
+                        const selectedInCat = cat.validIds.filter((id) => selectedPageIds.includes(id)).length;
+                        const isExpanded = expandedCategoryId === cat.id;
+
+                        return (
+                          <div
+                            key={cat.id}
+                            className={`rounded-2xl border transition-all ${
+                              cat.allSelected
+                                ? 'bg-[#F8F9FA] border-slate-900/80 shadow-2xs'
+                                : cat.someSelected
+                                ? 'bg-slate-50/70 border-slate-300'
+                                : 'bg-white border-[#E2E8F0] hover:border-slate-300'
+                            }`}
+                          >
                             <div
-                              key={page.id}
-                              onClick={() => togglePageSelection(page.id)}
-                              className={`px-3 py-2 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 ${
-                                isSelected
-                                    ? 'bg-[#F8F9FA] border-slate-900/80 text-slate-900 font-bold shadow-2xs'
-                                  : 'bg-white border-transparent hover:border-[#E2E8F0] hover:bg-[#F8F9FA]/60 text-slate-700 font-medium'
-                              }`}
+                              onClick={() => toggleCategoryPages(cat.validIds, cat.allSelected)}
+                              className="p-3 flex items-center justify-between gap-3 cursor-pointer select-none"
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
+                                {/* Tick / Checkbox */}
                                 <div
-                                  className={`w-4 h-4 rounded-md flex items-center justify-center border shrink-0 transition-colors ${
-                                    isSelected
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-colors ${
+                                    cat.allSelected
                                       ? 'bg-slate-900 border-slate-900 text-white'
+                                      : cat.someSelected
+                                      ? 'bg-slate-200 border-slate-400 text-slate-800'
                                       : 'border-slate-300 bg-white'
                                   }`}
                                 >
-                                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                                </div>
-
-                                <div className="relative shrink-0">
-                                  {page.avatarUrl ? (
-                                    /* eslint-disable-next-line @next/next/no-img-element */
-                                    <img
-                                      src={page.avatarUrl}
-                                      alt={page.name}
-                                      className="w-7 h-7 rounded-full object-cover border border-[#E2E8F0]"
-                                    />
-                                  ) : (
-                                    <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
-                                      {page.name.charAt(0).toUpperCase()}
-                                    </div>
+                                  {cat.allSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                  {cat.someSelected && !cat.allSelected && (
+                                    <span className="w-2 h-0.5 bg-slate-800 rounded-full" />
                                   )}
-                                  <span className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-[#E2E8F0]">
-                                    <SocialIcon platform={page.platform} className="w-2.5 h-2.5" />
-                                  </span>
                                 </div>
 
                                 <div className="min-w-0">
-                                  <div className="truncate text-xs leading-tight">{page.name}</div>
-                                  <div className="text-[10px] text-slate-400 capitalize flex items-center gap-1.5 mt-0.5">
-                                    <span>{page.platform}</span>
-                                    {page.category && (
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                                      style={{ backgroundColor: cat.color }}
+                                    />
+                                    <span className="text-xs font-bold text-slate-900 truncate">
+                                      {cat.name}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                    <span>
+                                      {cat.validIds.length} connected page{cat.validIds.length === 1 ? '' : 's'}
+                                    </span>
+                                    {cat.tags.length > 0 && (
                                       <>
                                         <span>•</span>
-                                        <span className="truncate">{page.category}</span>
+                                        <span className="truncate">{cat.tags.slice(0, 2).join(' ')}</span>
                                       </>
                                     )}
                                   </div>
                                 </div>
                               </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    cat.allSelected
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                      : cat.someSelected
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : 'bg-slate-100 text-slate-500'
+                                  }`}
+                                >
+                                  {cat.allSelected
+                                    ? 'All Selected'
+                                    : cat.someSelected
+                                    ? `${selectedInCat}/${cat.validIds.length}`
+                                    : 'None'}
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedCategoryId(isExpanded ? null : cat.id);
+                                  }}
+                                  className="p-1 rounded-lg hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 transition-colors"
+                                  title="View pages in this category"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
+
+                            {/* Sub-pages expansion inside category */}
+                            {isExpanded && cat.validIds.length > 0 && (
+                              <div className="px-3 pb-3 pt-1 border-t border-slate-100 space-y-1.5 bg-white/70 rounded-b-2xl">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-1">
+                                  Pages in {cat.name}:
+                                </div>
+                                {cat.validIds.map((pid) => {
+                                  const p = pages.find((page) => page.id === pid);
+                                  if (!p) return null;
+                                  const isPageSelected = selectedPageIds.includes(p.id);
+                                  return (
+                                    <div
+                                      key={p.id}
+                                      onClick={() => togglePageSelection(p.id)}
+                                      className={`px-2.5 py-1.5 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                                        isPageSelected
+                                          ? 'bg-blue-50/60 border-blue-200 text-blue-950 font-bold'
+                                          : 'bg-white border-[#E2E8F0] hover:bg-slate-50 text-slate-700'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <div
+                                          className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
+                                            isPageSelected
+                                              ? 'bg-blue-600 border-blue-600 text-white'
+                                              : 'border-slate-300 bg-white'
+                                          }`}
+                                        >
+                                          {isPageSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                        </div>
+                                        <SocialIcon platform={p.platform} className="w-3.5 h-3.5 rounded-xs shrink-0" />
+                                        <span className="truncate text-[11px]">{p.name}</span>
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 capitalize">{p.platform}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* TAB 2: PAGES LIST VIEW (Checklist with Search & Filter) */
+              <div>
+                {/* Search & Platform Filter */}
+                {pages.length > 0 && (
+                  <div className="px-5 py-3 border-b border-[#E2E8F0] space-y-2.5">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={pageSearch}
+                        onChange={(e) => setPageSearch(e.target.value)}
+                        placeholder="Search pages or channels..."
+                        className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+                      />
+                    </div>
+
+                    {availablePlatforms.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPlatformFilter('all')}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                            platformFilter === 'all'
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-[#F8F9FA] text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          All
+                        </button>
+                        {availablePlatforms.map((plat) => (
+                          <button
+                            key={plat}
+                            type="button"
+                            onClick={() => setPlatformFilter(plat)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold capitalize flex items-center gap-1 transition-colors cursor-pointer ${
+                              platformFilter === plat
+                                ? 'bg-slate-900 text-white'
+                                : 'bg-[#F8F9FA] text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <SocialIcon platform={plat} className="w-3 h-3 rounded-xs" />
+                            <span>{plat}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Account-Grouped Pages Checklist */}
+                {pages.length === 0 ? (
+                  <div className="p-6 text-center space-y-2.5">
+                    <p className="text-xs font-bold text-slate-700">No channels connected yet</p>
+                    <p className="text-[11px] text-slate-400">
+                      Connect your Facebook Pages, YouTube, or Telegram channels to start broadcasting.
+                    </p>
+                    <Link
+                      href="/accounts"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-2xs mt-1 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Connect Account</span>
+                    </Link>
+                  </div>
+                ) : filteredPages.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-500">
+                    No pages match &ldquo;{pageSearch}&rdquo;
+                  </div>
+                ) : (
+                  <div className="p-4 max-h-80 overflow-y-auto space-y-4">
+                    {groupedPages.map((group) => {
+                      const allGroupChecked = group.pages.every((p) => selectedPageIds.includes(p.id));
+                      return (
+                        <div key={group.id} className="space-y-1.5">
+                          <div className="px-2 flex items-center justify-between">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 truncate">
+                              {group.accountName}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleAccountGroup(group.pages)}
+                              className="text-[10px] font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
+                            >
+                              {allGroupChecked ? 'Unselect group' : 'Select group'}
+                            </button>
+                          </div>
+
+                          <div className="space-y-1">
+                            {group.pages.map((page) => {
+                              const isSelected = selectedPageIds.includes(page.id);
+                              return (
+                                <div
+                                  key={page.id}
+                                  onClick={() => togglePageSelection(page.id)}
+                                  className={`px-3 py-2 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                                    isSelected
+                                      ? 'bg-[#F8F9FA] border-slate-900/80 text-slate-900 font-bold shadow-2xs'
+                                      : 'bg-white border-transparent hover:border-[#E2E8F0] hover:bg-[#F8F9FA]/60 text-slate-700 font-medium'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div
+                                      className={`w-4 h-4 rounded-md flex items-center justify-center border shrink-0 transition-colors ${
+                                        isSelected
+                                          ? 'bg-slate-900 border-slate-900 text-white'
+                                          : 'border-slate-300 bg-white'
+                                      }`}
+                                    >
+                                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                    </div>
+
+                                    <div className="relative shrink-0">
+                                      {page.avatarUrl ? (
+                                        /* eslint-disable-next-line @next/next/no-img-element */
+                                        <img
+                                          src={page.avatarUrl}
+                                          alt={page.name}
+                                          className="w-7 h-7 rounded-full object-cover border border-[#E2E8F0]"
+                                        />
+                                      ) : (
+                                        <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
+                                          {page.name.charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
+                                      <span className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-[#E2E8F0]">
+                                        <SocialIcon platform={page.platform} className="w-2.5 h-2.5" />
+                                      </span>
+                                    </div>
+
+                                    <div className="min-w-0">
+                                      <div className="truncate text-xs leading-tight">{page.name}</div>
+                                      <div className="text-[10px] text-slate-400 capitalize flex items-center gap-1.5 mt-0.5">
+                                        <span>{page.platform}</span>
+                                        {page.category && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="truncate">{page.category}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Bottom Summary Bar */}
             <div className="px-5 py-3.5 border-t border-[#E2E8F0] bg-[#F8F9FA]">
               <div className="w-full py-2 px-3 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-900">
-                  {selectedPageIds.length} page{selectedPageIds.length === 1 ? '' : 's'} selected
-                </span>
-                {platformBreakdown.length > 0 && (
+                <div>
+                  <span className="font-bold text-slate-900">
+                    {selectedPageIds.length} destination{selectedPageIds.length === 1 ? '' : 's'} selected
+                  </span>
+                  {selectedPageIds.length === 0 && (
+                    <span className="text-[10px] text-amber-600 font-semibold ml-1.5">
+                      (Tick pages or categories above)
+                    </span>
+                  )}
+                </div>
+                {platformBreakdown.length > 0 ? (
                   <span className="text-[11px] font-semibold text-slate-500 capitalize">
                     {platformBreakdown.map(([plat, count]) => `${count} ${plat}`).join(' · ')}
                   </span>
+                ) : (
+                  <span className="text-[11px] text-slate-400">None</span>
                 )}
               </div>
             </div>
