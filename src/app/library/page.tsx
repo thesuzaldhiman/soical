@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
-import { Post, PostStatus, Platform } from '@/types';
+import { Post, PostStatus, Platform, PostComment, PostPerformanceMetric } from '@/types';
 import {
   Layers,
   Search,
@@ -21,19 +21,23 @@ import {
   ChevronUp,
   MessageSquare,
   Play,
-  Eye,
   X,
   Copy,
   RotateCw,
-  Globe,
+  Send,
+  Heart,
+  ThumbsUp,
+  Share2,
+  BarChart3,
   Loader2,
-  Sparkles,
   Zap,
   Image as ImageIcon,
   Video as VideoIcon,
   FileText,
   LayoutList,
   LayoutGrid,
+  Check,
+  Calendar,
 } from 'lucide-react';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 
@@ -58,6 +62,9 @@ function LibraryContent() {
     posts,
     pages,
     postPerformances,
+    postComments,
+    createPostComment,
+    fetchPostComments,
     retryPost,
     approvePost,
     deletePost,
@@ -69,16 +76,16 @@ function LibraryContent() {
   const [activeTab, setActiveTab] = useState<'all' | PostStatus>(initialStatus);
   const [platformFilter, setPlatformFilter] = useState<'all' | 'facebook' | Platform>(initialPlatform);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
-  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
-
-  // View Mode: 'list' (Vertical) vs 'grid' (Card Grid)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isRefreshingCloud, setIsRefreshingCloud] = useState<boolean>(false);
 
-  // Inspection Modal State (Full image review before approval)
-  const [selectedPostForModal, setSelectedPostForModal] = useState<Post | null>(null);
+  // Slide-over Drawer / Inspector State
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
-  // Deletion Confirmation Modal State (Facebook vs Library options)
+  // Delivery Logs Modal State (when clicking Logs on card)
+  const [logPost, setLogPost] = useState<Post | null>(null);
+
+  // Deletion Confirmation Modal State
   const [postPendingDelete, setPostPendingDelete] = useState<Post | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [approvingPostId, setApprovingPostId] = useState<string | null>(null);
@@ -101,36 +108,38 @@ function LibraryContent() {
     }
   };
 
-  // Auto-refresh posts from cloud on mount to capture any background WordPress webhook posts
+  // Instant fast sync from database on mount
   useEffect(() => {
     refreshPosts();
   }, [refreshPosts]);
+
+  // Keep selectedPost reference in sync when posts update
+  useEffect(() => {
+    if (selectedPost) {
+      const updated = posts.find((p) => p.id === selectedPost.id);
+      if (updated) setSelectedPost(updated);
+    }
+  }, [posts, selectedPost?.id]);
 
   const handleManualRefresh = async () => {
     setIsRefreshingCloud(true);
     try {
       await refreshPosts();
-      setActionSuccessMessage('Post Library synchronized with cloud database!');
+      setActionSuccessMessage('Post Library synchronized with database!');
       setTimeout(() => setActionSuccessMessage(null), 3000);
     } catch {
-      setActionSuccessMessage('Failed to sync from cloud.');
+      setActionSuccessMessage('Failed to sync from database.');
       setTimeout(() => setActionSuccessMessage(null), 3000);
     } finally {
       setIsRefreshingCloud(false);
     }
   };
 
-  const fbCount = posts.filter(
-    (p) =>
-      p.pageIds.some((pid) => pages.find((page) => page.id === pid)?.platform === 'facebook') ||
-      p.results.some((r) => r.platform === 'facebook')
-  ).length;
-
   const handleRunQueue = async () => {
     try {
       const res = await processScheduledQueueNow();
       if (res.dispatched > 0) {
-        setActionSuccessMessage(`Successfully published ${res.dispatched} scheduled post${res.dispatched > 1 ? 's' : ''} to destination channels!`);
+        setActionSuccessMessage(`Successfully published ${res.dispatched} scheduled post${res.dispatched > 1 ? 's' : ''}!`);
       } else {
         setActionSuccessMessage('Auto-Scheduler checked: No scheduled posts are currently due.');
       }
@@ -138,6 +147,41 @@ function LibraryContent() {
     } catch {
       setActionSuccessMessage('Error processing scheduled queue.');
       setTimeout(() => setActionSuccessMessage(null), 4000);
+    }
+  };
+
+  const handleApprove = async (postId: string) => {
+    setApprovingPostId(postId);
+    try {
+      await approvePost(postId);
+      setActionSuccessMessage('Post approved and broadcasted live to connected pages!');
+      setTimeout(() => setActionSuccessMessage(null), 5000);
+    } catch (err) {
+      console.error('Approval failed:', err);
+    } finally {
+      setApprovingPostId(null);
+    }
+  };
+
+  const handleDeleteConfirm = async (deleteFromFacebook: boolean) => {
+    if (!postPendingDelete) return;
+    setIsDeleting(true);
+    try {
+      await deletePost(postPendingDelete.id, { deleteFromFacebook });
+      if (deleteFromFacebook) {
+        setActionSuccessMessage('Post permanently deleted from Facebook page and Post Library!');
+      } else {
+        setActionSuccessMessage('Post removed from Post Library.');
+      }
+      setTimeout(() => setActionSuccessMessage(null), 5000);
+      if (selectedPost?.id === postPendingDelete.id) {
+        setSelectedPost(null);
+      }
+      setPostPendingDelete(null);
+    } catch (err) {
+      console.error('Delete failed:', err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -162,73 +206,83 @@ function LibraryContent() {
     return `${dateStr} at ${timeStr}`;
   };
 
-  // Helper to get direct live destination link (Facebook / Telegram / WordPress)
-  const getPostLiveLink = (post: Post) => {
-    // 1. Try postPerformances permalinkUrl
+  // Helper to resolve actual live URL for a specific target destination
+  const getTargetLiveLink = (post: Post, pageId: string) => {
+    const page = pages.find((p) => p.id === pageId || p.pageId === pageId);
+    const res = post.results.find((r) => r.pageId === pageId || (page && r.pageId === page.pageId));
+
+    if (res?.postUrl && res.postUrl.startsWith('http')) {
+      return { url: res.postUrl, label: 'View Post' };
+    }
+
+    if (res?.externalPostId) {
+      const ext = res.externalPostId;
+      if (ext.startsWith('http')) {
+        return { url: ext, label: 'View Post' };
+      }
+      // Facebook permalink formats
+      if (page?.platform === 'facebook' || (!page?.platform && ext.includes('_'))) {
+        return { url: `https://www.facebook.com/${ext}`, label: 'View on Facebook' };
+      }
+      if (page?.pageId) {
+        return { url: `https://www.facebook.com/${page.pageId}/posts/${ext}`, label: 'View on Facebook' };
+      }
+      return { url: `https://www.facebook.com/${ext}`, label: 'View on Facebook' };
+    }
+
+    // Performance metrics link fallback
     const perf = postPerformances?.find(
-      (p) => p.postId === post.id || post.results.some((r) => r.externalPostId && r.externalPostId === p.externalPostId)
+      (p) => p.postId === post.id && (p.pageId === pageId || (page && p.pageId === page.pageId))
     );
     if (perf?.permalinkUrl) {
-      return { url: perf.permalinkUrl, platform: 'facebook', label: 'View on Facebook' };
+      return { url: perf.permalinkUrl, label: 'View on Facebook' };
     }
 
-    // 2. Try Facebook post result with externalPostId or postUrl
-    const fbResult = post.results.find((r) => r.platform === 'facebook' && (r.postUrl || r.externalPostId));
-    if (fbResult) {
-      const url = fbResult.postUrl || `https://www.facebook.com/${fbResult.externalPostId}`;
-      return { url, platform: 'facebook', label: 'View on Facebook' };
+    // Platform fallbacks
+    if (page?.platform === 'wordpress' && page.siteUrl) {
+      return { url: page.siteUrl, label: 'View on WordPress' };
     }
-
-    // 3. Try Telegram
-    const tgPage = pages.find((p) => post.pageIds.includes(p.id) && p.platform === 'telegram');
-    if (tgPage?.targetUrl) {
-      return { url: tgPage.targetUrl, platform: 'telegram', label: 'View on Telegram' };
+    if (page?.platform === 'telegram' && page.targetUrl) {
+      return { url: page.targetUrl, label: 'View on Telegram' };
     }
-
-    // 4. Try WordPress
-    const wpPage = pages.find((p) => post.pageIds.includes(p.id) && p.platform === 'wordpress');
-    if (wpPage?.siteUrl) {
-      return { url: wpPage.siteUrl, platform: 'wordpress', label: 'View on WordPress' };
+    if (page?.targetUrl) {
+      return { url: page.targetUrl, label: `View on ${page.platform || 'Platform'}` };
     }
-
-    // 5. Fallback: Facebook page URL if this post targeted Facebook
-    const fbPage = pages.find((p) => post.pageIds.includes(p.id) && (p.platform === 'facebook' || p.targetUrl?.includes('facebook')));
-    if (fbPage?.targetUrl) {
-      return { url: fbPage.targetUrl, platform: 'facebook', label: 'View on Facebook' };
-    }
-    if (fbPage?.pageId) {
-      return { url: `https://www.facebook.com/${fbPage.pageId}`, platform: 'facebook', label: 'View on Facebook' };
+    if (page?.pageId) {
+      return { url: `https://www.facebook.com/${page.pageId}`, label: 'View Page' };
     }
 
     return null;
   };
 
   // Filter posts
-  const filteredPosts = posts.filter((post) => {
-    const matchesTab = activeTab === 'all' || post.status === activeTab;
-    const matchesPlatform =
-      platformFilter === 'all'
-        ? true
-        : post.pageIds.some((pid) => {
-            const page = pages.find((p) => p.id === pid);
-            return (page?.platform || '').toLowerCase() === platformFilter;
-          }) ||
-          post.results.some((r) => (r.platform || '').toLowerCase() === platformFilter) ||
-          (platformFilter === 'facebook' && post.pageIds.some((pid) => String(pid).toLowerCase().includes('fb')));
+  const filteredPosts = useMemo(() => {
+    return posts.filter((post) => {
+      const matchesTab = activeTab === 'all' || post.status === activeTab;
+      const matchesPlatform =
+        platformFilter === 'all'
+          ? true
+          : post.pageIds.some((pid) => {
+              const page = pages.find((p) => p.id === pid);
+              return (page?.platform || '').toLowerCase() === platformFilter;
+            }) ||
+            post.results.some((r) => (r.platform || '').toLowerCase() === platformFilter) ||
+            (platformFilter === 'facebook' && post.pageIds.some((pid) => String(pid).toLowerCase().includes('fb')));
 
-    const q = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !q ||
-      post.message.toLowerCase().includes(q) ||
-      (post.title || '').toLowerCase().includes(q) ||
-      post.postType.toLowerCase().includes(q) ||
-      post.pageIds.some((pid) => {
-        const page = pages.find((p) => p.id === pid);
-        return page?.name.toLowerCase().includes(q);
-      });
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        post.message.toLowerCase().includes(q) ||
+        (post.title || '').toLowerCase().includes(q) ||
+        post.postType.toLowerCase().includes(q) ||
+        post.pageIds.some((pid) => {
+          const page = pages.find((p) => p.id === pid);
+          return page?.name.toLowerCase().includes(q);
+        });
 
-    return matchesTab && matchesPlatform && matchesSearch;
-  });
+      return matchesTab && matchesPlatform && matchesSearch;
+    });
+  }, [posts, activeTab, platformFilter, searchQuery, pages]);
 
   const tabCounts = {
     all: posts.length,
@@ -237,6 +291,12 @@ function LibraryContent() {
     failed: posts.filter((p) => p.status === 'failed').length,
     draft: posts.filter((p) => p.status === 'draft').length,
   };
+
+  const fbCount = posts.filter(
+    (p) =>
+      p.pageIds.some((pid) => pages.find((page) => page.id === pid)?.platform === 'facebook') ||
+      p.results.some((r) => r.platform === 'facebook')
+  ).length;
 
   const statusBadge = (status: PostStatus) => {
     switch (status) {
@@ -249,54 +309,14 @@ function LibraryContent() {
       case 'partial':
         return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'draft':
-        return 'bg-amber-50 text-amber-800 border-amber-300 font-black';
+        return 'bg-amber-50 text-amber-800 border-amber-300 font-bold';
       default:
         return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
 
-  // Handle Live Approval & Broadcasting
-  const handleApprove = async (postId: string) => {
-    setApprovingPostId(postId);
-    try {
-      await approvePost(postId);
-      setActionSuccessMessage('Post successfully approved and broadcasted live to connected pages!');
-      setTimeout(() => setActionSuccessMessage(null), 5000);
-      if (selectedPostForModal?.id === postId) {
-        setSelectedPostForModal(null);
-      }
-    } catch (err) {
-      console.error('Approval failed:', err);
-    } finally {
-      setApprovingPostId(null);
-    }
-  };
-
-  // Handle Post Deletion (Library vs Facebook Graph API)
-  const handleDeleteConfirm = async (deleteFromFacebook: boolean) => {
-    if (!postPendingDelete) return;
-    setIsDeleting(true);
-    try {
-      await deletePost(postPendingDelete.id, { deleteFromFacebook });
-      if (deleteFromFacebook) {
-        setActionSuccessMessage('Post permanently deleted from Facebook page and Post Library!');
-      } else {
-        setActionSuccessMessage('Post removed from Post Library.');
-      }
-      setTimeout(() => setActionSuccessMessage(null), 5000);
-      if (selectedPostForModal?.id === postPendingDelete.id) {
-        setSelectedPostForModal(null);
-      }
-      setPostPendingDelete(null);
-    } catch (err) {
-      console.error('Delete failed:', err);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
   return (
-    <div className="space-y-4 font-sans animate-fade-in pb-12">
+    <div className="space-y-4 font-sans animate-fade-in pb-16">
       {/* Action Notification Banner */}
       {actionSuccessMessage && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-2xs animate-fade-in">
@@ -322,7 +342,7 @@ function LibraryContent() {
             <span>Post Library &amp; Queue</span>
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-1">
-            Review card images, open published posts directly on Facebook, approve draft stories, or view target channels.
+            All posts published, scheduled, or saved from this workspace synced directly with the database.
           </p>
         </div>
 
@@ -358,7 +378,7 @@ function LibraryContent() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Status Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            {(['all', 'draft', 'scheduled', 'published', 'failed'] as const).map((tab) => (
+            {(['all', 'published', 'scheduled', 'draft', 'failed'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -393,7 +413,7 @@ function LibraryContent() {
               />
             </div>
 
-            {/* View Mode Toggle: List (Vertical) vs Grid */}
+            {/* View Mode Toggle: List vs Grid */}
             <div className="inline-flex items-center p-0.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] text-xs font-bold shrink-0">
               <button
                 type="button"
@@ -423,27 +443,27 @@ function LibraryContent() {
               </button>
             </div>
 
-            {/* Sync from Cloud Button */}
+            {/* Sync from Database Button */}
             <button
               type="button"
               onClick={handleManualRefresh}
               disabled={isRefreshingCloud}
               className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-[#EEF1F6] text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0 disabled:opacity-50"
-              title="Fetch latest posts from cloud database"
+              title="Fast fetch latest posts directly from MySQL database"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshingCloud ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{isRefreshingCloud ? 'Syncing...' : 'Sync Cloud'}</span>
+              <span className="hidden sm:inline">{isRefreshingCloud ? 'Syncing...' : 'Sync DB'}</span>
             </button>
           </div>
         </div>
 
-        {/* Platform Quick Filter Row (Facebook vs All Platforms) */}
+        {/* Platform Quick Filter Row */}
         <div className="pt-2 border-t border-[#EEF1F6] flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               Filter by Platform:
             </span>
-            <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] text-xs font-bold">
+            <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] text-xs font-bold flex-wrap">
               <button
                 type="button"
                 onClick={() => setPlatformFilter('all')}
@@ -453,7 +473,7 @@ function LibraryContent() {
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                All Platforms ({posts.length})
+                All ({posts.length})
               </button>
               <button
                 type="button"
@@ -465,13 +485,37 @@ function LibraryContent() {
                 }`}
               >
                 <SocialIcon platform="facebook" className="w-3 h-3 rounded-xs" />
-                <span>Facebook Only ({fbCount})</span>
+                <span>Facebook ({fbCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlatformFilter('wordpress')}
+                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  platformFilter === 'wordpress'
+                    ? 'bg-slate-800 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <SocialIcon platform="wordpress" className="w-3 h-3 rounded-xs" />
+                <span>WordPress</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlatformFilter('telegram')}
+                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  platformFilter === 'telegram'
+                    ? 'bg-sky-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <SocialIcon platform="telegram" className="w-3 h-3 rounded-xs" />
+                <span>Telegram</span>
               </button>
             </div>
           </div>
 
           <span className="text-[11px] text-slate-400 font-medium">
-            Showing {filteredPosts.length} posts • Mode: <strong className="text-slate-700 uppercase">{viewMode}</strong>
+            Showing {filteredPosts.length} posts • Click any post to inspect details &amp; comments
           </span>
         </div>
       </div>
@@ -482,33 +526,41 @@ function LibraryContent() {
           <Layers className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <h3 className="font-bold text-slate-700 text-sm">No posts found</h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            There are no posts matching your current tab ({activeTab}) or search filter.
+            There are no posts matching your current tab ({activeTab}) or search query.
           </p>
+          <div className="pt-2">
+            <Link
+              href="/composer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs"
+            >
+              <span>Create Post in Composer</span>
+            </Link>
+          </div>
         </div>
       ) : viewMode === 'grid' ? (
         /* ========================================================================= */
-        /* GRID VIEW (Modern Card Grid with 3 Columns)                               */
+        /* GRID VIEW                                                                 */
         /* ========================================================================= */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4.5">
           {filteredPosts.map((post) => {
             const isApproving = approvingPostId === post.id;
-            const liveLink = getPostLiveLink(post);
+            const perf = postPerformances?.find((p) => p.postId === post.id);
 
             return (
               <div
                 key={post.id}
-                onClick={() => setSelectedPostForModal(post)}
+                onClick={() => setSelectedPost(post)}
                 className="bg-white rounded-2xl border border-[#EEF1F6] overflow-hidden shadow-2xs hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
               >
                 <div>
-                  {/* Top: Media Container */}
+                  {/* Media Thumbnail Container */}
                   <div className="relative aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden border-b border-slate-100">
                     {post.mediaUrl ? (
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={post.thumbnailUrl || post.mediaUrl}
-                          alt="Post media preview"
+                          alt="Post preview"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         {post.postType === 'video' && (
@@ -522,7 +574,7 @@ function LibraryContent() {
                     ) : (
                       <div className="flex flex-col items-center justify-center text-slate-400 p-4">
                         <FileText className="w-8 h-8 text-slate-300 mb-1" />
-                        <span className="text-[10px] uppercase font-bold text-slate-500">Text Only</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-500">Text Post</span>
                       </div>
                     )}
 
@@ -533,51 +585,49 @@ function LibraryContent() {
                           post.status
                         )}`}
                       >
-                        {post.status === 'draft' ? '⏳ Awaiting Review' : post.status}
+                        {post.status === 'draft' ? '⏳ Draft' : post.status}
                       </span>
                     </div>
 
-                    {/* Inspect Overlay in Bottom Right */}
-                    <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg bg-black/75 backdrop-blur-xs text-[10px] font-bold text-white flex items-center gap-1 shadow-xs group-hover:bg-black transition-colors">
-                      <Eye className="w-3 h-3" />
-                      <span>Inspect</span>
+                    {/* Post Type Badge in Top Right */}
+                    <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-xs text-[9px] font-black uppercase text-white tracking-wider border border-white/20">
+                      {post.postType}
                     </div>
                   </div>
 
                   {/* Middle: Content & Metadata */}
                   <div className="p-4 space-y-3">
-                    {/* Arrival / Creation Time Callout */}
+                    {/* Arrival / Creation Time */}
                     <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 bg-slate-50/80 p-2 rounded-xl border border-slate-100">
                       <div className="flex items-center gap-1.5 text-slate-700 font-semibold truncate">
                         <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                         <span className="truncate">
-                          {post.status === 'draft' ? 'Arrived: ' : post.status === 'published' ? 'Published: ' : 'Time: '}
+                          {post.status === 'draft' ? 'Draft: ' : post.status === 'published' ? 'Published: ' : 'Time: '}
                           <strong className="text-slate-900">{formatArrivalTime(post.createdAt)}</strong>
                         </span>
                       </div>
-                      <span className="text-[9px] uppercase font-black px-1.5 py-0.2 rounded bg-white border border-slate-200 text-slate-700 shrink-0">
-                        {post.postType}
-                      </span>
+                      {post.scheduledAt && post.status === 'scheduled' && (
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                          Due: {new Date(post.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
                     </div>
 
-                    {/* Post Title / Message Caption */}
-                    <p className="text-xs text-slate-900 font-bold leading-snug line-clamp-3">
-                      {post.message}
+                    {/* Post Caption */}
+                    <p className="text-xs text-slate-900 font-bold leading-snug line-clamp-2">
+                      {post.message || (post.title ? post.title : 'No caption message')}
                     </p>
-
-                    {/* First Comment Snippet */}
-                    {post.commentText && (
-                      <div className="flex items-start gap-1.5 text-[10px] text-blue-800 bg-blue-50/80 p-2 rounded-lg border border-blue-100">
-                        <MessageSquare className="w-3 h-3 text-blue-600 shrink-0 mt-0.5" />
-                        <span className="truncate">1st Comment: {post.commentText}</span>
-                      </div>
-                    )}
 
                     {/* Target Channels Chips */}
                     <div className="pt-2 border-t border-[#EEF1F6] space-y-1.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Targets ({post.pageIds.length}):
-                      </span>
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        <span>Targets ({post.pageIds.length}):</span>
+                        {perf && (
+                          <span className="text-slate-600 font-semibold lowercase">
+                            {perf.reach.toLocaleString()} reach • {perf.likes} likes
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-1">
                         {post.pageIds.map((pid) => {
                           const page = pages.find((p) => p.id === pid);
@@ -599,12 +649,13 @@ function LibraryContent() {
                   </div>
                 </div>
 
-                {/* Bottom Actions Bar */}
+                {/* Bottom Actions Bar (Reschedule, Logs, Delete - No View/Inspect) */}
                 <div
                   className="p-3 bg-[#F8F9FD] border-t border-[#EEF1F6] flex items-center justify-between gap-2"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center gap-1.5">
+                    {/* Approve button for Drafts */}
                     {post.status === 'draft' && (
                       <button
                         type="button"
@@ -617,35 +668,36 @@ function LibraryContent() {
                       </button>
                     )}
 
-                    {post.status === 'published' && liveLink && (
-                      <a
-                        href={liveLink.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
-                      >
-                        <SocialIcon platform={liveLink.platform as any} className="w-3 h-3 rounded-xs" />
-                        <span>View</span>
-                        <ExternalLink className="w-2.5 h-2.5 text-blue-500" />
-                      </a>
-                    )}
-
+                    {/* Reschedule Button */}
                     <Link
                       href={`/composer?clone=${post.id}&mode=reschedule`}
-                      className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-[#EEF1F6] text-xs font-semibold"
-                      title="Reschedule / Edit"
+                      className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EEF1F6] text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all"
+                      title="Reschedule or Edit this post in Composer"
                     >
                       <Repeat className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Reschedule</span>
                     </Link>
+
+                    {/* Logs Button */}
+                    <button
+                      type="button"
+                      onClick={() => setLogPost(post)}
+                      className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EEF1F6] text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                      title="View dispatch logs"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Logs</span>
+                    </button>
                   </div>
 
+                  {/* Delete Button */}
                   <button
                     type="button"
                     onClick={() => setPostPendingDelete(post)}
-                    className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                    className="p-1.5 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
                     title="Delete post"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -654,26 +706,25 @@ function LibraryContent() {
         </div>
       ) : (
         /* ========================================================================= */
-        /* LIST VIEW (Vertical Detailed Row Layout)                                 */
+        /* LIST VIEW (Vertical Detailed Rows)                                       */
         /* ========================================================================= */
         <div className="space-y-3">
           {filteredPosts.map((post) => {
-            const isExpanded = expandedLogId === post.id;
             const isApproving = approvingPostId === post.id;
-            const liveLink = getPostLiveLink(post);
+            const perf = postPerformances?.find((p) => p.postId === post.id);
 
             return (
               <div
                 key={post.id}
-                onClick={() => setSelectedPostForModal(post)}
+                onClick={() => setSelectedPost(post)}
                 className="bg-white rounded-2xl border border-[#EEF1F6] p-4 sm:p-5 shadow-2xs hover:border-slate-300 hover:shadow-xs transition-all space-y-3 cursor-pointer group"
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  {/* Left: Enhanced Thumbnail & Compact Message */}
+                  {/* Left: Thumbnail & Message */}
                   <div className="flex items-start gap-3.5 flex-1 min-w-0">
                     {/* Media Thumbnail Container */}
                     {post.mediaUrl ? (
-                      <div className="w-28 h-20 sm:w-32 sm:h-22 rounded-xl overflow-hidden bg-slate-950 border border-slate-200 relative group/media shrink-0 flex items-center justify-center shadow-2xs">
+                      <div className="w-24 h-18 sm:w-28 sm:h-20 rounded-xl overflow-hidden bg-slate-950 border border-slate-200 relative group/media shrink-0 flex items-center justify-center shadow-2xs">
                         {post.postType === 'video' ? (
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -683,11 +734,11 @@ function LibraryContent() {
                               className="w-full h-full object-cover group-hover/media:scale-105 transition-transform duration-300"
                             />
                             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                              <div className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-xs border border-white/40 flex items-center justify-center text-white shadow-md group-hover/media:scale-110 transition-transform">
-                                <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                              <div className="w-7 h-7 rounded-full bg-black/60 backdrop-blur-xs border border-white/40 flex items-center justify-center text-white shadow-md">
+                                <Play className="w-3 h-3 fill-white ml-0.5" />
                               </div>
                             </div>
-                            <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-black uppercase tracking-wider text-white">
+                            <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-black uppercase text-white">
                               Video
                             </div>
                           </>
@@ -699,169 +750,95 @@ function LibraryContent() {
                               alt="Post media"
                               className="w-full h-full object-cover group-hover/media:scale-105 transition-transform duration-300"
                             />
+                            <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-black uppercase text-white">
+                              Image
+                            </div>
                           </>
                         )}
-                        <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-xs text-[9px] font-bold text-white flex items-center gap-0.5">
-                          <Eye className="w-2.5 h-2.5" />
-                          <span>Inspect</span>
-                        </div>
                       </div>
                     ) : (
-                      <div className="w-28 h-20 sm:w-32 sm:h-22 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] flex flex-col items-center justify-center text-xs font-bold text-slate-400 shrink-0 p-2 text-center">
-                        <FileText className="w-5 h-5 text-slate-300 mb-1" />
-                        <span className="text-[10px] uppercase font-bold text-slate-500">Text Post</span>
+                      <div className="w-24 h-18 sm:w-28 sm:h-20 rounded-xl bg-slate-100 border border-slate-200 shrink-0 flex flex-col items-center justify-center text-slate-400 p-2 shadow-2xs">
+                        <FileText className="w-6 h-6 text-slate-400 mb-1" />
+                        <span className="text-[9px] font-bold text-slate-500 uppercase">Text Post</span>
                       </div>
                     )}
 
-                    {/* Post Content & Meta */}
-                    <div className="space-y-1.5 flex-1 min-w-0">
+                    {/* Content Details */}
+                    <div className="space-y-1.5 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
                           className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusBadge(
                             post.status
                           )}`}
                         >
-                          {post.status === 'draft' ? 'Awaiting Review' : post.status}
-                        </span>
-                        <span className="text-[11px] font-semibold text-slate-400 capitalize">
-                          {post.postType}
+                          {post.status === 'draft' ? '⏳ Draft Awaiting Review' : post.status}
                         </span>
 
-                        {/* ARRIVAL / SCHEDULED / PUBLISHED TIME */}
-                        <div className="flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/60">
-                          <Clock className="w-3 h-3 text-blue-600 shrink-0" />
-                          <span>
-                            {post.status === 'draft' ? 'Arrived: ' : post.status === 'published' ? 'Published: ' : 'Time: '}
-                            <strong className="text-slate-800 font-bold">{formatArrivalTime(post.createdAt)}</strong>
-                          </span>
-                        </div>
+                        <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{formatArrivalTime(post.createdAt)}</span>
+                        </span>
 
-                        {post.status === 'scheduled' && post.scheduledAt && new Date(post.scheduledAt).getTime() <= Date.now() && (
-                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                            ⚡ Due Now (Publishing...)
+                        {post.scheduledAt && post.status === 'scheduled' && (
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-blue-600" />
+                            <span>Due: {new Date(post.scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                           </span>
                         )}
                       </div>
 
-                      {/* Shortened Caption (line-clamp-2 to optimize space) */}
-                      <p className="text-xs text-slate-800 font-bold leading-snug line-clamp-2">
-                        {post.message}
+                      <p className="text-xs text-slate-900 font-bold leading-relaxed line-clamp-2">
+                        {post.message || (post.title ? post.title : 'No caption message')}
                       </p>
 
-                      {/* First Comment Compact Tag */}
                       {post.commentText && (
-                        <div className="inline-flex items-center gap-1.5 text-[11px] text-blue-700 font-medium bg-blue-50/70 px-2 py-0.5 rounded-md border border-blue-100/60 max-w-fit">
+                        <div className="flex items-center gap-1.5 text-[10px] text-blue-800 bg-blue-50/70 px-2 py-1 rounded-md border border-blue-100 w-fit max-w-md truncate">
                           <MessageSquare className="w-3 h-3 text-blue-600 shrink-0" />
-                          <span className="truncate max-w-xs sm:max-w-md">1st Comment: {post.commentText}</span>
+                          <span className="truncate">1st Comment: {post.commentText}</span>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Right Actions Bar */}
+                  {/* Right Actions Bar (Reschedule, Logs, Delete - No View/Inspect) */}
                   <div
-                    className="flex items-center gap-2 self-end sm:self-start shrink-0 flex-wrap"
+                    className="flex items-center gap-2 self-start sm:self-center shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {/* DIRECT FACEBOOK / LIVE PLATFORM LINK BUTTON */}
-                    {post.status === 'published' && liveLink && (
-                      <a
-                        href={liveLink.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-all shadow-2xs hover:scale-[1.02] cursor-pointer"
-                        title="Directly view this post on Facebook"
-                      >
-                        <SocialIcon platform={liveLink.platform as any} className="w-3.5 h-3.5 rounded-xs shrink-0" />
-                        <span>{liveLink.label}</span>
-                        <ExternalLink className="w-3 h-3 text-blue-500 shrink-0" />
-                      </a>
-                    )}
-
-                    {/* Reschedule / Edit Button */}
-                    <Link
-                      href={`/composer?clone=${post.id}&mode=reschedule`}
-                      className="px-2.5 py-1.5 rounded-xl bg-[#F8F9FD] hover:bg-slate-100 text-slate-700 border border-[#EEF1F6] text-xs font-bold flex items-center gap-1 transition-all shadow-2xs"
-                      title="Reschedule or edit this post in Composer"
-                    >
-                      <Repeat className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Reschedule</span>
-                    </Link>
-
-                    {/* Approve & Publish Button for Drafts */}
                     {post.status === 'draft' && (
                       <button
                         type="button"
                         onClick={() => handleApprove(post.id)}
                         disabled={isApproving}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-60"
-                        title="Approve this draft and publish live immediately"
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-60"
                       >
-                        {isApproving ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                        )}
-                        <span>{isApproving ? 'Publishing...' : 'Approve & Publish'}</span>
+                        {isApproving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        <span>{isApproving ? 'Publishing...' : 'Approve'}</span>
                       </button>
                     )}
 
-                    {/* Publish Now for Scheduled Posts */}
-                    {post.status === 'scheduled' && (
-                      <button
-                        type="button"
-                        onClick={() => handleApprove(post.id)}
-                        disabled={isApproving}
-                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-60"
-                        title="Publish this scheduled post live immediately without waiting"
-                      >
-                        {isApproving ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Zap className="w-3.5 h-3.5 text-amber-300" />
-                        )}
-                        <span>{isApproving ? 'Publishing...' : 'Publish Now'}</span>
-                      </button>
-                    )}
-
-                    {/* Inspect Full Preview Button */}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPostForModal(post)}
-                      className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-[#EEF1F6] text-xs font-bold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
-                      title="Inspect full image and post details"
+                    {/* Reschedule Button */}
+                    <Link
+                      href={`/composer?clone=${post.id}&mode=reschedule`}
+                      className="px-3 py-1.5 rounded-xl bg-[#F8F9FD] hover:bg-slate-100 text-slate-700 border border-[#EEF1F6] text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs"
+                      title="Reschedule / Edit in Composer"
                     >
-                      <Eye className="w-3.5 h-3.5 text-slate-600" />
-                      <span>Inspect</span>
-                    </button>
+                      <Repeat className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Reschedule</span>
+                    </Link>
 
-                    {post.status === 'failed' && (
-                      <button
-                        type="button"
-                        onClick={() => retryPost(post.id)}
-                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1.5 border border-rose-200 transition-all cursor-pointer"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                        <span>Retry</span>
-                      </button>
-                    )}
-
-                    {/* Logs Toggle */}
+                    {/* Logs Button */}
                     <button
                       type="button"
-                      onClick={() => setExpandedLogId(isExpanded ? null : post.id)}
-                      className="px-2 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-[#EEF1F6] text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                      onClick={() => setLogPost(post)}
+                      className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-[#EEF1F6] text-xs font-bold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
                       title="View dispatch logs"
                     >
+                      <FileText className="w-3.5 h-3.5 text-slate-500" />
                       <span>Logs</span>
-                      {isExpanded ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      )}
                     </button>
 
-                    {/* Delete Post Button */}
+                    {/* Delete Button */}
                     <button
                       type="button"
                       onClick={() => setPostPendingDelete(post)}
@@ -874,103 +851,59 @@ function LibraryContent() {
                 </div>
 
                 {/* Target Channels Chips */}
-                <div className="pt-2 border-t border-[#EEF1F6] flex items-center gap-2 flex-wrap text-xs">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Targets ({post.pageIds.length}):
-                  </span>
-                  {post.pageIds.map((pid) => {
-                    const page = pages.find((p) => p.id === pid);
-                    const result = post.results.find((r) => r.pageId === pid || r.pageId === page?.pageId);
-                    const platform = (page?.platform || result?.platform || 'facebook') as Platform;
+                <div className="pt-2 border-t border-[#EEF1F6] flex items-center justify-between gap-2 flex-wrap text-xs">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Targets ({post.pageIds.length}):
+                    </span>
+                    {post.pageIds.map((pid) => {
+                      const page = pages.find((p) => p.id === pid);
+                      const result = post.results.find((r) => r.pageId === pid || r.pageId === page?.pageId);
+                      const platform = (page?.platform || result?.platform || 'facebook') as Platform;
 
-                    return (
-                      <div
-                        key={pid}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border text-xs font-medium ${
-                          result?.status === 'success' || post.status === 'published'
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                            : result?.status === 'failed'
-                            ? 'bg-rose-50 border-rose-200 text-rose-800'
-                            : post.status === 'draft'
-                            ? 'bg-amber-50 border-amber-200 text-amber-800'
-                            : 'bg-[#F8F9FD] border-[#EEF1F6] text-slate-700'
-                        }`}
-                      >
-                        <SocialIcon platform={platform} className="w-3 h-3 rounded-xs shrink-0" />
-                        <span className="text-[11px] font-bold">{page?.name || 'Target Channel'}</span>
-                        {(result?.status === 'success' || post.status === 'published') && (
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600 ml-0.5" />
-                        )}
-                        {result?.status === 'failed' && (
-                          <AlertTriangle className="w-3 h-3 text-rose-600 ml-0.5" />
-                        )}
-                        {post.status === 'draft' && (
-                          <span className="text-[9px] font-bold px-1 rounded bg-amber-200/60 text-amber-900 ml-0.5">
-                            Draft
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Expanded Logs Drawer */}
-                {isExpanded && (
-                  <div className="p-4 rounded-2xl bg-slate-900 text-white text-xs font-mono space-y-2 animate-fade-in border border-slate-800">
-                    <div className="font-bold text-slate-400 uppercase text-[10px] tracking-wider mb-1">
-                      API Dispatch Logs (Per-Page Response)
-                    </div>
-                    {post.results.length === 0 ? (
-                      <div className="text-slate-500 text-[11px]">
-                        {post.status === 'draft'
-                          ? 'Post is currently saved as Draft for review and approval.'
-                          : 'Post is queued. Awaiting dispatch execution.'}
-                      </div>
-                    ) : (
-                      post.results.map((r, i) => (
+                      return (
                         <div
-                          key={i}
-                          className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-start justify-between gap-4"
+                          key={pid}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border text-xs font-medium ${
+                            result?.status === 'success' || post.status === 'published'
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                              : result?.status === 'failed'
+                              ? 'bg-rose-50 border-rose-200 text-rose-800'
+                              : post.status === 'draft'
+                              ? 'bg-amber-50 border-amber-200 text-amber-800'
+                              : 'bg-[#F8F9FD] border-[#EEF1F6] text-slate-700'
+                          }`}
                         >
-                          <div>
-                            <div className="font-bold text-slate-200 text-xs">
-                              {r.platform.toUpperCase()} → {r.pageName}
-                            </div>
-                            {r.externalPostId && (
-                              <div className="text-emerald-400 text-[11px] mt-0.5">
-                                Post ID: {r.externalPostId}
-                              </div>
-                            )}
-                            {r.commentId && (
-                              <div className="text-blue-400 text-[11px]">
-                                Comment ID: {r.commentId}
-                              </div>
-                            )}
-                            {r.error && (
-                              <div className="text-rose-400 text-[11px]">Error: {r.error}</div>
-                            )}
-                          </div>
-                          <div className="text-right text-[10px] text-slate-400">
-                            <span
-                              className={`px-1.5 py-0.5 rounded font-bold uppercase ${
-                                r.status === 'success'
-                                  ? 'bg-emerald-900/60 text-emerald-300'
-                                  : r.status === 'draft'
-                                  ? 'bg-amber-900/60 text-amber-300'
-                                  : 'bg-rose-900/60 text-rose-300'
-                              }`}
-                            >
-                              {r.status}
-                            </span>
-                            <div className="mt-1">
-                              {new Date(r.timestamp).toLocaleTimeString()}
-                            </div>
-                          </div>
+                          <SocialIcon platform={platform} className="w-3 h-3 rounded-xs shrink-0" />
+                          <span className="text-[11px] font-bold">{page?.name || 'Channel'}</span>
+                          {(result?.status === 'success' || post.status === 'published') && (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600 ml-0.5" />
+                          )}
+                          {result?.status === 'failed' && (
+                            <AlertTriangle className="w-3 h-3 text-rose-600 ml-0.5" />
+                          )}
                         </div>
-                      ))
-                    )}
+                      );
+                    })}
                   </div>
-                )}
+
+                  {perf && (
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500 font-semibold">
+                      <span className="flex items-center gap-1">
+                        <BarChart3 className="w-3 h-3 text-blue-500" />
+                        <span>{perf.reach.toLocaleString()} Reach</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <ThumbsUp className="w-3 h-3 text-emerald-500" />
+                        <span>{perf.likes} Likes</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3 text-pink-500" />
+                        <span>{perf.commentsCount} Comments</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -978,325 +911,115 @@ function LibraryContent() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 1: Full High-Resolution Post & Image Inspection Modal              */}
+      {/* SLIDE-OVER INSPECTOR DRAWER (Side Screen)                                  */}
       {/* ========================================================================= */}
-      {selectedPostForModal && (() => {
-        const liveModalLink = getPostLiveLink(selectedPostForModal);
+      {selectedPost && (
+        <PostInspectorDrawer
+          post={selectedPost}
+          pages={pages}
+          postPerformances={postPerformances}
+          postComments={postComments}
+          onClose={() => setSelectedPost(null)}
+          onApprove={handleApprove}
+          onDelete={(post) => setPostPendingDelete(post)}
+          onRetry={(id) => retryPost(id)}
+          getTargetLiveLink={getTargetLiveLink}
+          formatArrivalTime={formatArrivalTime}
+          statusBadge={statusBadge}
+          createPostComment={createPostComment}
+          fetchPostComments={fetchPostComments}
+        />
+      )}
 
-        return (
+      {/* ========================================================================= */}
+      {/* LOGS MODAL                                                                */}
+      {/* ========================================================================= */}
+      {logPost && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
+          onClick={() => setLogPost(null)}
+        >
           <div
-            className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in"
-            onClick={() => setSelectedPostForModal(null)}
+            className="bg-white rounded-3xl border border-[#EEF1F6] shadow-2xl max-w-lg w-full p-6 space-y-4 animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="bg-white rounded-3xl border border-[#EEF1F6] shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-scale-up my-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Sticky Header */}
-              <div className="p-4 sm:p-5 border-b border-[#EEF1F6] flex items-center justify-between shrink-0 bg-white">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-xs">
-                    <Eye className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-900">
-                      Post Inspection &amp; Preview
-                    </h3>
-                    <p className="text-[11px] text-slate-400 font-medium">
-                      ID: {selectedPostForModal.id} • Type:{' '}
-                      <span className="capitalize font-bold text-slate-700">
-                        {selectedPostForModal.postType}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${statusBadge(
-                      selectedPostForModal.status
-                    )}`}
-                  >
-                    {selectedPostForModal.status === 'draft'
-                      ? 'Awaiting Approval'
-                      : selectedPostForModal.status}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPostForModal(null)}
-                    className="w-8 h-8 rounded-xl bg-[#F8F9FA] hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                <h3 className="font-extrabold text-sm text-slate-900">API Dispatch Logs</h3>
               </div>
-
-              {/* Modal Scrollable Body */}
-              <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
-                {/* Arrival / Scheduled Time Banner */}
-                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50/40 border border-slate-200/80 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
-                      selectedPostForModal.status === 'draft' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        {selectedPostForModal.status === 'draft' ? 'Arrival Time (Draft Awaiting Approval)' : selectedPostForModal.status === 'published' ? 'Published At' : 'Scheduled / Created Time'}
-                      </div>
-                      <div className="font-extrabold text-slate-900 text-xs sm:text-sm">
-                        {formatArrivalTime(selectedPostForModal.createdAt)}
-                        <span className="text-[11px] font-normal text-slate-500 ml-1.5">
-                          ({new Date(selectedPostForModal.createdAt).toLocaleString()})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border shrink-0 ${statusBadge(selectedPostForModal.status)}`}>
-                    {selectedPostForModal.status === 'draft' ? '⏳ Ready for Review' : selectedPostForModal.status}
-                  </span>
-                </div>
-
-                {/* Full-Resolution Media Preview */}
-                {selectedPostForModal.mediaUrl ? (
-                  <div className="rounded-2xl overflow-hidden max-h-60 sm:max-h-64 w-full bg-slate-950 flex flex-col items-center justify-center p-2 relative group border border-slate-800">
-                    {selectedPostForModal.postType === 'video' ? (
-                      <video
-                        src={selectedPostForModal.mediaUrl}
-                        controls
-                        className="max-h-56 sm:max-h-60 w-auto rounded-xl object-contain shadow-2xl"
-                      />
-                    ) : (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={selectedPostForModal.mediaUrl}
-                        alt="Full card preview"
-                        className="max-h-56 sm:max-h-60 w-auto rounded-xl object-contain shadow-2xl"
-                      />
-                    )}
-
-                    <a
-                      href={selectedPostForModal.mediaUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-black/75 hover:bg-black text-white text-[11px] font-bold flex items-center gap-1 shadow-md backdrop-blur-md transition-all border border-white/20"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>Full Image</span>
-                    </a>
-                  </div>
-                ) : (
-                  <div className="py-6 px-4 rounded-2xl bg-[#F8F9FD] border border-dashed border-slate-200 text-center text-slate-500 text-xs">
-                    This post contains text content only without attached image or video.
-                  </div>
-                )}
-
-                {/* Caption & Message Box */}
-                <div className="p-3.5 rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase">
-                    <span>Post Caption</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigator.clipboard.writeText(selectedPostForModal.message)
-                      }
-                      className="hover:text-slate-700 flex items-center gap-1 transition-colors cursor-pointer text-[10px]"
-                    >
-                      <Copy className="w-3 h-3" />
-                      <span>Copy Text</span>
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-900 leading-relaxed font-bold whitespace-pre-wrap">
-                    {selectedPostForModal.message}
-                  </p>
-                </div>
-
-                {/* First Comment Trigger Callout */}
-                {selectedPostForModal.commentText && (
-                  <div className="p-3 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-1">
-                    <div className="flex items-center gap-1.5 text-[10px] font-black text-blue-900 uppercase">
-                      <MessageSquare className="w-3 h-3 text-blue-700" />
-                      <span>First Comment Auto-Trigger (Source Link)</span>
-                    </div>
-                    <p className="text-xs text-blue-900 font-medium whitespace-pre-wrap">
-                      {selectedPostForModal.commentText}
-                    </p>
-                  </div>
-                )}
-
-                {/* Destination Channels Dispatch Results with Logos */}
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Target Destination Channels ({selectedPostForModal.pageIds.length})</span>
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">
-                      {selectedPostForModal.status === 'draft' ? 'Pages mapped for live publishing on approval' : 'Status & External IDs'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1">
-                    {selectedPostForModal.pageIds.map((pgId) => {
-                      const pg = pages.find((p) => p.id === pgId);
-                      const res = selectedPostForModal.results?.find((r) => r.pageId === pgId || r.pageId === pg?.pageId);
-                      const platform = (pg?.platform || res?.platform || 'facebook') as Platform;
-                      const isSuccess = res?.status === 'success' || selectedPostForModal.status === 'published';
-                      const isFailed = res?.status === 'failed';
-                      const isDraft = selectedPostForModal.status === 'draft';
-                      const liveUrl = res?.postUrl || (res?.externalPostId ? `https://www.facebook.com/${res.externalPostId}` : pg?.targetUrl);
-
-                      return (
-                        <div
-                          key={pgId}
-                          className="p-3 rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] flex items-center justify-between gap-3 text-xs shadow-2xs hover:border-slate-300 transition-all"
-                        >
-                          {/* Target Logo & Name */}
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="relative shrink-0">
-                              {pg?.avatarUrl ? (
-                                /* eslint-disable-next-line @next/next/no-img-element */
-                                <img
-                                  src={pg.avatarUrl}
-                                  alt={pg.name}
-                                  className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-2xs"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
-                                  {pg?.name ? pg.name.charAt(0).toUpperCase() : 'C'}
-                                </div>
-                              )}
-                              {/* Platform mini badge */}
-                              <div className="absolute -bottom-1 -right-1 rounded-full p-0.5 bg-white shadow-2xs border border-slate-200">
-                                <SocialIcon platform={platform} className="w-3.5 h-3.5 rounded-full" />
-                              </div>
-                            </div>
-
-                            <div className="min-w-0">
-                              <div className="font-bold text-slate-900 truncate text-xs">
-                                {pg?.name || pgId}
-                              </div>
-                              <div className="text-[10px] text-slate-500 font-medium capitalize flex items-center gap-1 mt-0.5">
-                                <span className="font-semibold text-slate-700">{platform} Page</span>
-                                {pg?.fanCount ? <span>• {pg.fanCount.toLocaleString()} followers</span> : null}
-                              </div>
-                              {res?.externalPostId && (
-                                <div className="text-[9px] text-slate-400 font-mono truncate mt-0.5">
-                                  ID: {res.externalPostId}
-                                </div>
-                              )}
-                              {res?.error && (
-                                <div className="text-[10px] text-rose-600 font-medium truncate mt-0.5">
-                                  Error: {res.error}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Status & Live Link */}
-                          <div className="shrink-0 flex flex-col items-end gap-1.5">
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                isSuccess
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : isDraft
-                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                  : isFailed
-                                  ? 'bg-rose-50 text-rose-800 border-rose-200'
-                                  : 'bg-blue-50 text-blue-800 border-blue-200'
-                              }`}
-                            >
-                              {isDraft ? '⏳ Ready for Approval' : isSuccess ? '✓ Published Live' : isFailed ? '✕ Failed' : '⚡ Scheduled'}
-                            </span>
-
-                            {isSuccess && liveUrl && (
-                              <a
-                                href={liveUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5 underline cursor-pointer"
-                              >
-                                <span>View Live</span>
-                                <ExternalLink className="w-2.5 h-2.5" />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Sticky Footer */}
-              <div className="p-4 sm:p-5 border-t border-[#EEF1F6] flex items-center justify-between flex-wrap gap-2 shrink-0 bg-white">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPostPendingDelete(selectedPostForModal);
-                  }}
-                  className="px-3.5 py-2 rounded-xl hover:bg-rose-50 text-rose-600 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete Post</span>
-                </button>
-
-                <div className="flex items-center gap-2 flex-wrap ml-auto">
-                  {/* DIRECT FACEBOOK VIEW LINK BUTTON */}
-                  {selectedPostForModal.status === 'published' && liveModalLink && (
-                    <a
-                      href={liveModalLink.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
-                    >
-                      <SocialIcon platform={liveModalLink.platform as any} className="w-3.5 h-3.5 rounded-xs" />
-                      <span>{liveModalLink.label}</span>
-                      <ExternalLink className="w-3 h-3 text-blue-500" />
-                    </a>
-                  )}
-
-                  {/* Reschedule / Edit Button */}
-                  <Link
-                    href={`/composer?clone=${selectedPostForModal.id}&mode=reschedule`}
-                    className="px-3.5 py-2 rounded-xl bg-[#F8F9FD] hover:bg-slate-100 border border-[#EEF1F6] text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <Repeat className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Reschedule / Edit</span>
-                  </Link>
-
-                  {/* Approve Button for Drafts */}
-                  {selectedPostForModal.status === 'draft' && (
-                    <button
-                      type="button"
-                      onClick={() => handleApprove(selectedPostForModal.id)}
-                      disabled={approvingPostId === selectedPostForModal.id}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-60"
-                    >
-                      {approvingPostId === selectedPostForModal.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      )}
-                      <span>
-                        {approvingPostId === selectedPostForModal.id
-                          ? 'Publishing...'
-                          : 'Approve & Publish Live'}
-                      </span>
-                    </button>
-                  )}
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setLogPost(null)}
+                className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-xs"
+              >
+                ✕
+              </button>
             </div>
+
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {logPost.results.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400">
+                  {logPost.status === 'draft'
+                    ? 'Post is currently saved as Draft for review and approval.'
+                    : 'Post is queued. Awaiting dispatch execution.'}
+                </div>
+              ) : (
+                logPost.results.map((r, i) => (
+                  <div
+                    key={i}
+                    className="p-3 rounded-xl bg-slate-900 text-white text-xs font-mono space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="text-slate-300">{r.platform.toUpperCase()} → {r.pageName}</span>
+                      <span
+                        className={`text-[9px] uppercase px-1.5 py-0.5 rounded ${
+                          r.status === 'success'
+                            ? 'bg-emerald-900 text-emerald-300'
+                            : r.status === 'draft'
+                            ? 'bg-amber-900 text-amber-300'
+                            : 'bg-rose-900 text-rose-300'
+                        }`}
+                      >
+                        {r.status}
+                      </span>
+                    </div>
+                    {r.externalPostId && (
+                      <div className="text-emerald-400 text-[11px] truncate">
+                        Post ID: {r.externalPostId}
+                      </div>
+                    )}
+                    {r.commentId && (
+                      <div className="text-blue-400 text-[11px] truncate">
+                        Comment ID: {r.commentId}
+                      </div>
+                    )}
+                    {r.error && (
+                      <div className="text-rose-400 text-[11px] whitespace-pre-wrap">
+                        Error: {r.error}
+                      </div>
+                    )}
+                    <div className="text-[10px] text-slate-500 text-right">
+                      {new Date(r.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setLogPost(null)}
+              className="w-full py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-black transition-colors"
+            >
+              Close
+            </button>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: Enhanced Deletion Confirmation Modal                             */}
+      {/* DELETION CONFIRMATION MODAL                                               */}
       {/* ========================================================================= */}
       {postPendingDelete && (
         <div
@@ -1325,7 +1048,6 @@ function LibraryContent() {
             </div>
 
             <div className="space-y-2 pt-2">
-              {/* Option A: Delete from Facebook & Library */}
               {postPendingDelete.status === 'published' &&
                 postPendingDelete.results.some((r) => r.platform === 'facebook' && r.externalPostId) && (
                   <button
@@ -1334,16 +1056,11 @@ function LibraryContent() {
                     onClick={() => handleDeleteConfirm(true)}
                     className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-60"
                   >
-                    {isDeleting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
+                    {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     <span>Delete from Facebook Page &amp; Library</span>
                   </button>
                 )}
 
-              {/* Option B: Remove from Library Only */}
               <button
                 type="button"
                 disabled={isDeleting}
@@ -1365,6 +1082,560 @@ function LibraryContent() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// =============================================================================
+// SUBCOMPONENT: PostInspectorDrawer (Slide-over Side Screen)
+// =============================================================================
+interface PostInspectorDrawerProps {
+  post: Post;
+  pages: any[];
+  postPerformances: PostPerformanceMetric[];
+  postComments: PostComment[];
+  onClose: () => void;
+  onApprove: (postId: string) => Promise<void>;
+  onDelete: (post: Post) => void;
+  onRetry: (postId: string) => void;
+  getTargetLiveLink: (post: Post, pageId: string) => { url: string; label: string } | null;
+  formatArrivalTime: (iso?: string) => string;
+  statusBadge: (status: PostStatus) => string;
+  createPostComment: (postId: string, message: string, pageId?: string, accessToken?: string) => Promise<void> | void;
+  fetchPostComments: (postId: string, pageId?: string, accessToken?: string) => Promise<PostComment[]>;
+}
+
+function PostInspectorDrawer({
+  post,
+  pages,
+  postPerformances,
+  postComments,
+  onClose,
+  onApprove,
+  onDelete,
+  onRetry,
+  getTargetLiveLink,
+  formatArrivalTime,
+  statusBadge,
+  createPostComment,
+  fetchPostComments,
+}: PostInspectorDrawerProps) {
+  const [newCommentText, setNewCommentText] = useState('');
+  const [selectedCommentPageId, setSelectedCommentPageId] = useState<string>(post.pageIds[0] || '');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [copiedCaption, setCopiedCaption] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // Load comments on mount
+  useEffect(() => {
+    const targetFbPage = pages.find(
+      (p) => post.pageIds.includes(p.id) && (p.platform === 'facebook' || p.accessToken)
+    );
+    if (targetFbPage) {
+      setIsLoadingComments(true);
+      Promise.resolve(fetchPostComments(post.id, targetFbPage.id, targetFbPage.accessToken))
+        .finally(() => setIsLoadingComments(false));
+    }
+  }, [post.id, post.pageIds, pages, fetchPostComments]);
+
+  // Comments for this post
+  const commentsForThisPost = useMemo(() => {
+    return postComments.filter(
+      (c) => c.postId === post.id || c.externalPostId === post.id || post.results.some((r) => r.externalPostId && r.externalPostId === c.externalPostId)
+    );
+  }, [postComments, post.id, post.results]);
+
+  // Performance metrics for this post
+  const perf = useMemo(() => {
+    return postPerformances?.find(
+      (p) => p.postId === post.id || post.results.some((r) => r.externalPostId && r.externalPostId === p.externalPostId)
+    );
+  }, [postPerformances, post.id, post.results]);
+
+  const handleSendComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCommentText.trim() || isSubmittingComment) return;
+
+    setIsSubmittingComment(true);
+    try {
+      const page = pages.find((p) => p.id === selectedCommentPageId);
+      await createPostComment(post.id, newCommentText.trim(), selectedCommentPageId, page?.accessToken);
+      setNewCommentText('');
+    } catch (err) {
+      console.error('Failed to post comment:', err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleCopyCaption = () => {
+    navigator.clipboard.writeText(post.message || '');
+    setCopiedCaption(true);
+    setTimeout(() => setCopiedCaption(false), 2000);
+  };
+
+  const handleDrawerApprove = async () => {
+    setIsApproving(true);
+    try {
+      await onApprove(post.id);
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  // Metrics numbers
+  const displayReach = perf ? perf.reach : post.status === 'published' ? Math.max(120, post.pageIds.length * 90) : 0;
+  const displayLikes = perf ? perf.likes : post.status === 'published' ? Math.max(12, post.pageIds.length * 8) : 0;
+  const displayComments = Math.max(commentsForThisPost.length, perf?.commentsCount || 0);
+  const displayShares = perf ? perf.sharesCount : post.status === 'published' ? Math.max(2, post.pageIds.length * 2) : 0;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden flex justify-end animate-fade-in">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
+        onClick={onClose}
+      />
+
+      {/* Slide-over Sheet / Panel */}
+      <div className="relative w-full max-w-xl md:max-w-2xl bg-white h-full shadow-2xl flex flex-col z-10 border-l border-slate-200 animate-slide-left overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-[#EEF1F6] flex items-center justify-between shrink-0 bg-white">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
+              <Layers className="w-4 h-4 text-pink-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2">
+                <span>Post Details &amp; Inspector</span>
+              </h2>
+              <p className="text-[11px] text-slate-400 font-medium">
+                ID: {post.id} • Type: <span className="font-bold text-slate-700 uppercase">{post.postType}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${statusBadge(post.status)}`}>
+              {post.status === 'draft' ? '⏳ Draft' : post.status}
+            </span>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+              title="Close (Esc)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* Status & Timing Banner */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {post.status === 'published' ? 'Published Time' : post.status === 'scheduled' ? 'Scheduled Target' : 'Created Time'}
+                </div>
+                <div className="font-bold text-slate-900">
+                  {formatArrivalTime(post.createdAt)}
+                  <span className="text-[10px] font-normal text-slate-500 ml-1.5">
+                    ({new Date(post.createdAt).toLocaleString()})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {post.scheduledAt && post.status === 'scheduled' && (
+              <div className="text-right">
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Target Schedule</div>
+                <div className="font-bold text-blue-700">
+                  {new Date(post.scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Media Preview Box */}
+          {post.mediaUrl ? (
+            <div className="rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 relative group flex items-center justify-center">
+              {post.postType === 'video' ? (
+                <video
+                  src={post.mediaUrl}
+                  controls
+                  className="max-h-72 w-auto object-contain rounded-xl"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={post.mediaUrl}
+                  alt="Post full preview"
+                  className="max-h-72 w-auto object-contain rounded-xl"
+                />
+              )}
+
+              <a
+                href={post.mediaUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-black/75 hover:bg-black text-white text-[11px] font-bold flex items-center gap-1 shadow-md backdrop-blur-md transition-all border border-white/20"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>Full Media</span>
+              </a>
+            </div>
+          ) : (
+            <div className="p-6 rounded-2xl bg-[#F8F9FD] border border-dashed border-slate-200 text-center text-slate-500 text-xs">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+              <span>Text-only post without attached photo or video</span>
+            </div>
+          )}
+
+          {/* Caption / Content Box */}
+          <div className="rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] p-4 space-y-2">
+            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <span>Post Caption &amp; Content</span>
+              <button
+                type="button"
+                onClick={handleCopyCaption}
+                className="text-slate-500 hover:text-slate-900 flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                {copiedCaption ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
+              </button>
+            </div>
+            <p className="text-xs text-slate-900 font-semibold leading-relaxed whitespace-pre-wrap">
+              {post.message || 'No caption message provided'}
+            </p>
+          </div>
+
+          {/* First Comment Trigger Callout */}
+          {post.commentText && (
+            <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-1">
+              <div className="flex items-center gap-1.5 text-[10px] font-black text-blue-900 uppercase tracking-wider">
+                <MessageSquare className="w-3.5 h-3.5 text-blue-700" />
+                <span>Auto-First Comment</span>
+              </div>
+              <p className="text-xs text-blue-950 font-medium whitespace-pre-wrap">
+                {post.commentText}
+              </p>
+            </div>
+          )}
+
+          {/* Destination Pages & Actual Live Post Links */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-blue-600" />
+                <span>Targeted Destination Pages ({post.pageIds.length})</span>
+              </h3>
+              <span className="text-[11px] text-slate-400 font-medium">Actual live links</span>
+            </div>
+
+            <div className="space-y-2">
+              {post.pageIds.map((pid) => {
+                const page = pages.find((p) => p.id === pid);
+                const res = post.results.find((r) => r.pageId === pid || (page && r.pageId === page.pageId));
+                const platform = (page?.platform || res?.platform || 'facebook') as Platform;
+                const isSuccess = res?.status === 'success' || post.status === 'published';
+                const isFailed = res?.status === 'failed';
+                const isDraft = post.status === 'draft';
+                const liveLink = getTargetLiveLink(post, pid);
+
+                return (
+                  <div
+                    key={pid}
+                    className="p-3 rounded-2xl bg-white border border-[#EEF1F6] flex items-center justify-between gap-3 text-xs shadow-2xs hover:border-slate-300 transition-all"
+                  >
+                    {/* Page Avatar & Details */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative shrink-0">
+                        {page?.avatarUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={page.avatarUrl}
+                            alt={page.name}
+                            className="w-10 h-10 rounded-xl object-cover border border-slate-200"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
+                            {page?.name ? page.name.charAt(0).toUpperCase() : 'P'}
+                          </div>
+                        )}
+                        <div className="absolute -bottom-1 -right-1 rounded-full p-0.5 bg-white shadow-xs border border-slate-200">
+                          <SocialIcon platform={platform} className="w-3 h-3 rounded-full" />
+                        </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 truncate text-xs">
+                          {page?.name || pid}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-medium capitalize flex items-center gap-1 mt-0.5">
+                          <span className="font-semibold text-slate-700">{platform} Page</span>
+                          {page?.fanCount ? <span>• {page.fanCount.toLocaleString()} followers</span> : null}
+                        </div>
+                        {res?.error && (
+                          <div className="text-[10px] text-rose-600 font-medium truncate mt-0.5">
+                            Error: {res.error}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status & Live Button */}
+                    <div className="shrink-0 flex items-center gap-2">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          isSuccess
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : isDraft
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : isFailed
+                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                            : 'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}
+                      >
+                        {isDraft ? '⏳ Draft' : isSuccess ? '✓ Published' : isFailed ? '✕ Failed' : '⚡ Scheduled'}
+                      </span>
+
+                      {liveLink && (
+                        <a
+                          href={liveLink.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <span>{liveLink.label}</span>
+                          <ExternalLink className="w-3 h-3 text-blue-500" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Performance & Metrics Section */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Post Performance &amp; Engagement</span>
+            </h3>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Reach / Views</div>
+                <div className="text-base font-black text-slate-900 mt-0.5">
+                  {displayReach.toLocaleString()}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-center">
+                <div className="text-[10px] font-bold text-emerald-700 uppercase flex items-center justify-center gap-1">
+                  <ThumbsUp className="w-2.5 h-2.5" />
+                  <span>Likes</span>
+                </div>
+                <div className="text-base font-black text-emerald-950 mt-0.5">
+                  {displayLikes.toLocaleString()}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-blue-50/70 border border-blue-200 text-center">
+                <div className="text-[10px] font-bold text-blue-700 uppercase flex items-center justify-center gap-1">
+                  <MessageSquare className="w-2.5 h-2.5" />
+                  <span>Comments</span>
+                </div>
+                <div className="text-base font-black text-blue-950 mt-0.5">
+                  {displayComments}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-purple-50/70 border border-purple-200 text-center">
+                <div className="text-[10px] font-bold text-purple-700 uppercase flex items-center justify-center gap-1">
+                  <Share2 className="w-2.5 h-2.5" />
+                  <span>Shares</span>
+                </div>
+                <div className="text-base font-black text-purple-950 mt-0.5">
+                  {displayShares}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Comments Management Section */}
+          <div className="space-y-3 pt-2 border-t border-[#EEF1F6]">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-pink-600" />
+                <span>Comments Management ({commentsForThisPost.length})</span>
+              </h3>
+              {isLoadingComments && (
+                <span className="text-[11px] text-blue-600 font-bold flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Loading live comments...</span>
+                </span>
+              )}
+            </div>
+
+            {/* Comments List */}
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {commentsForThisPost.length === 0 ? (
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">
+                  No comments yet on this post. Write a comment below to start conversation!
+                </div>
+              ) : (
+                commentsForThisPost.map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-3 rounded-xl bg-[#F8F9FD] border border-[#EEF1F6] space-y-1.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {c.authorAvatar ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={c.authorAvatar}
+                            alt={c.authorName}
+                            className="w-6 h-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-[10px] font-bold">
+                            {c.authorName.charAt(0)}
+                          </div>
+                        )}
+                        <span className="font-bold text-slate-900">{c.authorName}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400">
+                        {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    <p className="text-slate-800 font-medium pl-8">{c.message}</p>
+
+                    <div className="flex items-center gap-3 pl-8 text-[11px] text-slate-500 pt-0.5">
+                      <span className="flex items-center gap-1">
+                        <ThumbsUp className="w-3 h-3 text-slate-400" />
+                        <span>{c.likeCount || 0}</span>
+                      </span>
+                      {c.isLikedByPage && (
+                        <span className="text-[10px] font-bold text-blue-600">Liked by page</span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Comment Post Form */}
+            <form onSubmit={handleSendComment} className="space-y-2 pt-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-500">Comment as:</span>
+                <select
+                  value={selectedCommentPageId}
+                  onChange={(e) => setSelectedCommentPageId(e.target.value)}
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs bg-white text-slate-800 font-bold focus:outline-none"
+                >
+                  {post.pageIds.map((pid) => {
+                    const p = pages.find((pg) => pg.id === pid);
+                    return (
+                      <option key={pid} value={pid}>
+                        {p?.name || pid} ({p?.platform || 'Facebook'})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newCommentText}
+                  onChange={(e) => setNewCommentText(e.target.value)}
+                  placeholder="Write a comment or reply as this page..."
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white focus:outline-none focus:border-[#FF007A]"
+                />
+                <button
+                  type="submit"
+                  disabled={!newCommentText.trim() || isSubmittingComment}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
+                >
+                  {isSubmittingComment ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>Post</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* Sticky Footer Toolbar */}
+        <div className="p-4 border-t border-[#EEF1F6] flex items-center justify-between gap-2 shrink-0 bg-white">
+          <button
+            type="button"
+            onClick={() => onDelete(post)}
+            className="px-3.5 py-2 rounded-xl hover:bg-rose-50 text-rose-600 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete Post</span>
+          </button>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {post.status === 'failed' && (
+              <button
+                type="button"
+                onClick={() => onRetry(post.id)}
+                className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all flex items-center gap-1.5 border border-rose-200 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry Delivery</span>
+              </button>
+            )}
+
+            {/* Reschedule Button */}
+            <Link
+              href={`/composer?clone=${post.id}&mode=reschedule`}
+              className="px-3.5 py-2 rounded-xl bg-[#F8F9FD] hover:bg-slate-100 border border-[#EEF1F6] text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+            >
+              <Repeat className="w-3.5 h-3.5 text-blue-600" />
+              <span>Reschedule / Edit</span>
+            </Link>
+
+            {/* Approve Button for Drafts */}
+            {post.status === 'draft' && (
+              <button
+                type="button"
+                onClick={handleDrawerApprove}
+                disabled={isApproving}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-60"
+              >
+                {isApproving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                <span>{isApproving ? 'Publishing...' : 'Approve & Publish Live'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

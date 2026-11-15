@@ -1591,14 +1591,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             return prevPosts;
           }
 
-          // Merge recent local posts (< 3 mins old) that cloud hasn't caught up with yet
+          // Merge any local posts that cloud hasn't caught up with yet
           const cloudIds = new Set(data.posts.map((p: Post) => p.id));
-          const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
-          const pendingLocal = prevPosts.filter((p) => {
-            if (cloudIds.has(p.id)) return false;
-            const createdAtTime = new Date(p.createdAt || 0).getTime();
-            return createdAtTime > threeMinutesAgo;
-          });
+          const pendingLocal = prevPosts.filter((p) => !cloudIds.has(p.id));
           const merged = [...pendingLocal, ...data.posts];
 
           // If there were pending local posts missing from cloud, heal MySQL immediately

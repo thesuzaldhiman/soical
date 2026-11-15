@@ -52,11 +52,23 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await initDbTables();
-    const [rows] = await pool.query<any[]>(
-      'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
-      [email]
-    );
+    let rows: any[];
+    try {
+      [rows] = await pool.query<any[]>(
+        'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+        [email]
+      );
+    } catch (queryErr: any) {
+      if (queryErr?.code === 'ER_NO_SUCH_TABLE') {
+        await initDbTables();
+        [rows] = await pool.query<any[]>(
+          'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+          [email]
+        );
+      } else {
+        throw queryErr;
+      }
+    }
 
     if (!rows || rows.length === 0 || !rows[0].posts) {
       return NextResponse.json({ success: true, posts: [], source: 'mysql_empty' });
@@ -91,11 +103,23 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'DB not connected' });
     }
 
-    await initDbTables();
-    const [rows] = await pool.query<any[]>(
-      'SELECT posts, workspace FROM app_user_data WHERE email = ? LIMIT 1',
-      [email]
-    );
+    let rows: any[];
+    try {
+      [rows] = await pool.query<any[]>(
+        'SELECT posts, workspace FROM app_user_data WHERE email = ? LIMIT 1',
+        [email]
+      );
+    } catch (queryErr: any) {
+      if (queryErr?.code === 'ER_NO_SUCH_TABLE') {
+        await initDbTables();
+        [rows] = await pool.query<any[]>(
+          'SELECT posts, workspace FROM app_user_data WHERE email = ? LIMIT 1',
+          [email]
+        );
+      } else {
+        throw queryErr;
+      }
+    }
 
     if (!rows || rows.length === 0) {
       return NextResponse.json({ success: false, error: 'User data not found' }, { status: 404 });
@@ -180,11 +204,23 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'DB not connected' });
     }
 
-    await initDbTables();
-    const [rows] = await pool.query<any[]>(
-      'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
-      [email]
-    );
+    let rows: any[];
+    try {
+      [rows] = await pool.query<any[]>(
+        'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+        [email]
+      );
+    } catch (queryErr: any) {
+      if (queryErr?.code === 'ER_NO_SUCH_TABLE') {
+        await initDbTables();
+        [rows] = await pool.query<any[]>(
+          'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+          [email]
+        );
+      } else {
+        throw queryErr;
+      }
+    }
 
     if (!rows || rows.length === 0) {
       return NextResponse.json({ success: true, message: 'No posts found to delete' });
@@ -236,11 +272,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'DB not connected' });
     }
 
-    await initDbTables();
-    const [rows] = await pool.query<any[]>(
-      'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
-      [email]
-    );
+    let rows: any[];
+    try {
+      [rows] = await pool.query<any[]>(
+        'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+        [email]
+      );
+    } catch (queryErr: any) {
+      if (queryErr?.code === 'ER_NO_SUCH_TABLE') {
+        await initDbTables();
+        [rows] = await pool.query<any[]>(
+          'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+          [email]
+        );
+      } else {
+        throw queryErr;
+      }
+    }
 
     const currentPosts = rows && rows.length > 0 ? parsePosts(rows[0].posts) : [];
     const incomingMap = new Map<string, Post>();

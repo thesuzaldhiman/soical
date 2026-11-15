@@ -85,7 +85,7 @@ export default function ComposerPage() {
 function ComposerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { pages, accounts, categories, settings, createPost, posts, resolveMetaAppName } = useApp();
+  const { user, pages, accounts, categories, settings, createPost, posts, resolveMetaAppName } = useApp();
 
   // Selected Destinations (Page IDs)
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>(
@@ -509,7 +509,7 @@ function ComposerContent() {
     setIsSubmitting(true);
 
     if (mode === 'draft') {
-      createPost({
+      const newDraft = createPost({
         postType,
         message,
         mediaUrl: activeMediaUrl || undefined,
@@ -520,17 +520,24 @@ function ComposerContent() {
         pageIds: selectedPageIds,
         status: 'draft',
       });
+      try {
+        await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user?.email, post: newDraft }),
+        });
+      } catch {}
       setIsSubmitting(false);
       setStatusBanner({
         type: 'success',
-        text: 'Draft saved! Opening Dashboard...',
+        text: 'Draft saved! Opening Post Library...',
       });
-      setTimeout(() => router.push('/dashboard'), 1000);
+      setTimeout(() => router.push('/library?status=draft'), 800);
       return;
     }
 
     if (mode === 'schedule') {
-      createPost({
+      const newScheduled = createPost({
         postType,
         message,
         mediaUrl: activeMediaUrl || undefined,
@@ -542,12 +549,19 @@ function ComposerContent() {
         status: 'scheduled',
         scheduledAt: scheduledDateTime,
       });
+      try {
+        await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user?.email, post: newScheduled }),
+        });
+      } catch {}
       setIsSubmitting(false);
       setStatusBanner({
         type: 'success',
-        text: 'Post scheduled successfully! Returning to Dashboard...',
+        text: 'Post scheduled successfully! Opening Post Library...',
       });
-      setTimeout(() => router.push('/dashboard'), 1200);
+      setTimeout(() => router.push('/library?status=scheduled'), 800);
       return;
     }
 
@@ -585,7 +599,7 @@ function ComposerContent() {
 
       const data = await res.json();
 
-      createPost({
+      const publishedPost = createPost({
         postType,
         message,
         mediaUrl: activeMediaUrl || undefined,
@@ -597,6 +611,14 @@ function ComposerContent() {
         status: data.overallStatus || 'published',
         results: data.results,
       });
+
+      try {
+        await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user?.email, post: publishedPost }),
+        });
+      } catch {}
 
       const hasFailed = data.results?.some((r: any) => r.status === 'failed');
       const allFailed = data.results?.length > 0 && data.results?.every((r: any) => r.status === 'failed');
