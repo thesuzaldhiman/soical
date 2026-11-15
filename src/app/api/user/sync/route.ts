@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
       postComments: parseJson(row.post_comments) || [],
       automations: parseJson(row.automations) || [],
       settings: parseJson(row.settings),
+      logs: parseJson(row.logs) || [],
       updatedAt: row.updated_at,
     };
 
@@ -266,12 +267,33 @@ export async function POST(request: NextRequest) {
       const dbWorkspace = existingRow ? parseField(existingRow.workspace, null) : null;
       const finalWorkspace = payload.workspace || dbWorkspace;
 
+      // --- 8. LOGS SAFETY & MERGING ---
+      const dbLogs: any[] = existingRow ? parseField(existingRow.logs, []) : [];
+      let finalLogs: any[] = [];
+      if (Array.isArray(payload.logs) && payload.logs.length > 0) {
+        const logMap = new Map<string, any>();
+        payload.logs.forEach((l: any) => {
+          if (l && l.id) logMap.set(l.id, l);
+        });
+        finalLogs = [
+          ...payload.logs,
+          ...dbLogs.filter((l: any) => l && l.id && !logMap.has(l.id)),
+        ];
+      } else if (dbLogs.length > 0) {
+        finalLogs = dbLogs;
+      }
+      finalLogs.sort((a, b) => {
+        const timeA = new Date(a.timestamp || 0).getTime();
+        const timeB = new Date(b.timestamp || 0).getTime();
+        return timeB - timeA;
+      }).slice(0, 1000);
+
       await pool.query(
         `INSERT INTO app_user_data (
           email, workspace, accounts, pages, categories, posts,
           sig_templates, page_analytics, post_performances, post_comments,
-          automations, settings
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          automations, settings, logs
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           workspace = VALUES(workspace),
           accounts = VALUES(accounts),
@@ -283,7 +305,8 @@ export async function POST(request: NextRequest) {
           post_performances = VALUES(post_performances),
           post_comments = VALUES(post_comments),
           automations = VALUES(automations),
-          settings = VALUES(settings)`,
+          settings = VALUES(settings),
+          logs = VALUES(logs)`,
         [
           email,
           toJson(finalWorkspace),
@@ -297,6 +320,7 @@ export async function POST(request: NextRequest) {
           toJson(payload.postComments || existingRow?.post_comments || []),
           toJson(finalAutomations),
           toJson(finalSettings),
+          toJson(finalLogs),
         ]
       );
 

@@ -28,6 +28,8 @@ export function ApprovalGate({ children }: ApprovalGateProps) {
     user?.role === 'admin' ||
     user?.email?.toLowerCase().includes('suzal') ||
     user?.email?.toLowerCase().includes('khabarmonkey') ||
+    user?.email?.toLowerCase().includes('sumit') ||
+    user?.email?.toLowerCase() === 'me.sumitji@gmail.com' ||
     user?.approvalStatus === 'approved';
 
   if (isApproved) {

@@ -10,6 +10,7 @@ import {
   Post,
   PostStatus,
   PostResult,
+  LogEntry,
   Platform,
   SigTemplate,
   AnalyticsMetric,
@@ -120,6 +121,10 @@ interface AppContextType {
   retryPost: (postId: string) => void;
   approvePost: (postId: string) => Promise<void> | void;
   deletePost: (postId: string, options?: { deleteFromFacebook?: boolean }) => Promise<{ success: boolean; message?: string }> | void;
+  logs: LogEntry[];
+  deleteLog: (logId: string) => Promise<{ success: boolean }>;
+  clearAllLogs: () => Promise<{ success: boolean }>;
+  refreshLogs: () => Promise<void>;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   createAutomation: (feed: Omit<AutomationFeed, 'id' | 'itemsProcessed'>) => void;
   updateAutomation: (id: string, partial: Partial<AutomationFeed>) => void;
@@ -253,6 +258,10 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   retryPost: noop,
   approvePost: noop,
   deletePost: noop,
+  logs: [],
+  deleteLog: async () => ({ success: true }),
+  clearAllLogs: async () => ({ success: true }),
+  refreshLogs: noopAsync,
   updateSettings: noop,
   createAutomation: noop,
   updateAutomation: noop,
@@ -385,6 +394,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [postComments, setPostComments] = useState<PostComment[]>(INITIAL_POST_COMMENTS);
   const [automations, setAutomations] = useState<AutomationFeed[]>(INITIAL_AUTOMATIONS);
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isCloudLoaded, setIsCloudLoaded] = useState(false);
@@ -406,6 +416,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const cleaned = parsed.filter(
               (u: User) =>
                 u.id === 'usr_01' ||
+                u.id === 'usr_sumit' ||
+                u.email === 'me.sumitji@gmail.com' ||
                 (!u.id.startsWith('usr_0') &&
                   !u.email.includes('rahul.creator') &&
                   !u.email.includes('amit.newsmedia') &&
@@ -431,6 +443,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const cleanUsers = data.users.filter(
             (u: User) =>
               u.id === 'usr_01' ||
+              u.id === 'usr_sumit' ||
+              u.email === 'me.sumitji@gmail.com' ||
               (!u.id.startsWith('usr_0') &&
                 !u.email.includes('rahul.creator') &&
                 !u.email.includes('amit.newsmedia') &&
@@ -578,6 +592,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (parsed.postPerformances) setPostPerformances(parsed.postPerformances);
           if (parsed.postComments) setPostComments(parsed.postComments);
           if (parsed.automations) setAutomations(parsed.automations);
+          if (Array.isArray(parsed.logs)) setLogs(parsed.logs);
           if (parsed.settings) {
             setSettings((prev) => {
               const incomingMetaApps = Array.isArray(parsed.settings.metaApps) ? parsed.settings.metaApps : [];
@@ -611,6 +626,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setPostComments([]);
         setAutomations([]);
         setSettings(INITIAL_SETTINGS);
+        setLogs([]);
         setWorkspace({
           id: `ws_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
           name: `${name || cleanEmail.split('@')[0]}'s Workspace`,
@@ -770,6 +786,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 ];
               });
             }
+            if (Array.isArray(db.logs)) setLogs(db.logs);
 
             let finalSettingsObj: AppSettings | null = null;
             if (db.settings && typeof db.settings === 'object') {
@@ -800,6 +817,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               accounts: cleanedAccs,
               pages: healedPages,
               settings: finalSettingsObj || db.settings,
+              logs: Array.isArray(db.logs) ? db.logs : [],
             };
             if (typeof localStorage !== 'undefined') {
               try {
@@ -924,7 +942,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         } else {
           const isOwner =
-            clean.includes('suzal') || clean.includes('khabarmonkey') || clean.startsWith('admin');
+            clean.includes('suzal') ||
+            clean.includes('khabarmonkey') ||
+            clean.startsWith('admin') ||
+            clean.includes('sumit') ||
+            clean === 'me.sumitji@gmail.com';
           loggedInUser = {
             ...loggedInUser,
             role: isOwner ? 'owner' : 'member',
@@ -1472,6 +1494,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       });
       setPostPerformances((prev) => [...perfEntries, ...prev]);
+
+      // Record in persistent audit logs
+      const generatedPostLogs: LogEntry[] = postResults.map((r: any, idx: number) => ({
+        id: `log_${newPost.id}_${r.pageId || idx}_${Date.now()}`,
+        postId: newPost.id,
+        postMessage: newPost.message,
+        postType: newPost.postType,
+        mediaUrl: newPost.mediaUrl,
+        pageId: r.pageId,
+        pageName: r.pageName,
+        platform: r.platform,
+        status: r.status,
+        externalPostId: r.externalPostId,
+        commentId: r.commentId,
+        commentStatus: r.commentStatus,
+        commentError: r.commentError,
+        error: r.error,
+        timestamp: r.timestamp || nowIso,
+      }));
+
+      if (generatedPostLogs.length > 0) {
+        setLogs((prev) => [...generatedPostLogs, ...prev]);
+        fetch('/api/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ email: cleanEmail, logs: generatedPostLogs }),
+        }).catch(() => {});
+      }
     }
 
     return newPost;
@@ -1538,6 +1589,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.warn('[refreshPosts] Error refreshing posts from cloud:', e);
     }
   }, [user?.email, getStorageKeyForEmail]);
+
+  const refreshLogs = useCallback(async () => {
+    const cleanEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
+    if (!cleanEmail || typeof window === 'undefined') return;
+
+    try {
+      const res = await fetch(`/api/logs?email=${encodeURIComponent(cleanEmail)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.logs)) {
+        setLogs(data.logs);
+      }
+    } catch (e) {
+      console.warn('[refreshLogs] Error refreshing logs from cloud:', e);
+    }
+  }, [user?.email]);
+
+  const deleteLog = async (logId: string): Promise<{ success: boolean }> => {
+    setLogs((prev) => prev.filter((l) => l.id !== logId));
+    const cleanEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
+    try {
+      await fetch('/api/logs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, logId }),
+      });
+    } catch (err) {
+      console.warn('[deleteLog] Error deleting log from MySQL:', err);
+    }
+    return { success: true };
+  };
+
+  const clearAllLogs = async (): Promise<{ success: boolean }> => {
+    setLogs([]);
+    const cleanEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
+    try {
+      await fetch('/api/logs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, clearAll: true }),
+      });
+    } catch (err) {
+      console.warn('[clearAllLogs] Error clearing logs from MySQL:', err);
+    }
+    return { success: true };
+  };
 
   const retryPost = (postId: string) => {
     setPosts((prev) =>
@@ -1636,6 +1744,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         })
       );
+
+      // Record in persistent audit logs
+      const generatedLogs: LogEntry[] = actualResults.map((r: any, idx: number) => ({
+        id: `log_${postId}_${r.pageId || idx}_${Date.now()}`,
+        postId: postId,
+        postMessage: postToApprove.message,
+        postType: postToApprove.postType,
+        mediaUrl: postToApprove.mediaUrl,
+        pageId: r.pageId,
+        pageName: r.pageName,
+        platform: r.platform,
+        status: r.status,
+        externalPostId: r.externalPostId,
+        commentId: r.commentId,
+        commentStatus: r.commentStatus,
+        commentError: r.commentError,
+        error: r.error,
+        timestamp: r.timestamp || nowIso,
+      }));
+
+      if (generatedLogs.length > 0) {
+        setLogs((prev) => [...generatedLogs, ...prev]);
+        fetch('/api/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ email: cleanEmail, logs: generatedLogs }),
+        }).catch(() => {});
+      }
 
       // Immediately persist update to localStorage so page refresh never reverts
       const storageKey = getStorageKeyForEmail(cleanEmail);
@@ -1775,6 +1912,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         })
       );
+
+      // Record scheduled dispatch in persistent audit logs
+      const generatedSchedLogs: LogEntry[] = actualResults.map((r: any, idx: number) => ({
+        id: `log_sched_${postId}_${r.pageId || idx}_${Date.now()}`,
+        postId: postId,
+        postMessage: postToDispatch.message,
+        postType: postToDispatch.postType,
+        mediaUrl: postToDispatch.mediaUrl,
+        pageId: r.pageId,
+        pageName: r.pageName,
+        platform: r.platform,
+        status: r.status,
+        externalPostId: r.externalPostId,
+        commentId: r.commentId,
+        commentStatus: r.commentStatus,
+        commentError: r.commentError,
+        error: r.error,
+        timestamp: r.timestamp || nowIso,
+      }));
+
+      if (generatedSchedLogs.length > 0) {
+        setLogs((prev) => [...generatedSchedLogs, ...prev]);
+        const emailForLog = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+        fetch('/api/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ email: emailForLog, logs: generatedSchedLogs }),
+        }).catch(() => {});
+      }
 
       // Persist scheduled post status update immediately to MySQL
       const cleanUserEmail = (
@@ -2383,7 +2550,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const isOwner =
       cleanEmail.includes('suzal') ||
       cleanEmail.includes('khabarmonkey') ||
-      cleanEmail.startsWith('admin');
+      cleanEmail.startsWith('admin') ||
+      cleanEmail.includes('sumit') ||
+      cleanEmail === 'me.sumitji@gmail.com';
 
     const existing = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
     let googleUser: User;
@@ -3435,6 +3604,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         retryPost,
         approvePost,
         deletePost,
+        logs,
+        deleteLog,
+        clearAllLogs,
+        refreshLogs,
         updateSettings,
         createAutomation,
         updateAutomation,

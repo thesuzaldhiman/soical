@@ -45,7 +45,7 @@ async function handleProcessQueue(request: NextRequest) {
     await initDbTables();
 
     const [rows] = await pool.query<any[]>(
-      'SELECT email, workspace, pages, posts, post_performances, automations FROM app_user_data'
+      'SELECT email, workspace, pages, posts, post_performances, automations, logs FROM app_user_data'
     );
 
     if (!rows || rows.length === 0) {
@@ -87,6 +87,7 @@ async function handleProcessQueue(request: NextRequest) {
       const pages = parseJson(row.pages, []);
       let workspace = parseJson(row.workspace, { monthlyPostsUsed: 0 });
       let performances = parseJson(row.post_performances, []);
+      let logs = parseJson(row.logs, []);
 
       if (!Array.isArray(posts) || posts.length === 0) continue;
 
@@ -181,6 +182,26 @@ async function handleProcessQueue(request: NextRequest) {
             performances = [...newPerfs, ...performances];
           }
 
+          // Generate audit logs
+          const cronLogs = results.map((r, idx) => ({
+            id: `log_cron_${post.id}_${r.pageId}_${idx}`,
+            postId: post.id,
+            postMessage: post.message,
+            postType: post.postType || 'image',
+            mediaUrl: post.mediaUrl,
+            pageId: r.pageId,
+            pageName: r.pageName,
+            platform: r.platform,
+            status: r.status,
+            externalPostId: r.externalPostId,
+            commentId: r.commentId,
+            commentStatus: r.commentStatus,
+            commentError: r.commentError,
+            error: r.error,
+            timestamp: nowIso,
+          }));
+          logs = [...cronLogs, ...logs].slice(0, 1000);
+
           totalDispatched++;
           userModified = true;
 
@@ -206,12 +227,13 @@ async function handleProcessQueue(request: NextRequest) {
       if (userModified) {
         await pool.query(
           `UPDATE app_user_data 
-           SET posts = ?, workspace = ?, post_performances = ?, updated_at = NOW() 
+           SET posts = ?, workspace = ?, post_performances = ?, logs = ?, updated_at = NOW() 
            WHERE email = ?`,
           [
             JSON.stringify(posts),
             JSON.stringify(workspace),
             JSON.stringify(performances),
+            JSON.stringify(logs),
             email,
           ]
         );

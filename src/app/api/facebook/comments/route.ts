@@ -5,28 +5,34 @@ import { getDbPool } from '@/lib/db/mysql';
 /**
  * Helper to recover access token from MySQL for logged in user if not passed directly
  */
-async function resolvePageAccessToken(request: NextRequest, pageId?: string, explicitToken?: string): Promise<string> {
+async function resolvePageAccessToken(request: NextRequest, pageId?: string, explicitToken?: string, explicitEmail?: string): Promise<string> {
   if (explicitToken && explicitToken.trim()) return explicitToken.trim();
 
   try {
-    const userCookie =
-      request.cookies.get('sap_user_session')?.value ||
-      request.cookies.get('sap_google_user')?.value;
-    let loggedInEmail = '';
-    if (userCookie) {
-      try {
-        let decoded = userCookie;
-        try {
-          decoded = decodeURIComponent(userCookie);
-        } catch {}
-        const parsed = JSON.parse(decoded);
-        loggedInEmail = (parsed.email || '').toLowerCase().trim();
-      } catch {}
+    let loggedInEmail = (explicitEmail || '').toLowerCase().trim();
+    if (!loggedInEmail) {
+      loggedInEmail = (request.nextUrl.searchParams.get('email') || '').toLowerCase().trim();
     }
 
-    if (loggedInEmail) {
-      const pool = getDbPool();
-      if (pool) {
+    if (!loggedInEmail) {
+      const userCookie =
+        request.cookies.get('sap_user_session')?.value ||
+        request.cookies.get('sap_google_user')?.value;
+      if (userCookie) {
+        try {
+          let decoded = userCookie;
+          try {
+            decoded = decodeURIComponent(userCookie);
+          } catch {}
+          const parsed = JSON.parse(decoded);
+          loggedInEmail = (parsed.email || '').toLowerCase().trim();
+        } catch {}
+      }
+    }
+
+    const pool = getDbPool();
+    if (pool) {
+      if (loggedInEmail) {
         const [rows] = await pool.query<any[]>(
           'SELECT pages, accounts FROM app_user_data WHERE email = ? LIMIT 1',
           [loggedInEmail]
@@ -45,6 +51,18 @@ async function resolvePageAccessToken(request: NextRequest, pageId?: string, exp
 
           const fbAccount = dbAccounts.find((a: any) => a.platform === 'facebook' && a.accessToken);
           if (fbAccount?.accessToken) return fbAccount.accessToken;
+        }
+      }
+
+      // Fallback: If pageId was provided but not found under loggedInEmail, search all tenant pages by pageId
+      if (pageId) {
+        const [allRows] = await pool.query<any[]>('SELECT pages, accounts FROM app_user_data');
+        if (allRows && allRows.length > 0) {
+          for (const r of allRows) {
+            const dbPages = typeof r.pages === 'string' ? JSON.parse(r.pages) : r.pages || [];
+            const matchPage = dbPages.find((p: any) => p.pageId === pageId || p.id === pageId);
+            if (matchPage?.accessToken) return matchPage.accessToken;
+          }
         }
       }
     }
@@ -69,7 +87,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'postId is required' }, { status: 400 });
     }
 
-    const accessToken = await resolvePageAccessToken(request, pageId, passedToken);
+    const explicitEmail = request.nextUrl.searchParams.get('email') || undefined;
+    const accessToken = await resolvePageAccessToken(request, pageId, passedToken, explicitEmail);
     if (!accessToken) {
       return NextResponse.json(
         { success: false, error: 'Facebook access token could not be found for this post/page.' },
@@ -156,7 +175,8 @@ export async function POST(request: NextRequest) {
       authorAvatar,
     } = body;
 
-    const accessToken = await resolvePageAccessToken(request, pageId, passedToken);
+    const explicitEmail = body.email || request.nextUrl.searchParams.get('email') || undefined;
+    const accessToken = await resolvePageAccessToken(request, pageId, passedToken, explicitEmail);
     if (!accessToken) {
       return NextResponse.json(
         { success: false, error: 'Facebook access token required to perform comment operations.' },

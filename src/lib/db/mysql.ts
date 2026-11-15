@@ -104,6 +104,17 @@ export async function initDbTables(): Promise<boolean> {
           subscription_tier = 'agency';
       `);
 
+      // Ensure Super Admin user Sumeet Dhiman (me.sumitji@gmail.com) always exists and is approved in app_users
+      await connection.query(`
+        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
+        VALUES ('usr_sumit', 'me.sumitji@gmail.com', 'Sumeet Dhiman', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'email', 'agency')
+        ON DUPLICATE KEY UPDATE
+          id = 'usr_sumit',
+          role = 'owner',
+          approval_status = 'approved',
+          subscription_tier = 'agency';
+      `);
+
       await connection.query(`
         CREATE TABLE IF NOT EXISTS app_user_data (
           email VARCHAR(255) PRIMARY KEY,
@@ -118,6 +129,29 @@ export async function initDbTables(): Promise<boolean> {
           post_comments LONGTEXT,
           automations LONGTEXT,
           settings LONGTEXT,
+          logs LONGTEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // Safe column migration for logs in app_user_data
+      try {
+        const [logCols] = await connection.query<any[]>(`SHOW COLUMNS FROM app_user_data LIKE 'logs'`);
+        if (!logCols || logCols.length === 0) {
+          await connection.query(`ALTER TABLE app_user_data ADD COLUMN logs LONGTEXT NULL`);
+        }
+      } catch (e) {
+        console.warn(`[MySQL] Note on adding logs column:`, e);
+      }
+
+      // Safe table creation for wp_plugins catalog
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS wp_plugins (
+          id VARCHAR(100) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          version VARCHAR(50) NOT NULL,
+          download_url VARCHAR(500),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);

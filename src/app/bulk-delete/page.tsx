@@ -26,20 +26,32 @@ function BulkDeleteContent() {
   const [olderThanDays, setOlderThanDays] = useState(30);
   const [deleteConfirmation, setDeleteConfirmation] = useState(false);
   const [deletedSuccess, setDeletedSuccess] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // Filter matching posts to delete
+  // Filter matching posts to delete with actual age threshold
   const matchingPosts = posts.filter((p) => {
     if (selectedStatus !== 'all' && p.status !== selectedStatus) return false;
+    if (olderThanDays > 0) {
+      const postDate = new Date(p.createdAt || p.publishedAt || 0).getTime();
+      const cutoff = Date.now() - olderThanDays * 86400000;
+      if (postDate > cutoff) return false;
+    }
     return true;
   });
 
-  const handleExecuteBulkDelete = () => {
-    matchingPosts.forEach((p) => {
-      deletePost(p.id);
-    });
-    setDeleteConfirmation(false);
-    setDeletedSuccess(true);
-    setTimeout(() => setDeletedSuccess(false), 3000);
+  const handleExecuteBulkDelete = async () => {
+    if (matchingPosts.length === 0) return;
+    setIsProcessing(true);
+    try {
+      for (const p of matchingPosts) {
+        await deletePost(p.id);
+      }
+    } finally {
+      setIsProcessing(false);
+      setDeleteConfirmation(false);
+      setDeletedSuccess(true);
+      setTimeout(() => setDeletedSuccess(false), 4000);
+    }
   };
 
   return (
@@ -153,10 +165,11 @@ function BulkDeleteContent() {
               </button>
               <button
                 type="button"
+                disabled={isProcessing}
                 onClick={handleExecuteBulkDelete}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm"
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm flex items-center gap-1.5"
               >
-                Yes, Delete Permanently
+                {isProcessing ? 'Deleting...' : 'Yes, Delete Permanently'}
               </button>
             </div>
           </div>

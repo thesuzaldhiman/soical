@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
@@ -17,6 +17,8 @@ import {
   Calendar,
   Share2,
   Info,
+  RefreshCw,
+  Clock,
 } from 'lucide-react';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 
@@ -29,31 +31,99 @@ export default function LogsPage() {
 }
 
 function LogsContent() {
-  const { posts, pages, retryPost } = useApp();
+  const { posts, pages, logs, deleteLog, clearAllLogs, refreshLogs, retryPost } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  // Flatten all post results into individual log entries
-  const allLogs = posts.flatMap((post) =>
-    post.results.map((res, index) => ({
-      id: `${post.id}_res_${index}`,
-      postId: post.id,
-      postMessage: post.message,
-      postType: post.postType,
-      mediaUrl: post.mediaUrl,
-      pageId: res.pageId,
-      pageName: res.pageName,
-      platform: res.platform,
-      status: res.status,
-      externalPostId: res.externalPostId,
-      commentId: res.commentId,
-      error: res.error,
-      timestamp: res.timestamp,
-    }))
-  );
+  // Sync cloud logs on mount
+  useEffect(() => {
+    refreshLogs();
+  }, [refreshLogs]);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshLogs();
+      setActionMsg('Logs synchronized with cloud database!');
+      setTimeout(() => setActionMsg(null), 3000);
+    } catch {
+      setActionMsg('Failed to fetch logs from cloud.');
+      setTimeout(() => setActionMsg(null), 3000);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleClearAll = async () => {
+    try {
+      await clearAllLogs();
+      setShowClearConfirm(false);
+      setActionMsg('All logs successfully cleared from workspace database.');
+      setTimeout(() => setActionMsg(null), 3000);
+    } catch {
+      setActionMsg('Error clearing logs.');
+      setTimeout(() => setActionMsg(null), 3000);
+    }
+  };
+
+  const handleDeleteSingle = async (logId: string) => {
+    try {
+      await deleteLog(logId);
+      setActionMsg('Log entry removed.');
+      setTimeout(() => setActionMsg(null), 2500);
+    } catch {
+      setActionMsg('Failed to delete log entry.');
+      setTimeout(() => setActionMsg(null), 2500);
+    }
+  };
+
+  // Combine persistent audit logs from database with any in-memory post results that haven't been synced to logs yet
+  const allLogs = useMemo(() => {
+    const map = new Map<string, any>();
+
+    // 1. Add persistent audit logs from database
+    (logs || []).forEach((l) => {
+      if (l && l.id) map.set(l.id, l);
+    });
+
+    // 2. Add in-memory / post results as fallback so nothing is ever lost
+    (posts || []).forEach((post) => {
+      (post.results || []).forEach((res, index) => {
+        const id = `log_${post.id}_${res.pageId || index}`;
+        if (!map.has(id)) {
+          map.set(id, {
+            id,
+            postId: post.id,
+            postMessage: post.message,
+            postType: post.postType,
+            mediaUrl: post.mediaUrl,
+            pageId: res.pageId,
+            pageName: res.pageName,
+            platform: res.platform,
+            status: res.status,
+            externalPostId: res.externalPostId,
+            commentId: res.commentId,
+            commentStatus: res.commentStatus,
+            commentError: res.commentError,
+            error: res.error,
+            timestamp: res.timestamp,
+          });
+        }
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const timeA = new Date(a.timestamp || 0).getTime();
+      const timeB = new Date(b.timestamp || 0).getTime();
+      return timeB - timeA;
+    });
+  }, [logs, posts]);
 
   // Filter logs
   const filteredLogs = allLogs.filter((log) => {
@@ -61,8 +131,8 @@ function LogsContent() {
     if (platformFilter !== 'all' && log.platform !== platformFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const matchMsg = log.postMessage.toLowerCase().includes(q);
-      const matchPage = log.pageName.toLowerCase().includes(q);
+      const matchMsg = (log.postMessage || '').toLowerCase().includes(q);
+      const matchPage = (log.pageName || '').toLowerCase().includes(q);
       const matchId = (log.externalPostId || '').toLowerCase().includes(q);
       if (!matchMsg && !matchPage && !matchId) return false;
     }
@@ -72,23 +142,16 @@ function LogsContent() {
   const successCount = allLogs.filter((l) => l.status === 'success').length;
   const failureCount = allLogs.filter((l) => l.status === 'failed').length;
 
-  const platformIcons: Record<string, string> = {
-    facebook: '📘',
-    instagram: '📸',
-    threads: '🧵',
-    telegram: '✈️',
-    youtube: '▶️',
-  };
-
   const handleExportCSV = () => {
-    const headers = ['Log ID', 'Post ID', 'Platform', 'Target Page', 'Status', 'External Post ID', 'Error', 'Timestamp'];
+    const headers = ['Log ID', 'Post ID', 'Platform', 'Target Page', 'Status', 'External Post ID', 'Comment ID', 'Error', 'Timestamp'];
     const rows = filteredLogs.map((l) => [
       l.id,
       l.postId,
       l.platform,
-      `"${l.pageName.replace(/"/g, '""')}"`,
+      `"${(l.pageName || '').replace(/"/g, '""')}"`,
       l.status,
       l.externalPostId || '',
+      l.commentId || '',
       `"${(l.error || '').replace(/"/g, '""')}"`,
       l.timestamp,
     ]);
@@ -103,19 +166,47 @@ function LogsContent() {
   };
 
   return (
-    <div className="space-y-4 font-sans">
+    <div className="space-y-4 font-sans animate-fade-in pb-12">
+      {/* Action Notification Banner */}
+      {actionMsg && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-2xs animate-fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{actionMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionMsg(null)}
+            className="text-emerald-600 hover:text-emerald-900 text-xs font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header (Compact Modern Studio) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#EBEBE8]">
         <div>
           <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
-            System & Publishing Logs
+            System &amp; Publishing Logs
           </h1>
           <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
-            Real-time audit log of all social dispatches, API responses, comment triggers, and anti-ban delays.
+            Permanent database audit log of all social dispatches, API responses, comment triggers, and anti-ban delays.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-[#E8E8E4] text-xs font-semibold text-slate-700 hover:bg-[#FAF9F6] transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+            title="Fetch latest audit logs from cloud database"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+            <span>{isRefreshing ? 'Syncing...' : 'Sync Cloud'}</span>
+          </button>
+
           <button
             type="button"
             onClick={handleExportCSV}
@@ -124,6 +215,17 @@ function LogsContent() {
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
           </button>
+
+          {allLogs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear Logs</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -135,7 +237,7 @@ function LogsContent() {
             <FileText className="w-4 h-4 text-slate-400" />
           </div>
           <div className="text-2xl font-black text-slate-900">{allLogs.length}</div>
-          <p className="text-[11px] text-slate-400 mt-0.5">Recorded across all channels</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">Persisted in database across all channels</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-[#E8E8E4] p-4.5 shadow-2xs">
@@ -182,7 +284,7 @@ function LogsContent() {
                 key={s}
                 type="button"
                 onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all ${
+                className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
                   statusFilter === s
                     ? 'bg-slate-950 text-white shadow-2xs font-bold'
                     : 'text-slate-500 hover:text-slate-900'
@@ -205,6 +307,7 @@ function LogsContent() {
             <option value="threads">🧵 Threads</option>
             <option value="telegram">✈️ Telegram</option>
             <option value="youtube">▶️ YouTube</option>
+            <option value="wordpress">🌐 WordPress</option>
           </select>
         </div>
       </div>
@@ -225,7 +328,7 @@ function LogsContent() {
               <thead>
                 <tr className="border-b border-[#EBEBE8] bg-[#FAF9F6] text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Platform & Target</th>
+                  <th className="py-3 px-4">Platform &amp; Target</th>
                   <th className="py-3 px-4">Post Snippet</th>
                   <th className="py-3 px-4">External ID / Details</th>
                   <th className="py-3 px-4">Timestamp</th>
@@ -257,15 +360,15 @@ function LogsContent() {
                           <div className="flex items-center gap-2">
                             <SocialIcon platform={log.platform} className="w-4 h-4 rounded-xs shrink-0" />
                             <div>
-                              <div className="font-bold text-slate-800">{log.pageName}</div>
-                              <div className="text-[10px] text-slate-400 capitalize">{log.platform} Channel</div>
+                              <div className="font-bold text-slate-800">{log.pageName || 'Channel'}</div>
+                              <div className="text-[10px] text-slate-400 capitalize">{log.platform} Target</div>
                             </div>
                           </div>
                         </td>
 
                         <td className="py-3 px-4 max-w-xs">
-                          <p className="truncate text-slate-700 font-medium">{log.postMessage}</p>
-                          <span className="text-[10px] uppercase font-bold text-slate-400">{log.postType}</span>
+                          <p className="truncate text-slate-700 font-medium">{log.postMessage || '(No message)'}</p>
+                          <span className="text-[10px] uppercase font-bold text-slate-400">{log.postType || 'post'}</span>
                         </td>
 
                         <td className="py-3 px-4 whitespace-nowrap">
@@ -275,13 +378,13 @@ function LogsContent() {
                                 {log.externalPostId || 'Published'}
                               </div>
                               {log.commentId && (
-                                <div className="text-[10px] text-emerald-600">
-                                  + Comment ID: {log.commentId}
+                                <div className="text-[10px] text-emerald-600 font-medium">
+                                  + First-Comment: {log.commentId}
                                 </div>
                               )}
                             </div>
                           ) : (
-                            <span className="text-rose-600 font-medium text-[11px] truncate max-w-xs block">
+                            <span className="text-rose-600 font-medium text-[11px] truncate max-w-xs block" title={log.error}>
                               {log.error || 'Unknown dispatch error'}
                             </span>
                           )}
@@ -301,7 +404,7 @@ function LogsContent() {
                             <button
                               type="button"
                               onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                              className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-[#F2F2EE] transition-colors"
+                              className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-[#F2F2EE] transition-colors cursor-pointer"
                             >
                               {isExpanded ? 'Hide' : 'Payload'}
                             </button>
@@ -310,12 +413,21 @@ function LogsContent() {
                               <button
                                 type="button"
                                 onClick={() => retryPost(log.postId)}
-                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors inline-flex items-center gap-1"
+                                className="px-2 py-1 rounded-lg text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
                               >
                                 <RotateCw className="w-3 h-3" />
                                 <span>Retry</span>
                               </button>
                             )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSingle(log.id)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Delete log entry"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -326,12 +438,13 @@ function LogsContent() {
                           <td colSpan={6} className="p-4 border-t border-[#F0F0ED]">
                             <div className="bg-slate-900 text-slate-200 rounded-xl p-3.5 font-mono text-[11px] space-y-2 overflow-x-auto shadow-inner">
                               <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-1.5">
-                                <span>API Event Payload & Diagnostics</span>
+                                <span>API Event Payload &amp; Diagnostics</span>
                                 <span>ID: {log.id}</span>
                               </div>
                               <pre className="text-slate-300">
                                 {JSON.stringify(
                                   {
+                                    id: log.id,
                                     postId: log.postId,
                                     pageId: log.pageId,
                                     pageName: log.pageName,
@@ -339,6 +452,8 @@ function LogsContent() {
                                     status: log.status,
                                     externalPostId: log.externalPostId,
                                     commentId: log.commentId,
+                                    commentStatus: log.commentStatus,
+                                    commentError: log.commentError,
                                     error: log.error,
                                     timestamp: log.timestamp,
                                   },
@@ -358,6 +473,37 @@ function LogsContent() {
           </div>
         )}
       </div>
+
+      {/* Clear Logs Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-[#E8E8E4] max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+              <span>Confirm Clear All Logs</span>
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to permanently clear all <strong>{allLogs.length} audit logs</strong> from the database? This does not delete any posts from your post library or Facebook.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F0F0ED]">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 rounded-xl border border-[#E8E8E4] text-xs font-semibold text-slate-600 hover:bg-[#FAF9F6] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+              >
+                Yes, Clear All Logs
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

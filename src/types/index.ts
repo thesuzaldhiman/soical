@@ -175,6 +175,25 @@ export interface PostResult {
   timestamp: string;
 }
 
+export interface LogEntry {
+  id: string;
+  postId: string;
+  postMessage: string;
+  postType: string;
+  mediaUrl?: string;
+  pageId: string;
+  pageName: string;
+  platform: Platform | string;
+  status: 'success' | 'failed' | 'draft';
+  externalPostId?: string;
+  postUrl?: string;
+  commentId?: string;
+  commentStatus?: 'success' | 'failed';
+  commentError?: string;
+  error?: string;
+  timestamp: string;
+}
+
 export interface Post {
   id: string;
   workspaceId: string;

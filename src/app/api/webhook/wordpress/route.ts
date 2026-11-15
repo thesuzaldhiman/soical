@@ -49,7 +49,7 @@ async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail
   try {
     const cleanEmail = email.toLowerCase().trim();
     const [rows] = await pool.query<any[]>(
-      'SELECT posts, workspace FROM app_user_data WHERE email = ? LIMIT 1',
+      'SELECT posts, workspace, logs FROM app_user_data WHERE email = ? LIMIT 1',
       [cleanEmail]
     );
 
@@ -60,9 +60,32 @@ async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail
       const successfulCount = newPosts.filter((p) => p.status === 'published').length;
       ws.monthlyPostsUsed = (ws.monthlyPostsUsed || 0) + successfulCount;
 
+      // Extract new audit log entries from post results
+      const existingLogs = parseJsonSafe(rows[0].logs, []);
+      const newLogs = newPosts.flatMap((post) =>
+        (post.results || []).map((r, idx) => ({
+          id: `log_${post.id}_${r.pageId}_${idx}`,
+          postId: post.id,
+          postMessage: post.message,
+          postType: post.postType,
+          mediaUrl: post.mediaUrl,
+          pageId: r.pageId,
+          pageName: r.pageName,
+          platform: r.platform,
+          status: r.status,
+          externalPostId: r.externalPostId,
+          commentId: r.commentId,
+          commentStatus: r.commentStatus,
+          commentError: r.commentError,
+          error: r.error,
+          timestamp: r.timestamp || new Date().toISOString(),
+        }))
+      );
+      const updatedLogs = [...newLogs, ...existingLogs].slice(0, 1000);
+
       await pool.query(
-        'UPDATE app_user_data SET posts = ?, workspace = ?, updated_at = NOW() WHERE email = ?',
-        [JSON.stringify(updatedPosts), JSON.stringify(ws), cleanEmail]
+        'UPDATE app_user_data SET posts = ?, workspace = ?, logs = ?, updated_at = NOW() WHERE email = ?',
+        [JSON.stringify(updatedPosts), JSON.stringify(ws), JSON.stringify(updatedLogs), cleanEmail]
       );
     }
   } catch (err) {
