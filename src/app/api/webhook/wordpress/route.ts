@@ -247,7 +247,46 @@ export async function POST(request: NextRequest) {
       : [];
 
     const permalink = (payload.permalink || '').trim();
-    const imageUrl = (payload.image_url || payload.featured_image || '').trim();
+    let imageUrl = (payload.image_url || payload.featured_image || '').trim();
+
+    // Fallback: If no featured image in payload, extract first <img> from article body content
+    if (!imageUrl) {
+      const rawContent = String(payload.content_html || payload.content || payload.body || payload.post_content || payload.excerpt || '');
+      const imgMatch = rawContent.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (imgMatch && imgMatch[1]) {
+        imageUrl = imgMatch[1].trim();
+      }
+    }
+
+    // Fallback 2: If still no image and permalink exists, fetch article HTML with quick timeout to get og:image or first <img>
+    if (!imageUrl && permalink) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2500);
+        const pageRes = await fetch(permalink, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SocialPosterBot/2.0)' },
+        });
+        clearTimeout(timeout);
+        if (pageRes.ok) {
+          const html = await pageRes.text();
+          const ogMatch =
+            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+          if (ogMatch && ogMatch[1]) {
+            imageUrl = ogMatch[1].trim();
+          } else {
+            const bodyImg =
+              html.match(/<article[^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["']/i) ||
+              html.match(/<img[^>]+src=["']([^"']+)["']/i);
+            if (bodyImg && bodyImg[1]) {
+              imageUrl = bodyImg[1].trim();
+            }
+          }
+        }
+      } catch {}
+    }
+
     const excerpt = (payload.excerpt || '').trim();
     const categories: string[] = Array.isArray(payload.categories)
       ? payload.categories

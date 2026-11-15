@@ -78,8 +78,8 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
 
   // Pre-fetch both featured image and template PNG frame in parallel with timeout
   const [photoBase64, templateBase64] = await Promise.all([
-    fetchImageAsBase64(featuredImageUrl, 3500),
-    template?.templateImageUrl ? fetchImageAsBase64(template.templateImageUrl, 3500) : Promise.resolve(null),
+    fetchImageAsBase64(featuredImageUrl, 4500),
+    template?.templateImageUrl ? fetchImageAsBase64(template.templateImageUrl, 4500) : Promise.resolve(null),
   ]);
 
   const children: React.ReactElement[] = [];
@@ -100,10 +100,11 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     })
   );
 
-  // 2. Featured Photo Layer
-  if (photoBase64) {
-    children.push(
-      React.createElement('img', {
+  const layerMode = template?.layerMode || 'overlay';
+
+  // Helper to build photo element
+  const photoElement = photoBase64
+    ? React.createElement('img', {
         key: 'featured_photo',
         src: photoBase64,
         style: {
@@ -116,11 +117,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
           borderRadius: fBox.borderRadius || 0,
         },
       })
-    );
-  } else {
-    // Elegant fallback news card backdrop
-    children.push(
-      React.createElement(
+    : React.createElement(
         'div',
         {
           key: 'fallback_photo_box',
@@ -148,17 +145,14 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
               letterSpacing: 2,
             },
           },
-          siteName || 'Featured News'
+          siteName || 'News Article'
         )
-      )
-    );
-  }
+      );
 
-  // 3. Optional PNG Frame Template Overlay (if user uploaded a PNG template frame)
-  if (templateBase64) {
-    children.push(
-      React.createElement('img', {
-        key: 'template_frame_overlay',
+  // Helper to build template element
+  const templateElement = templateBase64
+    ? React.createElement('img', {
+        key: 'template_frame',
         src: templateBase64,
         style: {
           position: 'absolute',
@@ -169,55 +163,39 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
           objectFit: 'cover',
         },
       })
-    );
+    : null;
+
+  // Layer ordering according to template mode
+  if (layerMode === 'background') {
+    // Template is behind the photo
+    if (templateElement) children.push(templateElement);
+    children.push(photoElement);
+  } else {
+    // Default 'overlay': Photo is in its bounding box, transparent template frame is on top
+    children.push(photoElement);
+    if (templateElement) children.push(templateElement);
   }
 
-  // 4. Gradient shade at the bottom to guarantee high text readability
-  children.push(
-    React.createElement('div', {
-      key: 'text_contrast_scrim',
-      style: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        width: '100%',
-        height: Math.max(260, Math.round(height * 0.48)),
-        backgroundImage:
-          'linear-gradient(to top, rgba(11,15,25,1) 0%, rgba(11,15,25,0.92) 55%, transparent 100%)',
-        display: 'flex',
-      },
-    })
-  );
-
-  // 5. Category / Site Badge (Top Left)
-  const displayCategory = category || siteName;
-  if (displayCategory) {
+  // 4. Subtle scrim ONLY if no custom template was uploaded (prevents covering photo on custom branded templates)
+  if (!templateBase64) {
     children.push(
-      React.createElement(
-        'div',
-        {
-          key: 'category_badge',
-          style: {
-            position: 'absolute',
-            top: 24,
-            left: 32,
-            backgroundColor: '#dc2626',
-            color: '#ffffff',
-            padding: '6px 18px',
-            borderRadius: 8,
-            fontSize: 20,
-            fontWeight: 'bold',
-            display: 'flex',
-            alignItems: 'center',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-          },
+      React.createElement('div', {
+        key: 'text_contrast_scrim',
+        style: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          width: '100%',
+          height: Math.max(260, Math.round(height * 0.48)),
+          backgroundImage:
+            'linear-gradient(to top, rgba(11,15,25,1) 0%, rgba(11,15,25,0.92) 55%, transparent 100%)',
+          display: 'flex',
         },
-        displayCategory
-      )
+      })
     );
   }
 
-  // 6. Title Box with Headline
+  // 5. Title Box with Headline (No category badge overlay as requested)
   children.push(
     React.createElement(
       'div',

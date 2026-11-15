@@ -725,13 +725,38 @@ class Social_Auto_Poster_Connector {
             }
         }
 
-        // Featured Image
+        // Featured Image extraction with fallback to first image in article body
         $featured_image = '';
         $thumbnail_id = get_post_thumbnail_id($post_id);
         if ($thumbnail_id) {
             $img_src = wp_get_attachment_image_src($thumbnail_id, 'full');
             if ($img_src && !empty($img_src[0])) {
                 $featured_image = $img_src[0];
+            }
+        }
+
+        // Fallback: Extract first image from post HTML content
+        if (empty($featured_image) && !empty($post->post_content)) {
+            if (preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $post->post_content, $img_matches)) {
+                $featured_image = esc_url_raw($img_matches[1]);
+            }
+        }
+
+        // Fallback 2: Check attached media gallery
+        if (empty($featured_image)) {
+            $attachments = get_posts(array(
+                'post_type'      => 'attachment',
+                'post_mime_type' => 'image',
+                'posts_per_page' => 1,
+                'post_parent'    => $post_id,
+                'orderby'        => 'menu_order',
+                'order'          => 'ASC',
+            ));
+            if (!empty($attachments)) {
+                $att_src = wp_get_attachment_image_src($attachments[0]->ID, 'full');
+                if ($att_src && !empty($att_src[0])) {
+                    $featured_image = $att_src[0];
+                }
             }
         }
 
@@ -753,6 +778,7 @@ class Social_Auto_Poster_Connector {
             'permalink'      => $permalink,
             'image_url'      => $featured_image,
             'featured_image' => $featured_image,
+            'content_html'   => $post->post_content,
             'excerpt'        => $excerpt,
             'categories'     => $categories,
             'category'       => !empty($categories) ? $categories[0] : 'General',
