@@ -169,6 +169,8 @@ export interface PostResult {
   externalPostId?: string;
   postUrl?: string;
   commentId?: string;
+  commentStatus?: 'success' | 'failed';
+  commentError?: string;
   error?: string;
   timestamp: string;
 }

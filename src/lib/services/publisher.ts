@@ -36,8 +36,67 @@ export interface TargetDispatchResult {
   status: 'success' | 'failed';
   externalPostId?: string;
   postUrl?: string;
+  commentId?: string;
+  commentStatus?: 'success' | 'failed';
+  commentError?: string;
   error?: string;
   timestamp: string;
+}
+
+/**
+ * Robust Facebook First-Comment dispatcher with propagation delay and candidate fallback.
+ * Meta Graph API takes 1.5 - 2.5s for newly uploaded photo stories to propagate across edge clusters.
+ * Photo uploads can receive comments on either the photo node (id) or the feed story node (post_id).
+ */
+async function postFacebookCommentSafely(
+  targetIds: string[],
+  commentText: string,
+  accessToken: string,
+  pageName: string
+): Promise<{ success: boolean; commentId?: string; error?: string }> {
+  if (!commentText || !commentText.trim()) {
+    return { success: false, error: 'Empty comment text' };
+  }
+
+  // 1.8 second delay for Meta Graph cluster propagation
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+
+  let lastError = 'No valid target object ID';
+
+  for (const objId of targetIds) {
+    if (!objId) continue;
+    try {
+      const commentForm = new URLSearchParams();
+      commentForm.append('message', commentText.trim());
+      commentForm.append('access_token', accessToken);
+
+      const res = await fetch(`https://graph.facebook.com/v19.0/${encodeURIComponent(objId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: commentForm.toString(),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.id) {
+        console.log(`[Meta Graph API] First comment posted successfully on object ${objId} (${pageName}): ${data.id}`);
+        return { success: true, commentId: String(data.id) };
+      }
+
+      const errMsg = data?.error?.message || `HTTP ${res.status}`;
+      const errCode = data?.error?.code;
+      console.warn(`[Meta Graph API] First comment failed on object ${objId} (${pageName}, code ${errCode}): ${errMsg}`);
+      lastError = `${errMsg} (code ${errCode || res.status})`;
+
+      // Wait 1.2s before trying alternative candidate ID
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    } catch (e: any) {
+      console.warn(`[Meta Graph API] Comment network error on ${objId}:`, e?.message);
+      lastError = e?.message || 'Network exception';
+    }
+  }
+
+  return { success: false, error: lastError };
 }
 
 export async function dispatchToTargets(options: DispatchOptions): Promise<TargetDispatchResult[]> {
@@ -326,21 +385,19 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
           const postId = fbResData.post_id || fbResData.id;
           const postUrl = `https://facebook.com/${postId}`;
 
-          // First comment auto-post
-          if (commentText && postId) {
-            try {
-              const commentForm = new URLSearchParams();
-              commentForm.append('message', commentText);
-              commentForm.append('access_token', accessToken);
+          // First comment auto-post with cluster propagation & ID candidate fallback
+          const commentTargetIds = Array.from(
+            new Set([fbResData.id, fbResData.post_id].filter(Boolean) as string[])
+          );
 
-              await fetch(`https://graph.facebook.com/v19.0/${postId}/comments`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: commentForm.toString(),
-              });
-            } catch {
-              // non-blocking
-            }
+          let commentRes: { success: boolean; commentId?: string; error?: string } | undefined;
+          if (commentText && commentTargetIds.length > 0) {
+            commentRes = await postFacebookCommentSafely(
+              commentTargetIds,
+              commentText,
+              accessToken,
+              target.name
+            );
           }
 
           results.push({
@@ -350,6 +407,9 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             status: 'success',
             externalPostId: String(postId),
             postUrl,
+            commentId: commentRes?.commentId,
+            commentStatus: commentRes ? (commentRes.success ? 'success' : 'failed') : undefined,
+            commentError: commentRes?.error,
             timestamp,
           });
         } catch (err: unknown) {

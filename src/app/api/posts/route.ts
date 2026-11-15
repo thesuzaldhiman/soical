@@ -21,10 +21,16 @@ function resolveEmail(request: NextRequest, bodyEmail?: string): string {
   if (urlEmail && urlEmail.includes('@')) {
     return urlEmail.toLowerCase().trim();
   }
-  const userCookie = request.cookies.get('sap_google_user')?.value;
+  const userCookie =
+    request.cookies.get('sap_user_session')?.value ||
+    request.cookies.get('sap_google_user')?.value;
   if (userCookie) {
     try {
-      const parsed = JSON.parse(decodeURIComponent(userCookie));
+      let decoded = userCookie;
+      try {
+        decoded = decodeURIComponent(userCookie);
+      } catch {}
+      const parsed = JSON.parse(decoded);
       if (parsed.email && parsed.email.includes('@')) {
         return parsed.email.toLowerCase().trim();
       }
@@ -247,10 +253,17 @@ export async function POST(request: NextRequest) {
       ...currentPosts.filter((p) => !incomingMap.has(p.id)),
     ].slice(0, 500);
 
-    await pool.query(
-      'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
-      [JSON.stringify(updatedPosts), email]
-    );
+    if (!rows || rows.length === 0) {
+      await pool.query(
+        'INSERT INTO app_user_data (email, posts, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE posts = VALUES(posts), updated_at = NOW()',
+        [email, JSON.stringify(updatedPosts)]
+      );
+    } else {
+      await pool.query(
+        'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
+        [JSON.stringify(updatedPosts), email]
+      );
+    }
 
     return NextResponse.json({ success: true, count: updatedPosts.length });
   } catch (err: unknown) {

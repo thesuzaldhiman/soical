@@ -70,8 +70,10 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // 3. Recover from MySQL settings for the currently authenticated Google user
-    const userCookie = request.cookies.get('sap_google_user')?.value;
+    // 3. Recover from MySQL settings for the currently authenticated user
+    const userCookie =
+      request.cookies.get('sap_user_session')?.value ||
+      request.cookies.get('sap_google_user')?.value;
     let loggedInEmail = '';
     if (userCookie) {
       try {

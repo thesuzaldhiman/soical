@@ -31,11 +31,17 @@ export async function POST(request: NextRequest) {
     const hasMissingTokens = targetPages.some((p) => !p.accessToken);
     if (hasMissingTokens) {
       try {
-        const userCookie = request.cookies.get('sap_google_user')?.value;
+        const userCookie =
+          request.cookies.get('sap_user_session')?.value ||
+          request.cookies.get('sap_google_user')?.value;
         let loggedInEmail = '';
         if (userCookie) {
           try {
-            const parsed = JSON.parse(decodeURIComponent(userCookie));
+            let decoded = userCookie;
+            try {
+              decoded = decodeURIComponent(userCookie);
+            } catch {}
+            const parsed = JSON.parse(decoded);
             loggedInEmail = (parsed.email || '').toLowerCase().trim();
           } catch {}
         }
@@ -245,11 +251,17 @@ export async function DELETE(request: NextRequest) {
     // If access token is not passed in payload, try recovering from MySQL database
     if (!tokenToUse && pageId) {
       try {
-        const userCookie = request.cookies.get('sap_google_user')?.value;
+        const userCookie =
+          request.cookies.get('sap_user_session')?.value ||
+          request.cookies.get('sap_google_user')?.value;
         let loggedInEmail = '';
         if (userCookie) {
           try {
-            const parsed = JSON.parse(decodeURIComponent(userCookie));
+            let decoded = userCookie;
+            try {
+              decoded = decodeURIComponent(userCookie);
+            } catch {}
+            const parsed = JSON.parse(decoded);
             loggedInEmail = (parsed.email || '').toLowerCase().trim();
           } catch {}
         }

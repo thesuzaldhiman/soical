@@ -3,7 +3,25 @@ import { getDbPool, initDbTables } from '@/lib/db/mysql';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const rawEmail = searchParams.get('email');
+  let rawEmail = searchParams.get('email');
+
+  if (!rawEmail || !rawEmail.includes('@')) {
+    const userCookie =
+      request.cookies.get('sap_user_session')?.value ||
+      request.cookies.get('sap_google_user')?.value;
+    if (userCookie) {
+      try {
+        let decoded = userCookie;
+        try {
+          decoded = decodeURIComponent(userCookie);
+        } catch {}
+        const parsed = JSON.parse(decoded);
+        if (parsed.email && parsed.email.includes('@')) {
+          rawEmail = parsed.email;
+        }
+      } catch {}
+    }
+  }
 
   if (!rawEmail || !rawEmail.includes('@')) {
     return NextResponse.json({ success: false, error: 'Valid email parameter required' }, { status: 400 });
@@ -65,7 +83,25 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email: rawEmail, payload, user } = body;
+    let { email: rawEmail, payload, user } = body;
+
+    if (!rawEmail || !rawEmail.includes('@')) {
+      const userCookie =
+        request.cookies.get('sap_user_session')?.value ||
+        request.cookies.get('sap_google_user')?.value;
+      if (userCookie) {
+        try {
+          let decoded = userCookie;
+          try {
+            decoded = decodeURIComponent(userCookie);
+          } catch {}
+          const parsed = JSON.parse(decoded);
+          if (parsed.email && parsed.email.includes('@')) {
+            rawEmail = parsed.email;
+          }
+        } catch {}
+      }
+    }
 
     if (!rawEmail || !rawEmail.includes('@')) {
       return NextResponse.json({ success: false, error: 'Valid email required' }, { status: 400 });

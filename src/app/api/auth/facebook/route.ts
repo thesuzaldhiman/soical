@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
   let metaAppName = (searchParams.get('app_name') || '').trim();
 
   // If user is logged in, read settings from MySQL to resolve Meta App
-  const userCookie = request.cookies.get('sap_google_user')?.value;
+  const userCookie =
+    request.cookies.get('sap_user_session')?.value ||
+    request.cookies.get('sap_google_user')?.value;
   if (userCookie) {
     try {
       let decoded = userCookie;

@@ -730,7 +730,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               setAccounts(cleanedAccs);
             }
             if (Array.isArray(db.categories)) setCategories(db.categories);
-            if (Array.isArray(db.posts)) setPosts(db.posts);
+            if (Array.isArray(db.posts)) {
+              setPosts((prev) => {
+                if (db.posts.length === 0 && prev.length > 0) {
+                  // User has local posts that MySQL hasn't recorded yet; keep and push to cloud
+                  syncToCloud(cleanEmail, { ...authoritativePayload, posts: prev }, user);
+                  return prev;
+                }
+                const cloudIds = new Set(db.posts.map((p: any) => p.id));
+                const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
+                const localRecent = prev.filter((p) => {
+                  if (cloudIds.has(p.id)) return false;
+                  return new Date(p.createdAt || 0).getTime() > threeMinutesAgo;
+                });
+                return [...localRecent, ...db.posts];
+              });
+            }
             if (Array.isArray(db.sigTemplates)) setSigTemplates(db.sigTemplates);
             if (db.pageAnalytics && typeof db.pageAnalytics === 'object') setPageAnalytics(db.pageAnalytics);
             if (Array.isArray(db.postPerformances)) setPostPerformances(db.postPerformances);
@@ -833,9 +848,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 1. Check for Google Session cookie
+      // 1. Check for Session cookie (sap_user_session or sap_google_user)
       if (typeof document !== 'undefined') {
-        const match = document.cookie.match(new RegExp('(^| )sap_google_user=([^;]+)'));
+        const match =
+          document.cookie.match(new RegExp('(^| )sap_user_session=([^;]+)')) ||
+          document.cookie.match(new RegExp('(^| )sap_google_user=([^;]+)'));
         if (match) {
           try {
             let cookieStr = match[2];
@@ -845,12 +862,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const parsed = JSON.parse(cookieStr);
             if (parsed && parsed.email) {
               loggedInUser = {
-                id: parsed.id || `google_${Date.now()}`,
+                id: parsed.id || `user_${Date.now()}`,
                 name: parsed.name || parsed.email.split('@')[0],
                 email: parsed.email.toLowerCase().trim(),
                 avatar: parsed.avatar || '/icons/social/google.png',
-                role: 'owner',
-                provider: 'google',
+                role: parsed.role || 'owner',
+                provider: parsed.provider || 'email',
+                approvalStatus: parsed.approvalStatus || 'approved',
+                subscription: parsed.subscription,
               };
             }
           } catch (e) {
@@ -1303,29 +1322,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setPosts((prev) => [newPost, ...prev]);
 
-    const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+    const cleanEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
     const storageKey = getStorageKeyForEmail(cleanEmail);
+    let fullPayload: any = null;
     try {
       const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed.posts)) {
-          parsed.posts = [newPost, ...parsed.posts];
-          localStorage.setItem(storageKey, JSON.stringify(parsed));
-        }
-      }
+      fullPayload = stored ? JSON.parse(stored) : {};
+      const existingPosts = Array.isArray(fullPayload.posts) ? fullPayload.posts : [];
+      fullPayload.posts = [newPost, ...existingPosts.filter((p: any) => p.id !== newPost.id)];
+      localStorage.setItem(storageKey, JSON.stringify(fullPayload));
     } catch {}
 
+    // 1. Immediately persist single post to MySQL with keepalive so browser navigation doesn't abort it
     try {
       fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
         body: JSON.stringify({
           email: cleanEmail,
           post: newPost,
         }),
-      }).catch(() => {});
+      }).catch((err) => console.warn('[createPost] /api/posts save error:', err));
     } catch {}
+
+    // 2. Immediately sync full payload to cloud without waiting for debounced useEffect (which gets cancelled on navigation)
+    if (fullPayload) {
+      try {
+        syncToCloud(cleanEmail, fullPayload, user);
+      } catch {}
+    }
 
     if (isNow) {
       setWorkspace((prev) => ({
@@ -1366,23 +1396,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshPosts = useCallback(async () => {
-    const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+    const cleanEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
     if (!cleanEmail || typeof window === 'undefined') return;
 
     try {
       const res = await fetch(`/api/posts?email=${encodeURIComponent(cleanEmail)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.posts)) {
-        setPosts(data.posts);
-        const storageKey = getStorageKeyForEmail(cleanEmail);
-        try {
-          const stored = localStorage.getItem(storageKey);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            parsed.posts = data.posts;
-            localStorage.setItem(storageKey, JSON.stringify(parsed));
+        setPosts((prevPosts) => {
+          // Merge recent local posts (< 3 mins old) that cloud hasn't caught up with yet
+          const cloudIds = new Set(data.posts.map((p: Post) => p.id));
+          const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
+          const pendingLocal = prevPosts.filter((p) => {
+            if (cloudIds.has(p.id)) return false;
+            const createdAtTime = new Date(p.createdAt || 0).getTime();
+            return createdAtTime > threeMinutesAgo;
+          });
+          const merged = [...pendingLocal, ...data.posts];
+
+          // If there were pending local posts missing from cloud, heal MySQL immediately
+          if (pendingLocal.length > 0) {
+            fetch('/api/posts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              keepalive: true,
+              body: JSON.stringify({ email: cleanEmail, posts: pendingLocal }),
+            }).catch(() => {});
           }
-        } catch {}
+
+          const storageKey = getStorageKeyForEmail(cleanEmail);
+          try {
+            const stored = localStorage.getItem(storageKey);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              parsed.posts = merged;
+              localStorage.setItem(storageKey, JSON.stringify(parsed));
+            }
+          } catch {}
+
+          return merged;
+        });
       }
     } catch (e) {
       console.warn('[refreshPosts] Error refreshing posts from cloud:', e);
@@ -1625,6 +1682,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         })
       );
+
+      // Persist scheduled post status update immediately to MySQL
+      const cleanUserEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+      try {
+        fetch('/api/posts', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({
+            email: cleanUserEmail,
+            postId: postToDispatch.id,
+            updates: {
+              status: isSuccess ? 'published' : 'failed',
+              publishedAt: isSuccess ? nowIso : undefined,
+              results: actualResults.length > 0 ? actualResults : undefined,
+            },
+          }),
+        }).catch(() => {});
+      } catch {}
 
       if (isSuccess) {
         // Register performance metrics so analytics immediately reflect the live post
@@ -2125,7 +2205,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUser(googleUser);
     setIsAuthenticated(true);
     if (typeof document !== 'undefined') {
-      document.cookie = `sap_google_user=${encodeURIComponent(JSON.stringify(googleUser))}; path=/; max-age=2592000; SameSite=Lax`;
+      const sessionPayload = encodeURIComponent(JSON.stringify(googleUser));
+      document.cookie = `sap_user_session=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
+      document.cookie = `sap_google_user=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
     }
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('sap_current_user_email', cleanEmail);
@@ -2198,7 +2280,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(true);
 
       if (typeof document !== 'undefined') {
-        document.cookie = 'sap_google_user=; path=/; max-age=0; SameSite=Lax';
+        const sessionPayload = encodeURIComponent(JSON.stringify(dbUser));
+        document.cookie = `sap_user_session=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
+        document.cookie = `sap_google_user=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
       }
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('sap_current_user_email', cleanEmail);
@@ -2600,6 +2684,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!target) return;
     setUser(target);
     setIsAuthenticated(true);
+    if (typeof document !== 'undefined') {
+      const sessionPayload = encodeURIComponent(JSON.stringify(target));
+      document.cookie = `sap_user_session=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
+      document.cookie = `sap_google_user=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
+    }
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('sap_current_user_email', target.email);
       localStorage.setItem(
@@ -2612,6 +2701,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     if (typeof document !== 'undefined') {
+      document.cookie = 'sap_user_session=; path=/; max-age=0; SameSite=Lax';
       document.cookie = 'sap_google_user=; path=/; max-age=0; SameSite=Lax';
     }
     if (typeof localStorage !== 'undefined') {
