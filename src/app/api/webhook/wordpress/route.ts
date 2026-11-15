@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dispatchToTargets, PublishTarget } from '@/lib/services/publisher';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
-import { DEMO_CATEGORIES, DEMO_PAGES } from '@/lib/state/mock-data';
-import { AutomationFeed, PageCategory, Post, SocialPage } from '@/types';
+import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES } from '@/lib/state/mock-data';
+import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate } from '@/types';
+import { generateServerCardImage } from '@/lib/services/server-image-generator';
 import fs from 'fs';
 import path from 'path';
 
@@ -75,6 +76,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
   categories: PageCategory[];
   automations: AutomationFeed[];
   posts: Post[];
+  sigTemplates: SigTemplate[];
 }> {
   const fallbackEmail = (explicitEmail || 'suzaldhiman@gmail.com').toLowerCase().trim();
   const pool = getDbPool();
@@ -85,6 +87,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
       categories: DEMO_CATEGORIES,
       automations: [] as AutomationFeed[],
       posts: getLocalPosts(),
+      sigTemplates: INITIAL_SIG_TEMPLATES,
     };
   }
 
@@ -95,7 +98,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
     // 1. If explicit email passed, use it directly
     if (explicitEmail) {
       const [rows] = await pool.query<any[]>(
-        'SELECT email, pages, categories, posts, automations FROM app_user_data WHERE email = ? LIMIT 1',
+        'SELECT email, pages, categories, posts, automations, sig_templates FROM app_user_data WHERE email = ? LIMIT 1',
         [fallbackEmail]
       );
       if (rows && rows.length > 0) {
@@ -105,13 +108,14 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
           categories: parseJsonSafe(rows[0].categories, DEMO_CATEGORIES),
           automations: parseJsonSafe(rows[0].automations, []),
           posts: parseJsonSafe(rows[0].posts, getLocalPosts()),
+          sigTemplates: parseJsonSafe(rows[0].sig_templates, INITIAL_SIG_TEMPLATES),
         };
       }
     }
 
     // 2. Query all tenant users to find the owner of this site
     const [allUsers] = await pool.query<any[]>(
-      'SELECT email, pages, categories, posts, automations, accounts FROM app_user_data'
+      'SELECT email, pages, categories, posts, automations, accounts, sig_templates FROM app_user_data'
     );
 
     if (allUsers && allUsers.length > 0) {
@@ -129,6 +133,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
+              sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
             };
           }
 
@@ -144,6 +149,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
+              sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
             };
           }
 
@@ -159,6 +165,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
+              sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
             };
           }
         }
@@ -172,6 +179,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
         categories: parseJsonSafe(first.categories, DEMO_CATEGORIES),
         automations: parseJsonSafe(first.automations, []),
         posts: parseJsonSafe(first.posts, getLocalPosts()),
+        sigTemplates: parseJsonSafe(first.sig_templates, INITIAL_SIG_TEMPLATES),
       };
     }
   } catch (err) {
@@ -184,6 +192,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
     categories: DEMO_CATEGORIES,
     automations: [] as AutomationFeed[],
     posts: getLocalPosts(),
+    sigTemplates: INITIAL_SIG_TEMPLATES,
   };
 }
 
@@ -255,6 +264,7 @@ export async function POST(request: NextRequest) {
     const allPages: SocialPage[] = userState.pages || [];
     const allCategories: PageCategory[] = userState.categories || [];
     const allAutomations: AutomationFeed[] = (userState as any).automations || [];
+    const allSigTemplates: SigTemplate[] = userState.sigTemplates || INITIAL_SIG_TEMPLATES;
 
     const postCategories = categories.map((c: string) => c.toLowerCase().trim());
 
@@ -264,6 +274,8 @@ export async function POST(request: NextRequest) {
     let enableMultiTitles = true;
     let addFirstComment = true;
     let matchedRuleName = '';
+    let isDraftMode = false;
+    let selectedSigTemplateId: string | undefined = undefined;
 
     // A. Explicit targets passed directly in payload
     if (Array.isArray(payload.targets) && payload.targets.length > 0) {
@@ -305,6 +317,8 @@ export async function POST(request: NextRequest) {
         dispatchFormat = matchingRule.format || (matchingRule.autoGenerateImage ? 'ai_image' : 'featured_image');
         enableMultiTitles = matchingRule.enableMultiTitle !== false;
         addFirstComment = matchingRule.linkInComment ?? true;
+        isDraftMode = matchingRule.postStatus === 'draft';
+        selectedSigTemplateId = matchingRule.sigTemplateId;
 
         if (Array.isArray(matchingRule.targetPageIds) && matchingRule.targetPageIds.length > 0) {
           const rulePageIds = new Set(matchingRule.targetPageIds);
@@ -341,29 +355,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Resolve template to use for AI Card Image generation
+    const templateToUse =
+      allSigTemplates.find((t) => t.id === selectedSigTemplateId) ||
+      allSigTemplates.find((t) => t.isDefault) ||
+      allSigTemplates[0] ||
+      INITIAL_SIG_TEMPLATES[0];
+
     // 3. Prepare Multi-Title Mapping
     // [Main Title (Page 1), Extra Title 1 (Page 2), Extra Title 2 (Page 3), Extra Title 3 (Page 4)]
     const allTitles = enableMultiTitles ? [mainTitle, ...socialTitles] : [mainTitle];
     const dispatchResults: any[] = [];
     const commentText = addFirstComment && permalink ? `👉 पूरी खबर यहाँ पढ़ें: ${permalink}` : '';
+    let firstGeneratedCardUrl: string | undefined = undefined;
 
     // Loop through each target page and dispatch according to selected format
     for (let i = 0; i < targetPages.length; i++) {
       const page = targetPages[i];
       const assignedTitle = enableMultiTitles ? allTitles[i] || mainTitle : mainTitle;
       const message = `${assignedTitle}\n\n${excerpt}`.trim();
-
-      const targetItem: PublishTarget = {
-        id: page.id,
-        platform: page.platform,
-        name: page.name,
-        pageId: page.pageId,
-        accessToken: page.accessToken,
-        botToken: page.botToken,
-        chatId: page.chatId,
-        siteUrl: page.siteUrl,
-        category: page.category,
-      };
 
       let postTypeToSend: 'image' | 'link' | 'text' = 'image';
       let mediaToSend: string = '';
@@ -380,11 +390,60 @@ export async function POST(request: NextRequest) {
         mediaToSend = imageUrl;
         linkToSend = permalink;
       } else {
-        // ai_image (canvas/banner with title text)
+        // dispatchFormat === 'ai_image' (Canvas branded card with bold headline overlay)
         postTypeToSend = 'image';
-        mediaToSend = imageUrl;
         linkToSend = permalink;
+
+        try {
+          const cardBase64 = await generateServerCardImage({
+            headline: assignedTitle,
+            featuredImageUrl: imageUrl || undefined,
+            template: templateToUse,
+            category: categories[0] || 'News',
+            siteName: payload.site_name || incomingSiteUrl || '',
+          });
+          mediaToSend = cardBase64;
+          if (!firstGeneratedCardUrl) {
+            firstGeneratedCardUrl = cardBase64;
+          }
+        } catch (cardErr) {
+          console.error('[WP Webhook] Server Card generation error:', cardErr);
+          mediaToSend = imageUrl;
+        }
       }
+
+      if (!firstGeneratedCardUrl && mediaToSend) {
+        firstGeneratedCardUrl = mediaToSend;
+      }
+
+      // If Draft Mode is enabled for this automation rule:
+      // Do NOT dispatch live to Facebook! Queue as draft in results.
+      if (isDraftMode) {
+        dispatchResults.push({
+          pageId: page.id,
+          pageName: page.name,
+          platform: page.platform,
+          titleUsed: assignedTitle,
+          titleIndex: i + 1,
+          isUniqueVariation: i < allTitles.length,
+          status: 'draft',
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      // Otherwise, dispatch live to Facebook
+      const targetItem: PublishTarget = {
+        id: page.id,
+        platform: page.platform,
+        name: page.name,
+        pageId: page.pageId,
+        accessToken: page.accessToken,
+        botToken: page.botToken,
+        chatId: page.chatId,
+        siteUrl: page.siteUrl,
+        category: page.category,
+      };
 
       try {
         const singleResult = await dispatchToTargets({
@@ -424,21 +483,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Save to Posts History
+    // 4. Save to Posts History (Post Library)
+    const finalMedia = firstGeneratedCardUrl || (imageUrl || undefined);
+    const postStatusValue: 'published' | 'draft' | 'failed' = isDraftMode
+      ? 'draft'
+      : dispatchResults.some((r) => r.status === 'success')
+      ? 'published'
+      : 'failed';
+
     const newPostRecord: Post = {
       id: `post_wp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       workspaceId: 'ws_default',
       postType: dispatchFormat === 'link_card' ? 'link' : dispatchFormat === 'text_only' ? 'text' : 'image',
       title: mainTitle,
       message: `${mainTitle}\n\n${excerpt}`.trim(),
-      mediaUrl: (dispatchFormat === 'ai_image' || dispatchFormat === 'featured_image') ? imageUrl || undefined : undefined,
-      thumbnailUrl: imageUrl || undefined,
+      mediaUrl: finalMedia,
+      thumbnailUrl: imageUrl || finalMedia || undefined,
       linkUrl: permalink || undefined,
       commentText: commentText || undefined,
       pageIds: targetPages.map((p) => p.id),
-      status: dispatchResults.some((r) => r.status === 'success') ? 'published' : 'failed',
+      status: postStatusValue,
       scheduledAt: new Date().toISOString(),
-      publishedAt: new Date().toISOString(),
+      publishedAt: isDraftMode ? undefined : new Date().toISOString(),
       results: dispatchResults.map((r) => ({
         pageId: r.pageId,
         platform: (r.platform || 'facebook') as any,
@@ -457,10 +523,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      dispatched: true,
+      dispatched: !isDraftMode,
+      isDraft: isDraftMode,
       ruleMatched: matchedRuleName,
       dispatchFormat,
-      message: `Ingested & dispatched to ${targetPages.length} pages (${matchedRuleName}) with ${allTitles.length} title variations.`,
+      message: isDraftMode
+        ? `Ingested and saved as Draft in Post Library for review/schedule with AI Card image (${matchedRuleName}).`
+        : `Ingested & dispatched to ${targetPages.length} pages (${matchedRuleName}) with ${allTitles.length} title variations.`,
       mainTitle,
       totalVariations: allTitles.length,
       assignedPagesCount: targetPages.length,

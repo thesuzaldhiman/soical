@@ -978,6 +978,16 @@ function AutomationsContent() {
                                 💬 1st Comment Link
                               </span>
                             )}
+
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                                auto.postStatus === 'draft'
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              }`}
+                            >
+                              {auto.postStatus === 'draft' ? '📝 Draft Mode' : '⚡ Auto-Publish'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -1506,17 +1516,38 @@ function AutomationsContent() {
                       </label>
                     </div>
 
-                    <div className="pt-2 border-t border-[#EEF1F6]">
-                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        Automation Rule Name
-                      </label>
-                      <input
-                        type="text"
-                        value={feedName}
-                        onChange={(e) => setFeedName(e.target.value)}
-                        placeholder={`${activeWpAccount?.name || 'WordPress'} [${selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory}] ➔ Facebook`}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-400"
-                      />
+                    <div className="pt-2 border-t border-[#EEF1F6] grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Publishing Action (Mode)
+                        </label>
+                        <select
+                          value={postStatus}
+                          onChange={(e) => setPostStatus(e.target.value as any)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-400"
+                        >
+                          <option value="published">⚡ Auto-Publish Live (Direct to FB)</option>
+                          <option value="draft">📝 Save as Draft (Approval Queue in Library)</option>
+                        </select>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          {postStatus === 'published'
+                            ? 'WordPress se naya post aate hi turant Facebook pages par live publish ho jayega.'
+                            : 'AI template card image generate hogi aur Post Library me draft banke review/schedule ke liye aayegi.'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Automation Rule Name
+                        </label>
+                        <input
+                          type="text"
+                          value={feedName}
+                          onChange={(e) => setFeedName(e.target.value)}
+                          placeholder={`${activeWpAccount?.name || 'WordPress'} [${selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory}] ➔ Facebook`}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-400"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

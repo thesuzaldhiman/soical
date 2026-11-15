@@ -1,0 +1,273 @@
+import React from 'react';
+import { ImageResponse } from 'next/og';
+import { SigTemplate } from '@/types';
+
+export interface GenerateCardOptions {
+  headline: string;
+  featuredImageUrl?: string;
+  template?: SigTemplate | null;
+  category?: string;
+  siteName?: string;
+}
+
+/**
+ * Pre-fetch image URL and convert to Base64 data URL with a strict timeout.
+ * Prevents ImageResponse/Satori from stalling or crashing on slow/unreachable external CDNs.
+ */
+async function fetchImageAsBase64(url?: string, timeoutMs: number = 3500): Promise<string | null> {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    if (trimmed.startsWith('data:image/')) return trimmed;
+    return null;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    const res = await fetch(trimmed, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SocialAutoPosterCardBot/2.0)',
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+
+    const arrayBuffer = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    return `data:${contentType};base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generate a high-resolution composite branded news card on the server using Next.js ImageResponse.
+ * Overlays the post headline, category badge, and template frame on top of the featured image.
+ * Returns a Base64 data URL: "data:image/png;base64,..."
+ */
+export async function generateServerCardImage(options: GenerateCardOptions): Promise<string> {
+  const { headline, featuredImageUrl, template, category, siteName } = options;
+
+  const width = template?.canvasWidth || 1200;
+  const height = template?.canvasHeight || 630;
+
+  const fBox = template?.featuredImageBox || {
+    x: 0,
+    y: 0,
+    width,
+    height: Math.round(height * 0.68),
+    borderRadius: 0,
+  };
+
+  const tBox = template?.titleBox || {
+    x: 40,
+    y: Math.round(height * 0.68),
+    width: width - 80,
+    height: Math.round(height * 0.28),
+    fontSize: 44,
+    lineHeight: 1.35,
+    textColor: '#FFFFFF',
+    highlightColor: '#FBBF24',
+    fontFamily: 'Noto Sans Devanagari',
+    alignment: 'left',
+  };
+
+  // Pre-fetch both featured image and template PNG frame in parallel with timeout
+  const [photoBase64, templateBase64] = await Promise.all([
+    fetchImageAsBase64(featuredImageUrl, 3500),
+    template?.templateImageUrl ? fetchImageAsBase64(template.templateImageUrl, 3500) : Promise.resolve(null),
+  ]);
+
+  const children: React.ReactElement[] = [];
+
+  // 1. Base dark background
+  children.push(
+    React.createElement('div', {
+      key: 'base_dark_bg',
+      style: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#0b0f19',
+        display: 'flex',
+      },
+    })
+  );
+
+  // 2. Featured Photo Layer
+  if (photoBase64) {
+    children.push(
+      React.createElement('img', {
+        key: 'featured_photo',
+        src: photoBase64,
+        style: {
+          position: 'absolute',
+          top: fBox.y,
+          left: fBox.x,
+          width: fBox.width,
+          height: fBox.height,
+          objectFit: 'cover',
+          borderRadius: fBox.borderRadius || 0,
+        },
+      })
+    );
+  } else {
+    // Elegant fallback news card backdrop
+    children.push(
+      React.createElement(
+        'div',
+        {
+          key: 'fallback_photo_box',
+          style: {
+            position: 'absolute',
+            top: fBox.y,
+            left: fBox.x,
+            width: fBox.width,
+            height: fBox.height,
+            backgroundImage: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: fBox.borderRadius || 0,
+          },
+        },
+        React.createElement(
+          'span',
+          {
+            style: {
+              color: '#475569',
+              fontSize: 32,
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              letterSpacing: 2,
+            },
+          },
+          siteName || 'Featured News'
+        )
+      )
+    );
+  }
+
+  // 3. Optional PNG Frame Template Overlay (if user uploaded a PNG template frame)
+  if (templateBase64) {
+    children.push(
+      React.createElement('img', {
+        key: 'template_frame_overlay',
+        src: templateBase64,
+        style: {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+        },
+      })
+    );
+  }
+
+  // 4. Gradient shade at the bottom to guarantee high text readability
+  children.push(
+    React.createElement('div', {
+      key: 'text_contrast_scrim',
+      style: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        width: '100%',
+        height: Math.max(260, Math.round(height * 0.48)),
+        backgroundImage:
+          'linear-gradient(to top, rgba(11,15,25,1) 0%, rgba(11,15,25,0.92) 55%, transparent 100%)',
+        display: 'flex',
+      },
+    })
+  );
+
+  // 5. Category / Site Badge (Top Left)
+  const displayCategory = category || siteName;
+  if (displayCategory) {
+    children.push(
+      React.createElement(
+        'div',
+        {
+          key: 'category_badge',
+          style: {
+            position: 'absolute',
+            top: 24,
+            left: 32,
+            backgroundColor: '#dc2626',
+            color: '#ffffff',
+            padding: '6px 18px',
+            borderRadius: 8,
+            fontSize: 20,
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          },
+        },
+        displayCategory
+      )
+    );
+  }
+
+  // 6. Title Box with Headline
+  children.push(
+    React.createElement(
+      'div',
+      {
+        key: 'title_container',
+        style: {
+          position: 'absolute',
+          top: tBox.y,
+          left: tBox.x,
+          width: tBox.width,
+          height: tBox.height,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          padding: '0 12px',
+        },
+      },
+      React.createElement(
+        'div',
+        {
+          style: {
+            fontSize: tBox.fontSize || 42,
+            lineHeight: tBox.lineHeight || 1.35,
+            color: tBox.textColor || '#ffffff',
+            fontWeight: 'bold',
+            textAlign: (tBox.alignment as any) || 'left',
+            textShadow: '0 4px 16px rgba(0,0,0,0.95)',
+            display: 'flex',
+          },
+        },
+        headline
+      )
+    )
+  );
+
+  const container = React.createElement(
+    'div',
+    {
+      style: {
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        overflow: 'hidden',
+      },
+    },
+    children
+  );
+
+  const res = new ImageResponse(container, { width, height });
+  const buf = await res.arrayBuffer();
+  return `data:image/png;base64,${Buffer.from(buf).toString('base64')}`;
+}

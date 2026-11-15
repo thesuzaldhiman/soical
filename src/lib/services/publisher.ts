@@ -289,7 +289,10 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             // Post Feed update to Page (Text or Link)
             const formData = new URLSearchParams();
             formData.append('message', message);
-            if (linkUrl) formData.append('link', linkUrl);
+            // Only attach 'link' parameter if postType is explicitly 'link' (link_card preview)
+            if (linkUrl && postType === 'link') {
+              formData.append('link', linkUrl);
+            }
             formData.append('access_token', accessToken);
 
             const fbRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
