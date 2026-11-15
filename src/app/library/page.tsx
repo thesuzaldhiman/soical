@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
@@ -916,6 +916,7 @@ function LibraryContent() {
       {/* ========================================================================= */}
       {selectedPost && (
         <PostInspectorDrawer
+          key={selectedPost.id}
           post={selectedPost}
           pages={pages}
           postPerformances={postPerformances}
@@ -1124,13 +1125,31 @@ function PostInspectorDrawer({
   fetchPostComments,
   deleteComment,
 }: PostInspectorDrawerProps) {
+  const availablePages = useMemo(() => {
+    const postPages = pages.filter(
+      (p) => (post.pageIds || []).includes(p.id) || (post.pageIds || []).includes(p.pageId)
+    );
+    if (postPages.length > 0) return postPages;
+    const fbPages = pages.filter(
+      (p) => p.platform === 'facebook' || p.platform?.includes('fb') || p.accessToken
+    );
+    if (fbPages.length > 0) return fbPages;
+    return pages;
+  }, [pages, post.pageIds]);
+
   const [newCommentText, setNewCommentText] = useState('');
-  const [selectedCommentPageId, setSelectedCommentPageId] = useState<string>(post.pageIds[0] || '');
+  const [selectedCommentPageId, setSelectedCommentPageId] = useState<string>(
+    availablePages[0]?.id || post.pageIds?.[0] || ''
+  );
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [commentSuccess, setCommentSuccess] = useState<string | null>(null);
+
+  const hasFetchedRef = useRef<string | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -1141,19 +1160,44 @@ function PostInspectorDrawer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Load comments on mount
-  useEffect(() => {
-    const targetFbPage = pages.find(
-      (p) => post.pageIds.includes(p.id) && (p.platform === 'facebook' || p.accessToken)
+  // Load comments safely (only once per post opening)
+  const refreshComments = useCallback(async () => {
+    const targetFbPage =
+      pages.find((p) => (post.pageIds || []).includes(p.id) || (post.pageIds || []).includes(p.pageId)) ||
+      pages.find((p) => (p.platform === 'facebook' || p.platform?.includes('fb')) && p.accessToken) ||
+      pages[0];
+
+    const matchResult = post.results?.find(
+      (r) =>
+        (r.pageId === targetFbPage?.id || r.pageId === targetFbPage?.pageId || r.platform === 'facebook') &&
+        r.externalPostId &&
+        !r.externalPostId.startsWith('pst_') &&
+        !r.externalPostId.startsWith('sim_')
     );
-    if (targetFbPage) {
-      const matchResult = post.results?.find((r) => r.pageId === targetFbPage.id && r.externalPostId);
-      const extPostId = matchResult?.externalPostId || post.externalPostId;
-      setIsLoadingComments(true);
-      Promise.resolve(fetchPostComments(post.id, targetFbPage.id, targetFbPage.accessToken, extPostId))
-        .finally(() => setIsLoadingComments(false));
+    const extPostId =
+      matchResult?.externalPostId ||
+      (post.externalPostId && !post.externalPostId.startsWith('pst_') ? post.externalPostId : undefined);
+
+    setIsLoadingComments(true);
+    try {
+      await fetchPostComments(
+        post.id,
+        targetFbPage?.id || post.pageIds?.[0],
+        targetFbPage?.accessToken,
+        extPostId
+      );
+    } catch (err) {
+      console.warn('[Post Inspector] Error loading live comments:', err);
+    } finally {
+      setIsLoadingComments(false);
     }
   }, [post.id, post.pageIds, post.results, post.externalPostId, pages, fetchPostComments]);
+
+  useEffect(() => {
+    if (hasFetchedRef.current === post.id) return;
+    hasFetchedRef.current = post.id;
+    refreshComments();
+  }, [post.id, refreshComments]);
 
   // Comments for this post
   const commentsForThisPost = useMemo(() => {
@@ -1173,24 +1217,41 @@ function PostInspectorDrawer({
     e.preventDefault();
     if (!newCommentText.trim() || isSubmittingComment) return;
 
+    setCommentError(null);
+    setCommentSuccess(null);
     setIsSubmittingComment(true);
+
     try {
-      const page = pages.find((p) => p.id === selectedCommentPageId);
+      const page =
+        pages.find((p) => p.id === selectedCommentPageId || p.pageId === selectedCommentPageId) ||
+        availablePages[0] ||
+        pages[0];
+
       const matchResult = post.results?.find(
-        (r) => (r.pageId === selectedCommentPageId || r.pageId === page?.id || r.pageId === page?.pageId) && r.externalPostId
+        (r) =>
+          (r.pageId === selectedCommentPageId || r.pageId === page?.id || r.pageId === page?.pageId || r.platform === 'facebook') &&
+          r.externalPostId &&
+          !r.externalPostId.startsWith('pst_') &&
+          !r.externalPostId.startsWith('sim_')
       );
-      const targetExtPostId = matchResult?.externalPostId || post.externalPostId;
+      const targetExtPostId =
+        matchResult?.externalPostId ||
+        (post.externalPostId && !post.externalPostId.startsWith('pst_') ? post.externalPostId : undefined);
 
       await createPostComment(
         post.id,
         newCommentText.trim(),
-        selectedCommentPageId,
+        page?.id || selectedCommentPageId,
         page?.accessToken,
         targetExtPostId
       );
+
       setNewCommentText('');
-    } catch (err) {
+      setCommentSuccess('Comment posted successfully to Facebook!');
+      setTimeout(() => setCommentSuccess(null), 4000);
+    } catch (err: any) {
       console.error('Failed to post comment:', err);
+      setCommentError(err?.message || 'Failed to post comment to Facebook. Check page connection.');
     } finally {
       setIsSubmittingComment(false);
     }
@@ -1520,13 +1581,50 @@ function PostInspectorDrawer({
                 <MessageSquare className="w-3.5 h-3.5 text-pink-600" />
                 <span>Comments Management ({commentsForThisPost.length})</span>
               </h3>
-              {isLoadingComments && (
-                <span className="text-[11px] text-blue-600 font-bold flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Loading live comments...</span>
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {isLoadingComments ? (
+                  <span className="text-[11px] text-blue-600 font-bold flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Loading...</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={refreshComments}
+                    title="Refresh comments from Facebook"
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    <RotateCw className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Error or Success Feedback */}
+            {commentError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center justify-between animate-fade-in">
+                <span className="line-clamp-2">{commentError}</span>
+                <button
+                  type="button"
+                  onClick={() => setCommentError(null)}
+                  className="text-rose-500 hover:text-rose-800 text-xs font-bold cursor-pointer ml-2 shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {commentSuccess && (
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center justify-between animate-fade-in">
+                <span>{commentSuccess}</span>
+                <button
+                  type="button"
+                  onClick={() => setCommentSuccess(null)}
+                  className="text-emerald-500 hover:text-emerald-800 text-xs font-bold cursor-pointer ml-2 shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Comments List */}
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
@@ -1601,14 +1699,11 @@ function PostInspectorDrawer({
                   onChange={(e) => setSelectedCommentPageId(e.target.value)}
                   className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs bg-white text-slate-800 font-bold focus:outline-none"
                 >
-                  {post.pageIds.map((pid) => {
-                    const p = pages.find((pg) => pg.id === pid);
-                    return (
-                      <option key={pid} value={pid}>
-                        {p?.name || pid} ({p?.platform || 'Facebook'})
-                      </option>
-                    );
-                  })}
+                  {availablePages.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.platform || 'Facebook'})
+                    </option>
+                  ))}
                 </select>
               </div>
 

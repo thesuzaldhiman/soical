@@ -3400,6 +3400,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (p?.avatarUrl) resolvedAvatar = p.avatarUrl;
     }
 
+    if (!resolvedToken) {
+      const anyFbPage = pages.find((pg) => (pg.platform === 'facebook' || pg.platform?.includes('fb')) && pg.accessToken);
+      const anyFbAcc = accounts.find((a) => a.platform === 'facebook' && a.accessToken);
+      resolvedToken = anyFbPage?.accessToken || anyFbAcc?.accessToken;
+    }
+
     const tempComment: PostComment = {
       id: `cmt_${Date.now()}`,
       postId,
@@ -3438,9 +3444,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setPostComments((prev) =>
           prev.map((c) => (c.id === tempComment.id ? data.comment : c))
         );
+      } else {
+        setPostComments((prev) => prev.filter((c) => c.id !== tempComment.id));
+        throw new Error(data.error || 'Meta API rejected comment');
       }
     } catch (err) {
+      setPostComments((prev) => prev.filter((c) => c.id !== tempComment.id));
       console.warn('[Create Post Comment] Error:', err);
+      throw err;
     }
   };
 

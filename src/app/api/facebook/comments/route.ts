@@ -112,14 +112,20 @@ async function resolveFacebookPostId(
   try {
     const pool = getDbPool();
     if (pool) {
-      let query = 'SELECT posts FROM app_user_data';
-      const params: any[] = [];
+      let rows: any[] = [];
       if (explicitEmail) {
-        query += ' WHERE email = ? LIMIT 1';
-        params.push(explicitEmail.toLowerCase().trim());
+        const [filtered] = await pool.query<any[]>(
+          'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+          [explicitEmail.toLowerCase().trim()]
+        );
+        rows = filtered;
       }
 
-      const [rows] = await pool.query<any[]>(query, params);
+      if (!rows || rows.length === 0) {
+        const [all] = await pool.query<any[]>('SELECT posts FROM app_user_data');
+        rows = all;
+      }
+
       if (rows && rows.length > 0) {
         for (const r of rows) {
           const dbPosts = typeof r.posts === 'string' ? JSON.parse(r.posts) : r.posts || [];
@@ -158,6 +164,14 @@ async function resolveFacebookPostId(
                   !res.externalPostId.startsWith('pst_')
               );
               if (anyFb?.externalPostId) return anyFb.externalPostId;
+
+              // Check if postUrl has the Facebook ID (e.g. facebook.com/123456789_987654321)
+              for (const res of matchPost.results) {
+                if (res.postUrl) {
+                  const urlMatch = res.postUrl.match(/facebook\.com\/([0-9_]+)/);
+                  if (urlMatch && urlMatch[1]) return urlMatch[1];
+                }
+              }
             }
           }
         }
@@ -200,10 +214,12 @@ export async function GET(request: NextRequest) {
 
     const accessToken = await resolvePageAccessToken(request, pageId, passedToken, explicitEmail);
     if (!accessToken) {
-      return NextResponse.json(
-        { success: false, error: 'Facebook access token could not be found for this post/page.' },
-        { status: 401 }
-      );
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        comments: [],
+        note: 'Facebook access token could not be found for this post/page.'
+      });
     }
 
     // Query Meta Graph API for authentic comments on this post
@@ -217,11 +233,13 @@ export async function GET(request: NextRequest) {
     const data = await res.json();
 
     if (data.error) {
-      console.error('[Facebook Comments API] Meta error:', data.error);
-      return NextResponse.json(
-        { success: false, error: data.error.message || 'Failed to fetch Facebook comments' },
-        { status: 400 }
-      );
+      console.warn('[Facebook Comments API] Meta error fetching comments:', data.error);
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        comments: [],
+        metaNote: data.error.message || 'Failed to fetch Facebook comments'
+      });
     }
 
     const rawComments = Array.isArray(data.data) ? data.data : [];
