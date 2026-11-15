@@ -3,7 +3,7 @@
  * Plugin Name: Social Auto Poster Connector (Multi-Titles & Instant Dispatch)
  * Plugin URI: https://game.khabarmonkey.com
  * Description: Connects WordPress directly to Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line) and automatically pushes published posts to your Facebook Pages and social channels with unique titles and first-comment links.
- * Version: 1.3.0
+ * Version: 1.3.2
  * Author: Suzal Dhiman (Khabar Monkey Media)
  * Author URI: https://game.khabarmonkey.com
  * License: GPL-2.0+
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-define('SAP_CONNECTOR_VERSION', '1.3.0');
+define('SAP_CONNECTOR_VERSION', '1.3.2');
 define('SAP_CONNECTOR_DIR', plugin_dir_path(__FILE__));
 define('SAP_CONNECTOR_URL', plugin_dir_url(__FILE__));
 
@@ -725,7 +725,7 @@ class Social_Auto_Poster_Connector {
             }
         }
 
-        // Featured Image extraction with fallback to first image in article body
+        // Featured Image extraction with prioritized fallback to first genuine article image
         $featured_image = '';
         $thumbnail_id = get_post_thumbnail_id($post_id);
         if ($thumbnail_id) {
@@ -735,10 +735,25 @@ class Social_Auto_Poster_Connector {
             }
         }
 
-        // Fallback: Extract first image from post HTML content
+        // Fallback 1: Extract first genuine image from post HTML body (supports standard, lazyload, figure & Gutenberg)
         if (empty($featured_image) && !empty($post->post_content)) {
-            if (preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $post->post_content, $img_matches)) {
-                $featured_image = esc_url_raw($img_matches[1]);
+            // Find all <img> tags in content with src, data-src, data-lazy-src, data-original
+            if (preg_match_all('/<img[^>]+(?:src|data-src|data-lazy-src|data-original)=["\']([^"\']+)["\']/i', $post->post_content, $img_matches)) {
+                foreach ($img_matches[1] as $candidate) {
+                    $c_clean = trim($candidate);
+                    $c_lower = strtolower($c_clean);
+                    if (strpos($c_clean, 'http') === 0 &&
+                        strpos($c_lower, 'avatar') === false &&
+                        strpos($c_lower, 'gravatar') === false &&
+                        strpos($c_lower, 'editoricon') === false &&
+                        strpos($c_lower, 'emoji') === false &&
+                        strpos($c_lower, 'wp-includes') === false &&
+                        strpos($c_lower, 'favicon') === false &&
+                        substr($c_lower, -4) !== '.svg') {
+                        $featured_image = esc_url_raw($c_clean);
+                        break;
+                    }
+                }
             }
         }
 

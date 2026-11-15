@@ -287,7 +287,7 @@ export async function POST(request: NextRequest) {
         payload.content_html || payload.content || payload.body || payload.post_content || ''
       );
       if (rawContent) {
-        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+        const imgRegex = /<img[^>]+(?:src|data-src|data-lazy-src|data-original)=["']([^"']+)["'][^>]*>/gi;
         let match;
         while ((match = imgRegex.exec(rawContent)) !== null) {
           if (isValidArticleImage(match[1])) {

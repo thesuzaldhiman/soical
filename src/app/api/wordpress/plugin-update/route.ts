@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
     name: 'Social Auto Poster Connector',
     slug: 'social-auto-poster-connector',
     plugin: 'social-auto-poster-connector/social-auto-poster-connector.php',
-    version: '1.3.0',
-    new_version: '1.3.0',
+    version: '1.3.2',
+    new_version: '1.3.2',
     author: 'Suzal Dhiman (Khabar Monkey Media)',
     author_profile: 'https://game.khabarmonkey.com',
     homepage: 'https://game.khabarmonkey.com',
@@ -41,14 +41,14 @@ export async function GET(request: NextRequest) {
     last_updated: new Date().toISOString().split('T')[0],
     download_url: downloadUrl,
     package: downloadUrl,
-    upgrade_notice: 'Version 1.3.0: High-reliability blocking webhook dispatch with 15s timeout, live in-editor dispatch status banner, and auto-generated AI Card Image support.',
+    upgrade_notice: 'Version 1.3.2: Automated first article image extraction from body (including lazyload & Gutenberg figures) and full content sync.',
     sections: {
       description:
         'Connects WordPress directly to CreatorFlow Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line), automatic multi-page image variations, category sync, and first-comment article links for maximum reach.',
       installation:
         '1. Click "Update Now" in WordPress Plugins dashboard, or upload the zip archive.\n2. Configure Webhook URL & Secret Key in Settings > Social Auto Poster.\n3. Publish posts with multi-line social titles!',
       changelog:
-        '<h4>1.3.0</h4><ul><li>High-reliability blocking webhook dispatch with 15s timeout to prevent premature SSL handshake drops.</li><li>Live Social Auto Poster Status banner in WordPress Post Editor showing instant dispatch/skipped status.</li><li>1-Click Direct In-Dashboard Updates inside WordPress.</li><li>Multi-title line-by-line editor counter with live chip preview.</li></ul>',
+        '<h4>1.3.2</h4><ul><li>Automated first article image extraction directly in PHP from post content (lazy load & figure support).</li><li>Synchronous HTML body payload transfer to avoid PHP worker deadlocks.</li><li>High-reliability blocking webhook dispatch with 15s timeout.</li><li>Live Social Auto Poster Status banner in WordPress Post Editor showing instant dispatch/skipped status.</li></ul>',
     },
     banners: {
       high: `${origin}/icons/social/wordpress.png`,
