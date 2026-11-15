@@ -6,8 +6,20 @@ import { VideoMotionEffect } from '@/types';
 
 const execFileAsync = promisify(execFile);
 
-// Resolve ffmpeg-static path safely
+// Resolve ffmpeg path safely (supports bundled bin, ffmpeg-static, and system PATH)
 function getFfmpegPath(): string {
+  // 1. Check local project bin/ directory (e.g. scripts/ensure-ffmpeg.js download)
+  const localBin = path.join(process.cwd(), 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  if (fs.existsSync(localBin)) {
+    try {
+      fs.chmodSync(localBin, 0o755);
+    } catch {
+      // ignore chmod error
+    }
+    return localBin;
+  }
+
+  // 2. Check ffmpeg-static
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ffmpegStatic = require('ffmpeg-static');
@@ -15,8 +27,17 @@ function getFfmpegPath(): string {
       return ffmpegStatic;
     }
   } catch (e) {
-    console.warn('[server-video-generator] Could not require ffmpeg-static, fallback to system ffmpeg:', e);
+    console.warn('[server-video-generator] Could not require ffmpeg-static:', e);
   }
+
+  // 3. Common Unix/Linux locations
+  const commonLinuxPaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg'];
+  for (const p of commonLinuxPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
   return 'ffmpeg';
 }
 
