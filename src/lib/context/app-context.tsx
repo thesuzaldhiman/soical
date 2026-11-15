@@ -387,6 +387,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [isCloudLoaded, setIsCloudLoaded] = useState(false);
   const [isQueueProcessing, setIsQueueProcessing] = useState<boolean>(false);
 
   const postsRef = useRef<Post[]>(posts);
@@ -750,7 +751,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (db.pageAnalytics && typeof db.pageAnalytics === 'object') setPageAnalytics(db.pageAnalytics);
             if (Array.isArray(db.postPerformances)) setPostPerformances(db.postPerformances);
             if (Array.isArray(db.postComments)) setPostComments(db.postComments);
-            if (Array.isArray(db.automations)) setAutomations(db.automations);
+            if (Array.isArray(db.automations)) {
+              setAutomations((prev) => {
+                if (db.automations.length === 0 && prev.length > 0) {
+                  // User has local rules that DB hasn't recorded yet; keep and push to DB
+                  fetch('/api/automations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    keepalive: true,
+                    body: JSON.stringify({ email: cleanEmail, automations: prev }),
+                  }).catch(() => {});
+                  return prev;
+                }
+                const incomingMap = new Map(db.automations.map((a: any) => [a.id, a]));
+                return [
+                  ...db.automations,
+                  ...prev.filter((p) => p && p.id && !incomingMap.has(p.id)),
+                ];
+              });
+            }
 
             let finalSettingsObj: AppSettings | null = null;
             if (db.settings && typeof db.settings === 'object') {
@@ -822,9 +841,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }
             }
           }
+          setIsCloudLoaded(true);
         })
         .catch((err) => {
           console.warn('[Cloud MySQL Sync] Fetch error (running with local cache):', err);
+          setIsCloudLoaded(true);
         });
     }
   };
@@ -957,7 +978,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Save to user-isolated localStorage and sync to Hostinger MySQL Database
   useEffect(() => {
-    if (!isHydrated || !isAuthenticated || !user?.email) return;
+    if (!isHydrated || !isCloudLoaded || !isAuthenticated || !user?.email) return;
     const cleanEmail = user.email.toLowerCase().trim();
     const payload = {
       accounts,
@@ -1000,6 +1021,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     settings,
     workspace,
     isHydrated,
+    isCloudLoaded,
     isAuthenticated,
     user?.email,
   ]);
@@ -1276,15 +1298,75 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pageIds,
       tags,
     };
-    setCategories((prev) => [...prev, newCat]);
+    setCategories((prev) => {
+      const updated = [...prev, newCat];
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.categories = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      syncToCloud(cleanEmail, { categories: updated }, user);
+      return updated;
+    });
   };
 
   const updateCategory = (category: PageCategory) => {
-    setCategories((prev) => prev.map((c) => (c.id === category.id ? category : c)));
+    setCategories((prev) => {
+      const updated = prev.map((c) => (c.id === category.id ? category : c));
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.categories = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      syncToCloud(cleanEmail, { categories: updated }, user);
+      return updated;
+    });
   };
 
   const deleteCategory = (id: string) => {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
+    setCategories((prev) => {
+      const remaining = prev.filter((c) => c.id !== id);
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.categories = remaining;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      syncToCloud(cleanEmail, { categories: remaining }, user);
+      return remaining;
+    });
   };
 
   const createPost = (
@@ -1408,6 +1490,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
       if (data.success && Array.isArray(data.posts)) {
         setPosts((prevPosts) => {
+          // If cloud returned empty array but client already has posts in memory, PRESERVE client posts and heal MySQL!
+          if (data.posts.length === 0 && prevPosts.length > 0) {
+            fetch('/api/posts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              keepalive: true,
+              body: JSON.stringify({ email: cleanEmail, posts: prevPosts }),
+            }).catch(() => {});
+            return prevPosts;
+          }
+
           // Merge recent local posts (< 3 mins old) that cloud hasn't caught up with yet
           const cloudIds = new Set(data.posts.map((p: Post) => p.id));
           const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
@@ -2120,34 +2213,167 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: `auto_${Date.now()}`,
       itemsProcessed: 0,
     };
-    setAutomations((prev) => [...prev, newFeed]);
+    setAutomations((prev) => {
+      const updated = [...prev, newFeed];
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.automations = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      try {
+        fetch('/api/automations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ email: cleanEmail, automation: newFeed }),
+        }).catch((e) => console.warn('[createAutomation] API save error:', e));
+      } catch {}
+
+      return updated;
+    });
   };
 
   const updateAutomation = (id: string, partial: Partial<AutomationFeed>) => {
-    setAutomations((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, ...partial } : a))
-    );
+    setAutomations((prev) => {
+      const updated = prev.map((a) => (a.id === id ? { ...a, ...partial } : a));
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.automations = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      try {
+        fetch('/api/automations', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ email: cleanEmail, id, updates: partial }),
+        }).catch((e) => console.warn('[updateAutomation] API save error:', e));
+      } catch {}
+
+      return updated;
+    });
   };
 
   const toggleAutomation = (id: string) => {
-    setAutomations((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, isActive: !a.isActive } : a))
-    );
+    setAutomations((prev) => {
+      const target = prev.find((a) => a.id === id);
+      if (!target) return prev;
+      const nextActive = !target.isActive;
+      const updated = prev.map((a) => (a.id === id ? { ...a, isActive: nextActive } : a));
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.automations = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      try {
+        fetch('/api/automations', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ email: cleanEmail, id, updates: { isActive: nextActive } }),
+        }).catch((e) => console.warn('[toggleAutomation] API save error:', e));
+      } catch {}
+
+      return updated;
+    });
   };
 
   const deleteAutomation = (id: string) => {
-    setAutomations((prev) => prev.filter((a) => a.id !== id));
+    setAutomations((prev) => {
+      const remaining = prev.filter((a) => a.id !== id);
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.automations = remaining;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      try {
+        fetch('/api/automations', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ email: cleanEmail, id }),
+        }).catch((e) => console.warn('[deleteAutomation] API save error:', e));
+      } catch {}
+
+      return remaining;
+    });
   };
 
   const saveSigTemplate = (template: SigTemplate) => {
     setSigTemplates((prev) => {
       const idx = prev.findIndex((t) => t.id === template.id);
+      let updated: SigTemplate[];
       if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = template;
-        return copy;
+        updated = [...prev];
+        updated[idx] = template;
+      } else {
+        updated = [...prev, template];
       }
-      return [...prev, template];
+
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.sigTemplates = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      // Immediately sync to cloud so navigation doesn't lose template
+      syncToCloud(cleanEmail, { sigTemplates: updated }, user);
+
+      return updated;
     });
   };
 

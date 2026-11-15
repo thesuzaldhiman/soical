@@ -213,7 +213,8 @@ function LibraryContent() {
             const page = pages.find((p) => p.id === pid);
             return (page?.platform || '').toLowerCase() === platformFilter;
           }) ||
-          post.results.some((r) => (r.platform || '').toLowerCase() === platformFilter);
+          post.results.some((r) => (r.platform || '').toLowerCase() === platformFilter) ||
+          (platformFilter === 'facebook' && post.pageIds.some((pid) => String(pid).toLowerCase().includes('fb')));
 
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
