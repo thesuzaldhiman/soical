@@ -106,28 +106,45 @@ export async function POST(request: NextRequest) {
     if (payload) {
       const toJson = (val: any) => (val !== undefined ? JSON.stringify(val) : null);
 
-      // CRITICAL ANTI-CLOBBER: Merge existing MySQL posts with incoming client payload posts
-      // Ensures background posts created by WordPress webhook or cron are NEVER overwritten by client sync
+      // Save user posts safely without resurrecting user-deleted posts
       let finalPosts = Array.isArray(payload.posts) ? [...payload.posts] : [];
-      try {
-        const [existingRows] = await pool.query<any[]>(
-          'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
-          [email]
-        );
-        if (existingRows && existingRows.length > 0 && existingRows[0].posts) {
-          const rawDbPosts = existingRows[0].posts;
-          const dbPosts = (typeof rawDbPosts === 'string' ? JSON.parse(rawDbPosts) : rawDbPosts) || [];
-          if (Array.isArray(dbPosts) && dbPosts.length > 0) {
-            const incomingIds = new Set(finalPosts.map((p: any) => p?.id));
-            for (const dbPost of dbPosts) {
-              if (dbPost && dbPost.id && !incomingIds.has(dbPost.id)) {
-                finalPosts.push(dbPost);
+      if (!Array.isArray(payload.posts)) {
+        try {
+          const [existingRows] = await pool.query<any[]>(
+            'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+            [email]
+          );
+          if (existingRows && existingRows.length > 0 && existingRows[0].posts) {
+            const rawDbPosts = existingRows[0].posts;
+            finalPosts = (typeof rawDbPosts === 'string' ? JSON.parse(rawDbPosts) : rawDbPosts) || [];
+          }
+        } catch {}
+      } else {
+        // Only merge background webhook posts created in the last 2 minutes that client hasn't fetched yet
+        try {
+          const [existingRows] = await pool.query<any[]>(
+            'SELECT posts FROM app_user_data WHERE email = ? LIMIT 1',
+            [email]
+          );
+          if (existingRows && existingRows.length > 0 && existingRows[0].posts) {
+            const rawDbPosts = existingRows[0].posts;
+            const dbPosts = (typeof rawDbPosts === 'string' ? JSON.parse(rawDbPosts) : rawDbPosts) || [];
+            if (Array.isArray(dbPosts) && dbPosts.length > 0) {
+              const incomingIds = new Set(finalPosts.map((p: any) => p?.id));
+              const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+              for (const dbPost of dbPosts) {
+                if (dbPost && dbPost.id && !incomingIds.has(dbPost.id)) {
+                  const createdAt = new Date(dbPost.createdAt || 0).getTime();
+                  if (createdAt > twoMinutesAgo && String(dbPost.id).startsWith('post_wp_')) {
+                    finalPosts.push(dbPost);
+                  }
+                }
               }
             }
           }
+        } catch (mergeErr) {
+          console.warn('[MySQL Sync] Post merge note:', mergeErr);
         }
-      } catch (mergeErr) {
-        console.warn('[MySQL Sync] Post merge note:', mergeErr);
       }
 
       // Sort by newest first

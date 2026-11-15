@@ -8,6 +8,7 @@ import {
   SocialPage,
   PageCategory,
   Post,
+  PostStatus,
   PostResult,
   Platform,
   SigTemplate,
@@ -1302,6 +1303,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setPosts((prev) => [newPost, ...prev]);
 
+    const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+    const storageKey = getStorageKeyForEmail(cleanEmail);
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed.posts)) {
+          parsed.posts = [newPost, ...parsed.posts];
+          localStorage.setItem(storageKey, JSON.stringify(parsed));
+        }
+      }
+    } catch {}
+
+    try {
+      fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          post: newPost,
+        }),
+      }).catch(() => {});
+    } catch {}
+
     if (isNow) {
       setWorkspace((prev) => ({
         ...prev,
@@ -1341,36 +1366,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshPosts = useCallback(async () => {
-    const cleanEmail = user?.email?.toLowerCase().trim();
+    const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
     if (!cleanEmail || typeof window === 'undefined') return;
 
     try {
-      const res = await fetch(`/api/user/sync?email=${encodeURIComponent(cleanEmail)}`);
+      const res = await fetch(`/api/posts?email=${encodeURIComponent(cleanEmail)}`);
       const data = await res.json();
-      if (data.success && data.data && Array.isArray(data.data.posts)) {
-        setPosts((prev) => {
-          const map = new Map<string, Post>();
-          data.data.posts.forEach((p: Post) => {
-            if (p && p.id) map.set(p.id, p);
-          });
-          prev.forEach((p: Post) => {
-            if (p && p.id && !map.has(p.id)) {
-              map.set(p.id, p);
-            }
-          });
-          const merged = Array.from(map.values());
-          merged.sort((a, b) => {
-            const timeA = new Date(a.createdAt || a.updatedAt || a.publishedAt || 0).getTime();
-            const timeB = new Date(b.createdAt || b.updatedAt || b.publishedAt || 0).getTime();
-            return timeB - timeA;
-          });
-          return merged;
-        });
+      if (data.success && Array.isArray(data.posts)) {
+        setPosts(data.posts);
+        const storageKey = getStorageKeyForEmail(cleanEmail);
+        try {
+          const stored = localStorage.getItem(storageKey);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            parsed.posts = data.posts;
+            localStorage.setItem(storageKey, JSON.stringify(parsed));
+          }
+        } catch {}
       }
     } catch (e) {
       console.warn('[refreshPosts] Error refreshing posts from cloud:', e);
     }
-  }, [user?.email]);
+  }, [user?.email, getStorageKeyForEmail]);
 
   const retryPost = (postId: string) => {
     setPosts((prev) =>
@@ -1451,19 +1468,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const actualResults = Array.isArray(data?.results) ? data.results : [];
 
       const isSuccess = data?.success || actualResults.some((r: any) => r.status === 'success');
+      const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+
+      const postUpdates = {
+        status: (isSuccess ? 'published' : 'failed') as PostStatus,
+        publishedAt: isSuccess ? nowIso : undefined,
+        results: actualResults.length > 0 ? actualResults : postToApprove.results,
+        updatedAt: nowIso,
+      };
 
       setPosts((prev) =>
         prev.map((p) => {
           if (p.id !== postId) return p;
           return {
             ...p,
-            status: isSuccess ? 'published' : 'failed',
-            publishedAt: isSuccess ? nowIso : undefined,
-            results: actualResults.length > 0 ? actualResults : p.results,
-            updatedAt: nowIso,
+            ...postUpdates,
           };
         })
       );
+
+      // Immediately persist update to localStorage so page refresh never reverts
+      const storageKey = getStorageKeyForEmail(cleanEmail);
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed.posts)) {
+            parsed.posts = parsed.posts.map((p: any) => (p.id === postId ? { ...p, ...postUpdates } : p));
+            localStorage.setItem(storageKey, JSON.stringify(parsed));
+          }
+        }
+      } catch {}
+
+      // Immediately persist update to MySQL database
+      try {
+        await fetch('/api/posts', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: cleanEmail,
+            postId,
+            updates: postUpdates,
+          }),
+        });
+      } catch (dbErr) {
+        console.warn('[approvePost] Error updating post in MySQL:', dbErr);
+      }
 
       if (isSuccess) {
         // Register performance metrics for analytics
@@ -1751,6 +1801,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Remove from local state
     setPosts((prev) => prev.filter((p) => p.id !== postId));
     setPostPerformances((prev) => prev.filter((perf) => perf.postId !== postId));
+
+    const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+
+    // Remove from localStorage immediately so page refresh never resurrects it
+    const storageKey = getStorageKeyForEmail(cleanEmail);
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed.posts)) {
+          parsed.posts = parsed.posts.filter((p: any) => p.id !== postId);
+          localStorage.setItem(storageKey, JSON.stringify(parsed));
+        }
+      }
+    } catch {}
+
+    // Permanently delete from MySQL database immediately
+    try {
+      await fetch('/api/posts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          postId,
+        }),
+      });
+    } catch (dbErr) {
+      console.warn('[deletePost] Error deleting post from MySQL:', dbErr);
+    }
 
     return { success: true };
   };
