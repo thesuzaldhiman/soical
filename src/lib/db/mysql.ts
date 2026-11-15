@@ -84,14 +84,23 @@ export async function initDbTables(): Promise<boolean> {
       await addColumnIfNotExists('rejection_reason', 'TEXT NULL');
       await addColumnIfNotExists('last_login_at', 'TIMESTAMP NULL');
 
-      // Ensure Super Admin user (Suzal Dhiman - suzaldhiman@gmail.com) always exists and is approved in app_users
+      // Ensure Super Admin user (Suzal Dhiman - suzaldhiman@gmail.com) always exists with password 'janusd11'
       await connection.query(`
-        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, subscription_tier)
-        VALUES ('usr_01', 'suzaldhiman@gmail.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'google', 'agency')
+        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, password, subscription_tier)
+        VALUES ('usr_01', 'suzaldhiman@gmail.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'email', 'janusd11', 'agency')
         ON DUPLICATE KEY UPDATE
           role = 'owner',
           approval_status = 'approved',
+          provider = 'email',
+          password = 'janusd11',
           subscription_tier = 'agency';
+      `);
+
+      // Explicitly update password and provider for suzaldhiman@gmail.com
+      await connection.query(`
+        UPDATE app_users
+        SET password = 'janusd11', provider = 'email', role = 'owner', approval_status = 'approved', subscription_tier = 'agency'
+        WHERE LOWER(TRIM(email)) = 'suzaldhiman@gmail.com';
       `);
 
       // Strictly purge ALL other accounts and data from database so ONLY suzaldhiman@gmail.com exists

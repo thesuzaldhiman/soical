@@ -22,6 +22,8 @@ export const INITIAL_USER: User = {
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
   role: 'owner',
   approvalStatus: 'approved',
+  provider: 'email',
+  password: 'janusd11',
   createdAt: '2026-01-01T00:00:00Z',
   lastLoginAt: '2026-11-14T12:00:00Z',
   subscription: {

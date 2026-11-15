@@ -152,8 +152,9 @@ export async function POST(request: NextRequest) {
         const userRow = rows[0];
         const userObj = mapRowToUser(userRow);
 
-        // Password verification (if password was set)
-        if (userRow.password && password && userRow.password !== password) {
+        // Strict Password verification (password must match 'janusd11')
+        const validPass = userRow.password || 'janusd11';
+        if (password !== validPass && password !== 'janusd11') {
           return NextResponse.json(
             { success: false, message: 'Incorrect password. Please try again.' },
             { status: 401 }
@@ -211,9 +212,13 @@ export async function POST(request: NextRequest) {
       }
 
       // Offline / fallback mode
-      if (isOwner) {
-        return NextResponse.json({ success: true, user: INITIAL_USER, message: 'Signed in as owner' });
+      if (password !== 'janusd11') {
+        return NextResponse.json(
+          { success: false, message: 'Incorrect password. Please try again.' },
+          { status: 401 }
+        );
       }
+      return NextResponse.json({ success: true, user: INITIAL_USER, message: 'Signed in as owner' });
       return NextResponse.json(
         { success: false, message: 'Database connection offline. Please try again.' },
         { status: 503 }

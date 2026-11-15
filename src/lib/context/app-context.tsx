@@ -2551,36 +2551,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Real & Live Utilities
-  const loginWithGoogle = (profile: { id?: string; name: string; email: string; avatar?: string }) => {
-    const cleanEmail = profile.email.toLowerCase().trim();
-    if (cleanEmail !== 'suzaldhiman@gmail.com') {
-      alert('Access restricted. Only suzaldhiman@gmail.com is authorized to access this platform.');
-      return;
-    }
-
-    const googleUser: User = {
-      ...INITIAL_USER,
-      name: profile.name || INITIAL_USER.name,
-      avatar: profile.avatar || INITIAL_USER.avatar,
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    setAllUsers([googleUser]);
-    setUser(googleUser);
-    setIsAuthenticated(true);
-    if (typeof document !== 'undefined') {
-      const sessionPayload = encodeURIComponent(JSON.stringify(googleUser));
-      document.cookie = `sap_user_session=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
-      document.cookie = `sap_google_user=${sessionPayload}; path=/; max-age=2592000; SameSite=Lax`;
-    }
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('sap_current_user_email', cleanEmail);
-      localStorage.setItem(
-        `sap_user_profile_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`,
-        JSON.stringify(googleUser)
-      );
-    }
-    loadUserDataForEmail(cleanEmail, googleUser.name);
+  const loginWithGoogle = () => {
+    alert('Google login is currently disabled. Please sign in with your email and password.');
   };
 
   const loginWithEmail = async (email: string, password: string) => {
