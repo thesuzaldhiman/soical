@@ -190,67 +190,34 @@ export async function POST(request: NextRequest) {
         return timeB - timeA;
       });
 
-      // --- 2. AUTOMATIONS / RULES SAFETY & MERGING ---
+      // --- 2. AUTOMATIONS / RULES SAFETY & AUTHORITATIVE UPDATE ---
       const dbAutomations: any[] = existingRow ? parseField(existingRow.automations, []) : [];
-      let finalAutomations: any[] = [];
-      if (Array.isArray(payload.automations) && payload.automations.length > 0) {
-        const incomingAutoMap = new Map<string, any>();
-        payload.automations.forEach((a: any) => {
-          if (a && a.id) incomingAutoMap.set(a.id, a);
-        });
-        finalAutomations = [
-          ...payload.automations,
-          ...dbAutomations.filter((a: any) => a && a.id && !incomingAutoMap.has(a.id)),
-        ];
-      } else if (dbAutomations.length > 0) {
-        // Never let an unhydrated or empty client payload overwrite existing rules in DB
-        finalAutomations = dbAutomations;
+      let finalAutomations: any[] = dbAutomations;
+      if (Array.isArray(payload.automations)) {
+        finalAutomations = payload.automations;
       }
 
-      // --- 3. CATEGORIES SAFETY & MERGING ---
+      // --- 3. CATEGORIES SAFETY & AUTHORITATIVE UPDATE ---
       const dbCategories: any[] = existingRow ? parseField(existingRow.categories, []) : [];
-      let finalCategories: any[] = [];
-      if (Array.isArray(payload.categories) && payload.categories.length > 0) {
-        const catMap = new Map<string, any>();
-        payload.categories.forEach((c: any) => {
-          if (c && c.id) catMap.set(c.id, c);
-        });
-        finalCategories = [
-          ...payload.categories,
-          ...dbCategories.filter((c: any) => c && c.id && !catMap.has(c.id)),
-        ];
-      } else if (dbCategories.length > 0) {
-        finalCategories = dbCategories;
+      let finalCategories: any[] = dbCategories;
+      if (Array.isArray(payload.categories)) {
+        // If client explicitly sent categories (even if empty [] when all are deleted), that is authoritative!
+        finalCategories = payload.categories;
       }
 
-      // --- 4. SIGNATURE TEMPLATES SAFETY & MERGING ---
+      // --- 4. SIGNATURE TEMPLATES SAFETY & AUTHORITATIVE UPDATE ---
       const dbTemplates: any[] = existingRow ? parseField(existingRow.sig_templates, []) : [];
-      let finalTemplates: any[] = [];
-      if (Array.isArray(payload.sigTemplates) && payload.sigTemplates.length > 0) {
-        const tmplMap = new Map<string, any>();
-        payload.sigTemplates.forEach((t: any) => {
-          if (t && t.id) tmplMap.set(t.id, t);
-        });
-        finalTemplates = [
-          ...payload.sigTemplates,
-          ...dbTemplates.filter((t: any) => t && t.id && !tmplMap.has(t.id)),
-        ];
-      } else if (dbTemplates.length > 0) {
-        finalTemplates = dbTemplates;
+      let finalTemplates: any[] = dbTemplates;
+      if (Array.isArray(payload.sigTemplates)) {
+        finalTemplates = payload.sigTemplates;
       }
 
       // --- 5. PAGES & ACCOUNTS SAFETY ---
       const dbPages: any[] = existingRow ? parseField(existingRow.pages, []) : [];
-      const finalPages =
-        Array.isArray(payload.pages) && payload.pages.length > 0
-          ? payload.pages
-          : dbPages;
+      const finalPages = Array.isArray(payload.pages) ? payload.pages : dbPages;
 
       const dbAccounts: any[] = existingRow ? parseField(existingRow.accounts, []) : [];
-      const finalAccounts =
-        Array.isArray(payload.accounts) && payload.accounts.length > 0
-          ? payload.accounts
-          : dbAccounts;
+      const finalAccounts = Array.isArray(payload.accounts) ? payload.accounts : dbAccounts;
 
       // --- 6. SETTINGS SAFETY & MERGING ---
       const dbSettings = existingRow ? parseField(existingRow.settings, {}) : {};

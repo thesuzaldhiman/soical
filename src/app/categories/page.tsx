@@ -45,7 +45,15 @@ export default function CategoriesPage() {
 }
 
 function CategoriesContent() {
-  const { categories, pages, accounts, createCategory, updateCategory, deleteCategory } = useApp();
+  const {
+    categories,
+    pages,
+    accounts,
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    clearAllCategories,
+  } = useApp();
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -162,6 +170,12 @@ function CategoriesContent() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleClearAllCategories = () => {
+    if (confirm('Are you sure you want to delete all categories? This action cannot be undone.')) {
+      clearAllCategories();
+    }
+  };
+
   const handleExportCSV = () => {
     const headers = ['Category Name', 'Accent Color', 'Mapped Channels Count', 'Default Hashtags'];
     const rows = categories.map((c) => [
@@ -203,6 +217,18 @@ function CategoriesContent() {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap shrink-0">
+          {categories.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAllCategories}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-slate-600 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+              title="Delete all categories"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear All</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleExportCSV}
@@ -385,9 +411,30 @@ function CategoriesContent() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
         {filteredCategories.length === 0 ? (
           <div className="col-span-full bg-white rounded-2xl border border-[#E2E8F0] p-12 text-center shadow-2xs">
-            <Tags className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="font-bold text-slate-700">No categories match your search</p>
-            <p className="text-xs text-slate-400 mt-1">Try clearing your filters or create a new group.</p>
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+              <Tags className="w-6 h-6 stroke-[1.8]" />
+            </div>
+            {categories.length === 0 ? (
+              <>
+                <p className="font-bold text-slate-800 text-sm">No categories created yet</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  Group your connected social pages together and assign default hashtags for one-click broadcasting in Composer.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Create First Category</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="font-bold text-slate-800 text-sm">No categories match your search</p>
+                <p className="text-xs text-slate-400 mt-1">Try clearing your filters or search keywords.</p>
+              </>
+            )}
           </div>
         ) : (
           filteredCategories.map((cat) => {

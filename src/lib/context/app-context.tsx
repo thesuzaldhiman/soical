@@ -112,6 +112,7 @@ interface AppContextType {
   createCategory: (name: string, color: string, pageIds: string[], tags: string[]) => void;
   updateCategory: (category: PageCategory) => void;
   deleteCategory: (id: string) => void;
+  clearAllCategories: () => void;
   createPost: (
     postData: Omit<Post, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'results'> & {
       results?: PostResult[];
@@ -246,6 +247,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   createCategory: noop,
   updateCategory: noop,
   deleteCategory: noop,
+  clearAllCategories: noop,
   createPost: (data: Parameters<AppContextType['createPost']>[0]) => ({
     ...data,
     id: `pst_${Date.now()}`,
@@ -1339,6 +1341,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       syncToCloud(cleanEmail, { categories: updated }, user);
+
+      // Direct atomic write to MySQL
+      if (typeof window !== 'undefined') {
+        fetch('/api/categories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, category: newCat }),
+        }).catch((e) => console.warn('[createCategory] Direct DB write warning:', e));
+      }
+
       return updated;
     });
   };
@@ -1363,18 +1375,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       syncToCloud(cleanEmail, { categories: updated }, user);
+
+      // Direct atomic write to MySQL
+      if (typeof window !== 'undefined') {
+        fetch('/api/categories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, category }),
+        }).catch((e) => console.warn('[updateCategory] Direct DB write warning:', e));
+      }
+
       return updated;
     });
   };
 
   const deleteCategory = (id: string) => {
+    const cleanEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
+
     setCategories((prev) => {
       const remaining = prev.filter((c) => c.id !== id);
-      const cleanEmail = (
-        user?.email ||
-        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
-      ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
         try {
@@ -1389,6 +1412,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       syncToCloud(cleanEmail, { categories: remaining }, user);
       return remaining;
     });
+
+    // Direct atomic delete from MySQL app_user_data.categories
+    if (typeof window !== 'undefined') {
+      fetch('/api/categories', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, id }),
+      }).catch((e) => console.warn('[deleteCategory] Direct DB delete warning:', e));
+    }
+  };
+
+  const clearAllCategories = () => {
+    const cleanEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
+
+    setCategories([]);
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const userKey = getStorageKeyForEmail(cleanEmail);
+        const stored = localStorage.getItem(userKey);
+        const parsed = stored ? JSON.parse(stored) : {};
+        parsed.categories = [];
+        localStorage.setItem(userKey, JSON.stringify(parsed));
+      } catch {}
+    }
+
+    syncToCloud(cleanEmail, { categories: [] }, user);
+
+    if (typeof window !== 'undefined') {
+      fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, categories: [] }),
+      }).catch((e) => console.warn('[clearAllCategories] Direct DB write warning:', e));
+    }
   };
 
   const createPost = (
@@ -3599,6 +3661,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         createCategory,
         updateCategory,
         deleteCategory,
+        clearAllCategories,
         createPost,
         refreshPosts,
         retryPost,

@@ -128,7 +128,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
         return {
           email: rows[0].email,
           pages: parseJsonSafe(rows[0].pages, DEMO_PAGES),
-          categories: parseJsonSafe(rows[0].categories, DEMO_CATEGORIES),
+          categories: parseJsonSafe(rows[0].categories, []),
           automations: parseJsonSafe(rows[0].automations, []),
           posts: parseJsonSafe(rows[0].posts, getLocalPosts()),
           sigTemplates: parseJsonSafe(rows[0].sig_templates, INITIAL_SIG_TEMPLATES),
@@ -153,7 +153,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
             return {
               email: u.email,
               pages: parseJsonSafe(u.pages, DEMO_PAGES),
-              categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
+              categories: parseJsonSafe(u.categories, []),
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
@@ -169,7 +169,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
             return {
               email: u.email,
               pages: parseJsonSafe(u.pages, DEMO_PAGES),
-              categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
+              categories: parseJsonSafe(u.categories, []),
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
@@ -185,7 +185,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
             return {
               email: u.email,
               pages: pgs,
-              categories: parseJsonSafe(u.categories, DEMO_CATEGORIES),
+              categories: parseJsonSafe(u.categories, []),
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
@@ -199,7 +199,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
       return {
         email: first.email,
         pages: parseJsonSafe(first.pages, DEMO_PAGES),
-        categories: parseJsonSafe(first.categories, DEMO_CATEGORIES),
+        categories: parseJsonSafe(first.categories, []),
         automations: parseJsonSafe(first.automations, []),
         posts: parseJsonSafe(first.posts, getLocalPosts()),
         sigTemplates: parseJsonSafe(first.sig_templates, INITIAL_SIG_TEMPLATES),
@@ -212,7 +212,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
   return {
     email: fallbackEmail,
     pages: DEMO_PAGES,
-    categories: DEMO_CATEGORIES,
+    categories: [] as PageCategory[],
     automations: [] as AutomationFeed[],
     posts: getLocalPosts(),
     sigTemplates: INITIAL_SIG_TEMPLATES,

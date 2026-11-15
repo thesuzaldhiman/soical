@@ -79,11 +79,11 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
     if (rows && rows.length > 0) {
       const row = rows[0];
       const parsedPages = parseJsonSafe(row.pages, DEMO_PAGES) as SocialPage[];
-      const parsedCats = parseJsonSafe(row.categories, DEMO_CATEGORIES) as PageCategory[];
+      const parsedCats = parseJsonSafe(row.categories, []) as PageCategory[];
       return {
         source: 'mysql' as const,
         pages: parsedPages.length > 0 ? parsedPages : DEMO_PAGES,
-        categories: parsedCats.length > 0 ? parsedCats : DEMO_CATEGORIES,
+        categories: parsedCats,
         posts: parseJsonSafe(row.posts, []) as Post[],
         workspace: parseJsonSafe(row.workspace, { id: 'ws_default', monthlyPostsUsed: 0 }),
       };
@@ -95,7 +95,7 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
   return {
     source: 'fallback' as const,
     pages: DEMO_PAGES,
-    categories: DEMO_CATEGORIES,
+    categories: [] as PageCategory[],
     posts: getLocalPosts(),
     workspace: { id: `ws_${cleanEmail.replace(/[^a-z0-9_]/g, '_')}`, monthlyPostsUsed: 0 },
   };
