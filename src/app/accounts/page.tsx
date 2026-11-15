@@ -1661,9 +1661,9 @@ function AccountsContent() {
                       </div>
                       <div>
                         <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
-                          <span>Social Auto Poster Connector v1.2.0</span>
+                          <span>Social Auto Poster Connector v1.3.0</span>
                           <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
-                            v1.2.0 Latest • Multi-Title &amp; Auto-Update Ready
+                            v1.3.0 Latest • Multi-Title &amp; Auto-Update Ready
                           </span>
                         </div>
                         <p className="text-[11px] text-sky-800">

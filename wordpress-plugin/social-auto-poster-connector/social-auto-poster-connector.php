@@ -3,7 +3,7 @@
  * Plugin Name: Social Auto Poster Connector (Multi-Titles & Instant Dispatch)
  * Plugin URI: https://game.khabarmonkey.com
  * Description: Connects WordPress directly to Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line) and automatically pushes published posts to your Facebook Pages and social channels with unique titles and first-comment links.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Author: Suzal Dhiman (Khabar Monkey Media)
  * Author URI: https://game.khabarmonkey.com
  * License: GPL-2.0+
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-define('SAP_CONNECTOR_VERSION', '1.2.0');
+define('SAP_CONNECTOR_VERSION', '1.3.0');
 define('SAP_CONNECTOR_DIR', plugin_dir_path(__FILE__));
 define('SAP_CONNECTOR_URL', plugin_dir_url(__FILE__));
 
@@ -534,6 +534,24 @@ class Social_Auto_Poster_Connector {
                 <?php endif; ?>
             </div>
 
+            <?php
+            $last_status = get_post_meta($post->ID, '_sap_last_dispatch_status', true);
+            if (!empty($last_status)) :
+                $is_success = strpos($last_status, 'success:') === 0;
+                $is_skipped = strpos($last_status, 'skipped:') === 0;
+                $clean_msg = preg_replace('/^(success|skipped|error):\s*/i', '', $last_status);
+                $bg = $is_success ? '#ecfdf5' : ($is_skipped ? '#fefce8' : '#fef2f2');
+                $border = $is_success ? '#a7f3d0' : ($is_skipped ? '#fef08a' : '#fecaca');
+                $color = $is_success ? '#065f46' : ($is_skipped ? '#854d0e' : '#991b1b');
+                $icon = $is_success ? '✅' : ($is_skipped ? '⚠️' : '❌');
+            ?>
+            <div style="margin-top: 10px; padding: 8px 12px; background: <?php echo $bg; ?>; border: 1px solid <?php echo $border; ?>; border-radius: 6px; font-size: 12px; color: <?php echo $color; ?>; display: flex; align-items: center; gap: 6px;">
+                <span><?php echo $icon; ?></span>
+                <strong>Social Poster Status:</strong>
+                <span><?php echo esc_html($clean_msg); ?></span>
+            </div>
+            <?php endif; ?>
+
             <div id="sap_titles_preview_chips" style="display: flex; flex-direction: column; gap: 4px; margin-top: 10px;"></div>
             <div id="sap_manual_push_result" style="margin-top: 8px; font-size: 12px; display: none;"></div>
         </div>
@@ -756,27 +774,38 @@ class Social_Auto_Poster_Connector {
                 'Content-Type' => 'application/json',
                 'X-SAP-Secret' => $secret_key,
             ),
-            'timeout'     => $blocking ? 15 : 6,
-            'blocking'    => $blocking, // Non-blocking during regular publish so editor doesn't wait
+            'timeout'     => 15,
+            'blocking'    => true, // Reliably wait for server to ingest & avoid SSL handshake premature cutoff
             'data_format' => 'body',
         );
 
         $response = wp_remote_post($target_url, $args);
 
-        if ($blocking) {
-            if (is_wp_error($response)) {
-                return array('success' => false, 'message' => $response->get_error_message());
-            }
-            $code = wp_remote_retrieve_response_code($response);
-            $resBody = wp_remote_retrieve_body($response);
-            $parsed = json_decode($resBody, true);
-            if ($code >= 200 && $code < 300) {
-                return array('success' => true, 'count' => isset($parsed['dispatchedCount']) ? $parsed['dispatchedCount'] : 1);
-            }
-            return array('success' => false, 'message' => isset($parsed['error']) ? $parsed['error'] : 'HTTP ' . $code);
+        if (is_wp_error($response)) {
+            $err_msg = $response->get_error_message();
+            update_post_meta($post_id, '_sap_last_dispatch_status', 'error: ' . $err_msg);
+            return array('success' => false, 'message' => $err_msg);
         }
 
-        return array('success' => true);
+        $code = wp_remote_retrieve_response_code($response);
+        $resBody = wp_remote_retrieve_body($response);
+        $parsed = json_decode($resBody, true);
+
+        if ($code >= 200 && $code < 300) {
+            if (!empty($parsed['skipped'])) {
+                $skip_msg = !empty($parsed['message']) ? $parsed['message'] : 'Post category did not match active rule.';
+                update_post_meta($post_id, '_sap_last_dispatch_status', 'skipped: ' . $skip_msg);
+                return array('success' => true, 'skipped' => true, 'message' => $skip_msg);
+            }
+            $disp_count = isset($parsed['dispatchedCount']) ? $parsed['dispatchedCount'] : 1;
+            $success_msg = !empty($parsed['message']) ? $parsed['message'] : 'Dispatched to ' . $disp_count . ' social pages.';
+            update_post_meta($post_id, '_sap_last_dispatch_status', 'success: ' . $success_msg);
+            return array('success' => true, 'count' => $disp_count, 'message' => $success_msg);
+        }
+
+        $err_msg = isset($parsed['error']) ? $parsed['error'] : 'HTTP ' . $code;
+        update_post_meta($post_id, '_sap_last_dispatch_status', 'error: ' . $err_msg);
+        return array('success' => false, 'message' => $err_msg);
     }
 
     /* ==========================================================================
