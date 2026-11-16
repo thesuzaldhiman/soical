@@ -128,10 +128,14 @@ function LibraryContent() {
     }
   };
 
-  // Instant fast sync from database & live Facebook post insights on mount
+  // Instant fast sync from database on mount, and one-time throttled insights sync
+  const hasSyncedInsightsRef = useRef(false);
   useEffect(() => {
     refreshPosts();
-    syncPostInsights();
+    if (!hasSyncedInsightsRef.current) {
+      hasSyncedInsightsRef.current = true;
+      syncPostInsights();
+    }
   }, [refreshPosts, syncPostInsights]);
 
   // Keep selectedPost reference in sync when posts update

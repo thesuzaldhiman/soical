@@ -199,21 +199,14 @@ export async function POST(request: NextRequest) {
         console.warn('[MySQL Sync] Error fetching existing row:', e);
       }
 
-      // --- 1. POSTS SAFETY & MERGING ---
+      // --- 1. POSTS SAFETY & AUTHORITATIVE UPDATE ---
       const dbPosts: any[] = existingRow ? parseField(existingRow.posts, []) : [];
       let finalPosts: any[] = [];
-      if (Array.isArray(payload.posts) && payload.posts.length > 0) {
-        const incomingMap = new Map<string, any>();
-        payload.posts.forEach((p: any) => {
-          if (p && p.id) incomingMap.set(p.id, p);
-        });
-        // Merge: incoming updates take precedence, but keep DB posts that were created on server (e.g. webhooks)
-        finalPosts = [
-          ...payload.posts,
-          ...dbPosts.filter((p: any) => p && p.id && !incomingMap.has(p.id)),
-        ];
+      if (Array.isArray(payload.posts)) {
+        // Authoritative posts sent from client session! Deleted posts must stay deleted.
+        finalPosts = payload.posts;
       } else if (dbPosts.length > 0) {
-        // Incoming posts is empty or not provided; PRESERVE existing DB posts! Never wipe out with []
+        // Fallback only if payload did not include posts array
         finalPosts = dbPosts;
       }
 

@@ -408,6 +408,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const pagesRef = useRef<SocialPage[]>(pages);
   pagesRef.current = pages;
   const dispatchingQueueIdsRef = useRef<Set<string>>(new Set());
+  const isSyncingInsightsRef = useRef(false);
+  const lastSyncInsightsTimeRef = useRef(0);
   const [allUsers, setAllUsers] = useState<User[]>(() => {
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
       try {
@@ -719,20 +721,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
             if (Array.isArray(db.categories)) setCategories(db.categories);
             if (Array.isArray(db.posts)) {
-              setPosts((prev) => {
-                if (db.posts.length === 0 && prev.length > 0) {
-                  // User has local posts that MySQL hasn't recorded yet; keep and push to cloud
-                  syncToCloud(cleanEmail, { ...authoritativePayload, posts: prev }, user);
-                  return prev;
-                }
-                const cloudIds = new Set(db.posts.map((p: any) => p.id));
-                const localOnly = prev.filter((p) => !cloudIds.has(p.id));
-                if (localOnly.length > 0) {
-                  // Push local unsynced posts to cloud permanently
-                  syncToCloud(cleanEmail, { ...authoritativePayload, posts: [...localOnly, ...db.posts] }, user);
-                }
-                return [...localOnly, ...db.posts];
-              });
+              setPosts(db.posts);
             }
             if (Array.isArray(db.sigTemplates)) setSigTemplates(db.sigTemplates);
             if (db.pageAnalytics && typeof db.pageAnalytics === 'object') setPageAnalytics(db.pageAnalytics);
@@ -1581,45 +1570,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`/api/posts?email=${encodeURIComponent(cleanEmail)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.posts)) {
-        setPosts((prevPosts) => {
-          // If cloud returned empty array but client already has posts in memory, PRESERVE client posts and heal MySQL!
-          if (data.posts.length === 0 && prevPosts.length > 0) {
-            fetch('/api/posts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              keepalive: true,
-              body: JSON.stringify({ email: cleanEmail, posts: prevPosts }),
-            }).catch(() => {});
-            return prevPosts;
+        setPosts(data.posts);
+        const storageKey = getStorageKeyForEmail(cleanEmail);
+        try {
+          const stored = localStorage.getItem(storageKey);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            parsed.posts = data.posts;
+            localStorage.setItem(storageKey, JSON.stringify(parsed));
           }
-
-          // Merge any local posts that cloud hasn't caught up with yet
-          const cloudIds = new Set(data.posts.map((p: Post) => p.id));
-          const pendingLocal = prevPosts.filter((p) => !cloudIds.has(p.id));
-          const merged = [...pendingLocal, ...data.posts];
-
-          // If there were pending local posts missing from cloud, heal MySQL immediately
-          if (pendingLocal.length > 0) {
-            fetch('/api/posts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              keepalive: true,
-              body: JSON.stringify({ email: cleanEmail, posts: pendingLocal }),
-            }).catch(() => {});
-          }
-
-          const storageKey = getStorageKeyForEmail(cleanEmail);
-          try {
-            const stored = localStorage.getItem(storageKey);
-            if (stored) {
-              const parsed = JSON.parse(stored);
-              parsed.posts = merged;
-              localStorage.setItem(storageKey, JSON.stringify(parsed));
-            }
-          } catch {}
-
-          return merged;
-        });
+        } catch {}
       }
     } catch (e) {
       console.warn('[refreshPosts] Error refreshing posts from cloud:', e);
@@ -2191,25 +2151,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Remove from local state
-    setPosts((prev) => prev.filter((p) => p.id !== postId));
+    const remainingPosts = postsRef.current.filter((p) => p.id !== postId);
+    postsRef.current = remainingPosts;
+    setPosts(remainingPosts);
     setPostPerformances((prev) => prev.filter((perf) => perf.postId !== postId));
 
     const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
 
-    // Remove from localStorage immediately so page refresh never resurrects it
+    // Remove from localStorage across all keys immediately so page refresh never resurrects it
     const storageKey = getStorageKeyForEmail(cleanEmail);
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed.posts)) {
-          parsed.posts = parsed.posts.filter((p: any) => p.id !== postId);
-          localStorage.setItem(storageKey, JSON.stringify(parsed));
+    const keysToClean = [storageKey, 'sap_saas_live_v1', 'sap_saas_app_state_v2'];
+    keysToClean.forEach((key) => {
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed.posts)) {
+            parsed.posts = parsed.posts.filter((p: any) => p.id !== postId);
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    });
 
-    // Permanently delete from MySQL database immediately
+    // Permanently delete from MySQL database immediately AND sync remaining posts
     try {
       await fetch('/api/posts', {
         method: 'DELETE',
@@ -2219,6 +2184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           postId,
         }),
       });
+      syncToCloud(cleanEmail, { posts: remainingPosts }, user);
     } catch (dbErr) {
       console.warn('[deletePost] Error deleting post from MySQL:', dbErr);
     }
@@ -3151,52 +3117,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const syncPostInsights = async (pageId?: string) => {
-    const fbPages = pages
-      .filter((p) => {
-        const plat = (p.platform || '').toLowerCase();
-        return (
-          plat === 'facebook' ||
-          plat.includes('fb') ||
-          p.id?.includes('fb') ||
-          p.targetUrl?.includes('facebook') ||
-          p.fanCount !== undefined
-        );
-      })
-      .filter((p) => !pageId || p.id === pageId || p.pageId === pageId);
-
-    if (fbPages.length === 0) return;
-
-    try {
-      const payloadPages = fbPages.map((p) => {
-        const acc = accounts.find((a) => a.id === p.accountId);
-        return {
-          id: p.id,
-          pageId: p.pageId,
-          name: p.name,
-          accessToken: p.accessToken || acc?.accessToken,
-          monetization: p.monetization,
-        };
-      });
-
-      const res = await fetch('/api/facebook/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages: payloadPages }),
-      });
-
-      const data = await res.json();
-      if (data.success && Array.isArray(data.posts)) {
-        setPostPerformances((prev) => {
-          const targetIds = new Set(fbPages.map((p) => p.id));
-          const retained = prev.filter((item) => !targetIds.has(item.pageId));
-          return [...data.posts, ...retained];
-        });
+  const syncPostInsights = useCallback(
+    async (pageId?: string) => {
+      const now = Date.now();
+      if (isSyncingInsightsRef.current) return;
+      if (!pageId && now - lastSyncInsightsTimeRef.current < 60000) {
+        // Throttled: do not spam Graph API if called within 60s without specific pageId
+        return;
       }
-    } catch (err) {
-      console.warn('[Sync Post Insights] Error fetching FB posts:', err);
-    }
-  };
+
+      const fbPages = pages
+        .filter((p) => {
+          const plat = (p.platform || '').toLowerCase();
+          const pId = String(p.id || '');
+          const isFb = plat === 'facebook' || plat.includes('fb');
+          const isNotDummy = !pId.startsWith('yt_') && !pId.startsWith('pid_');
+          const hasToken = !!(p.accessToken || accounts.find((a) => a.id === p.accountId)?.accessToken);
+          return isFb && isNotDummy && hasToken;
+        })
+        .filter((p) => !pageId || p.id === pageId || p.pageId === pageId);
+
+      if (fbPages.length === 0) return;
+
+      isSyncingInsightsRef.current = true;
+      lastSyncInsightsTimeRef.current = now;
+
+      try {
+        const payloadPages = fbPages.map((p) => {
+          const acc = accounts.find((a) => a.id === p.accountId);
+          return {
+            id: p.id,
+            pageId: p.pageId,
+            name: p.name,
+            accessToken: p.accessToken || acc?.accessToken,
+            monetization: p.monetization,
+          };
+        });
+
+        const res = await fetch('/api/facebook/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pages: payloadPages }),
+        });
+
+        const data = await res.json();
+        if (data.success && Array.isArray(data.posts)) {
+          setPostPerformances((prev) => {
+            const targetIds = new Set(fbPages.map((p) => p.id));
+            const retained = prev.filter((item) => !targetIds.has(item.pageId));
+            return [...data.posts, ...retained];
+          });
+        }
+      } catch (err) {
+        console.warn('[Sync Post Insights] Error fetching FB posts:', err);
+      } finally {
+        isSyncingInsightsRef.current = false;
+      }
+    },
+    [pages, accounts]
+  );
 
   const fetchPostComments = async (
     postId: string,
