@@ -13,6 +13,68 @@ export interface GenerateCardOptions {
   siteName?: string;
 }
 
+let fontConfigInitialized = false;
+
+function ensureFontsRegistered() {
+  if (fontConfigInitialized) return;
+  fontConfigInitialized = true;
+
+  try {
+    const fontsDir = path.join(process.cwd(), 'public', 'fonts');
+    if (!fs.existsSync(fontsDir)) return;
+
+    // Standard Linux font paths
+    const homeDir = process.env.HOME || '/home/u941411339';
+    const targetDirs = [
+      path.join(homeDir, '.fonts'),
+      path.join(homeDir, '.local', 'share', 'fonts'),
+    ];
+
+    for (const tdir of targetDirs) {
+      try {
+        if (!fs.existsSync(tdir)) {
+          fs.mkdirSync(tdir, { recursive: true });
+        }
+        const files = fs.readdirSync(fontsDir);
+        for (const file of files) {
+          if (file.endsWith('.ttf') || file.endsWith('.otf')) {
+            const src = path.join(fontsDir, file);
+            const dst = path.join(tdir, file);
+            if (!fs.existsSync(dst)) {
+              fs.copyFileSync(src, dst);
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Set FONTCONFIG_PATH with custom fonts.conf
+    const fcDir = path.join(process.cwd(), '.fontconfig');
+    const fcCache = path.join(fcDir, 'cache');
+    if (!fs.existsSync(fcCache)) {
+      fs.mkdirSync(fcCache, { recursive: true });
+    }
+
+    const confContent = `<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <dir>${fontsDir}</dir>
+  <dir>${path.join(homeDir, '.fonts')}</dir>
+  <dir>${path.join(homeDir, '.local', 'share', 'fonts')}</dir>
+  <cachedir>${fcCache}</cachedir>
+  <config></config>
+</fontconfig>`;
+
+    const confPath = path.join(fcDir, 'fonts.conf');
+    if (!fs.existsSync(confPath)) {
+      fs.writeFileSync(confPath, confContent, 'utf8');
+    }
+    process.env.FONTCONFIG_PATH = fcDir;
+  } catch (err) {
+    console.warn('[server-image-generator] Font registration notice:', err);
+  }
+}
+
 const fontCache: Record<string, string> = {};
 
 function getFontBase64(fontFamily?: string): { name: string; base64: string } {
@@ -196,7 +258,9 @@ function escapeXml(str: string): string {
  * Accurately renders Hindi ligatures, matras (ि, ी, ु, ू, etc.), and half-letters with custom font.
  */
 export async function generateServerCardImage(options: GenerateCardOptions): Promise<string> {
-  const { headline, featuredImageUrl, template, siteName } = options;
+  ensureFontsRegistered();
+
+  const { headline, subtitle, featuredImageUrl, template, siteName } = options;
 
   const width = template?.canvasWidth || 1200;
   const height = template?.canvasHeight || 630;
@@ -230,6 +294,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
   const layers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
   // 1. Process Featured Photo
+  let photoLayerItem: { input: Buffer; top: number; left: number } | null = null;
   if (photoBuf) {
     try {
       let resizedPhotoBuf: Buffer;
@@ -251,11 +316,11 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
         resizedPhotoBuf = await baseResize.png().toBuffer();
       }
 
-      layers.push({
+      photoLayerItem = {
         input: resizedPhotoBuf,
         top: Math.round(fBox.y),
         left: Math.round(fBox.x),
-      });
+      };
     } catch (photoErr) {
       console.warn('[server-image-generator] Failed processing photo with Sharp:', photoErr);
     }
@@ -272,39 +337,48 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
       .png()
       .toBuffer();
 
-    layers.push({
+    photoLayerItem = {
       input: fallbackBox,
       top: Math.round(fBox.y),
       left: Math.round(fBox.x),
-    });
+    };
   }
 
-  // 2. Process Template Frame (PNG Overlay)
+  // 2. Process Template Frame
+  let frameLayerItem: { input: Buffer; top: number; left: number } | null = null;
   if (templateBuf) {
     try {
       const resizedTemplate = await sharp(templateBuf)
-        .resize(width, height, { fit: 'cover' })
+        .resize(width, height, { fit: 'fill' })
         .png()
         .toBuffer();
 
-      const layerMode = template?.layerMode || 'overlay';
-      if (layerMode === 'background') {
-        layers.unshift({
-          input: resizedTemplate,
-          top: 0,
-          left: 0,
-        });
-      } else {
-        layers.push({
-          input: resizedTemplate,
-          top: 0,
-          left: 0,
-        });
-      }
+      frameLayerItem = {
+        input: resizedTemplate,
+        top: 0,
+        left: 0,
+      };
     } catch (tmplErr) {
       console.warn('[server-image-generator] Failed processing template frame with Sharp:', tmplErr);
     }
+  }
+
+  // Intelligent Layer Ordering:
+  // If layerMode is 'background', OR if fBox is placed in the lower area (y >= 300) where
+  // branded news frames have solid colored banner areas, we place the Frame on BOTTOM and Photo ON TOP!
+  const isBackgroundMode =
+    template?.layerMode === 'background' ||
+    (fBox.y >= 300 && (template?.templateImageUrl?.includes('media_') || template?.templateImageUrl?.includes('fb-templets')));
+
+  if (isBackgroundMode) {
+    if (frameLayerItem) layers.push(frameLayerItem);
+    if (photoLayerItem) layers.push(photoLayerItem);
   } else {
+    if (photoLayerItem) layers.push(photoLayerItem);
+    if (frameLayerItem) layers.push(frameLayerItem);
+  }
+
+  if (!templateBuf) {
     // Subtle scrim gradient if no custom template frame
     const scrimHeight = Math.max(260, Math.round(height * 0.48));
     const scrimSvg = `<svg width="${width}" height="${scrimHeight}" xmlns="http://www.w3.org/2000/svg">
@@ -391,14 +465,14 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
       <style>
         ${fontFaceCss}
         .headline-text {
-          font-family: 'DevanagariHeadlineFont', 'Noto Sans Devanagari', sans-serif;
+          font-family: 'Noto Sans Devanagari', 'Mukta', 'Hind', 'Tiro Devanagari Hindi', 'Khand', 'DevanagariHeadlineFont', sans-serif;
           font-size: ${fontSize}px;
           font-weight: bold;
           fill: ${tBox.textColor || '#FFFFFF'};
           filter: drop-shadow(0px 3px 8px rgba(0, 0, 0, 0.95));
         }
         .subtitle-text {
-          font-family: 'DevanagariHeadlineFont', 'Noto Sans Devanagari', sans-serif;
+          font-family: 'Noto Sans Devanagari', 'Mukta', 'Hind', 'Tiro Devanagari Hindi', 'Khand', 'DevanagariHeadlineFont', sans-serif;
           font-size: ${subFontSize}px;
           font-weight: 600;
           fill: ${tBox.highlightColor || '#FBBF24'};

@@ -25,6 +25,7 @@ mcp-server/dist/
 # misc
 .DS_Store
 *.pem
+.fontconfig/
 
 # debug
 npm-debug.log*
