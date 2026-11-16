@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { Post } from '@/types';
+import { sanitizePostMedia } from '@/lib/utils/media-storage';
 
 function parsePosts(raw: any): Post[] {
   if (!raw) return [];
@@ -36,7 +37,7 @@ function resolveEmail(request: NextRequest, bodyEmail?: string): string {
       }
     } catch {}
   }
-  return 'me.sumitji@gmail.com';
+  return 'suzaldhiman@gmail.com';
 }
 
 /**
@@ -74,8 +75,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, posts: [], source: 'mysql_empty' });
     }
 
-    const posts = parsePosts(rows[0].posts);
-    return NextResponse.json({ success: true, posts, source: 'mysql' });
+    const rawPosts = parsePosts(rows[0].posts);
+    let hadBase64 = false;
+    const sanitizedPosts = rawPosts.map((p) => {
+      const sanitized = sanitizePostMedia(p);
+      if (sanitized.mediaUrl !== p.mediaUrl || sanitized.thumbnailUrl !== p.thumbnailUrl) {
+        hadBase64 = true;
+      }
+      return sanitized;
+    });
+
+    if (hadBase64) {
+      pool.query(
+        'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
+        [JSON.stringify(sanitizedPosts), email]
+      ).catch((e) => console.warn('[API Posts GET] Background offload DB update warning:', e));
+    }
+
+    return NextResponse.json({ success: true, posts: sanitizedPosts, source: 'mysql' });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Database error';
     console.error('[API Posts GET] Error querying posts:', errorMsg);
@@ -128,15 +145,16 @@ export async function PATCH(request: NextRequest) {
     const currentPosts = parsePosts(rows[0].posts);
     let postFound = false;
     let updatedPost: Post | null = null;
+    const sanitizedUpdates = updates ? sanitizePostMedia(updates) : {};
 
     const newPosts = currentPosts.map((p) => {
       if (p.id === postId) {
         postFound = true;
-        updatedPost = {
+        updatedPost = sanitizePostMedia({
           ...p,
-          ...updates,
+          ...sanitizedUpdates,
           updatedAt: new Date().toISOString(),
-        };
+        });
         return updatedPost;
       }
       return p;
@@ -257,15 +275,17 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const email = resolveEmail(request, body.email);
-    const incoming: Post[] = Array.isArray(body.posts)
+    const rawIncoming: Post[] = Array.isArray(body.posts)
       ? body.posts
       : body.post
       ? [body.post]
       : [];
 
-    if (incoming.length === 0) {
+    if (rawIncoming.length === 0) {
       return NextResponse.json({ success: false, error: 'post or posts required' }, { status: 400 });
     }
+
+    const incoming = rawIncoming.map((p) => sanitizePostMedia(p));
 
     const pool = getDbPool();
     if (!pool) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
+import { sanitizePostMedia } from '@/lib/utils/media-storage';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -57,12 +58,29 @@ export async function GET(request: NextRequest) {
       }
     };
 
+    const rawPosts = parseJson(row.posts) || [];
+    let hadBase64 = false;
+    const sanitizedPosts = rawPosts.map((p: any) => {
+      const sanitized = sanitizePostMedia(p);
+      if (sanitized.mediaUrl !== p.mediaUrl || sanitized.thumbnailUrl !== p.thumbnailUrl) {
+        hadBase64 = true;
+      }
+      return sanitized;
+    });
+
+    if (hadBase64) {
+      pool.query(
+        'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
+        [JSON.stringify(sanitizedPosts), email]
+      ).catch(() => {});
+    }
+
     const data = {
       workspace: parseJson(row.workspace),
       accounts: parseJson(row.accounts) || [],
       pages: parseJson(row.pages) || [],
       categories: parseJson(row.categories),
-      posts: parseJson(row.posts) || [],
+      posts: sanitizedPosts,
       sigTemplates: parseJson(row.sig_templates),
       pageAnalytics: parseJson(row.page_analytics) || {},
       postPerformances: parseJson(row.post_performances) || [],
@@ -189,6 +207,8 @@ export async function POST(request: NextRequest) {
         const timeB = new Date(b.createdAt || b.updatedAt || b.publishedAt || 0).getTime();
         return timeB - timeA;
       });
+
+      finalPosts = finalPosts.map((p) => sanitizePostMedia(p));
 
       // --- 2. AUTOMATIONS / RULES SAFETY & AUTHORITATIVE UPDATE ---
       const dbAutomations: any[] = existingRow ? parseField(existingRow.automations, []) : [];

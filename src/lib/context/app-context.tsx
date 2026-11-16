@@ -1713,6 +1713,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const postToApprove = posts.find((p) => p.id === postId);
     if (!postToApprove) return;
 
+    // GUARD: Anti-duplicate check - prevent broadcasting a post twice
+    if (postToApprove.status === 'publishing') {
+      console.warn('[approvePost] Post is already broadcasting. Skipping duplicate request.');
+      return;
+    }
+    if (
+      postToApprove.status === 'published' &&
+      postToApprove.results?.some((r) => r.status === 'success' && r.externalPostId)
+    ) {
+      console.warn('[approvePost] Post is already published live on destination pages. Skipping duplicate broadcast.');
+      return;
+    }
+
     // Immediately mark status as 'publishing' in UI
     setPosts((prev) =>
       prev.map((p) => (p.id === postId ? { ...p, status: 'publishing' } : p))
@@ -1834,6 +1847,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             updates: postUpdates,
           }),
         });
+        // Immediate cloud state flush to prevent revert on refresh
+        const currentSnapshot = postsRef.current.map((p) => (p.id === postId ? { ...p, ...postUpdates } : p));
+        syncToCloud(cleanEmail, { posts: currentSnapshot }, user);
       } catch (dbErr) {
         console.warn('[approvePost] Error updating post in MySQL:', dbErr);
       }
