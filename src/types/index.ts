@@ -166,6 +166,9 @@ export interface PostResult {
   platform: Platform;
   pageName: string;
   status: 'success' | 'failed' | 'draft';
+  titleUsed?: string;
+  subtitleUsed?: string;
+  mediaUrl?: string;
   externalPostId?: string;
   postUrl?: string;
   commentId?: string;
@@ -203,6 +206,9 @@ export interface Post {
   message: string;
   mediaUrl?: string;
   thumbnailUrl?: string;
+  featuredImageUrl?: string;
+  isAiGenerated?: boolean;
+  sigTemplateId?: string;
   linkUrl?: string;
   commentText?: string;
   pageIds: string[];

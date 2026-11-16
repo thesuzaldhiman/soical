@@ -111,6 +111,15 @@ export async function renderTemplateToCanvas(
     alignment: 'left',
   };
 
+  // Ensure chosen font is ready before drawing text
+  if (typeof document !== 'undefined' && document.fonts) {
+    try {
+      const activeFont = tBox.fontFamily || 'Noto Sans Devanagari';
+      await document.fonts.load(`bold ${tBox.fontSize || 44}px "${activeFont}"`);
+      await document.fonts.ready;
+    } catch {}
+  }
+
   renderHeadlineInsideBox(ctx, headline, highlightPhrase, tBox);
 
   return canvas.toDataURL('image/png');

@@ -133,6 +133,7 @@ interface AppContextType {
   toggleAutomation: (id: string) => void;
   deleteAutomation: (id: string) => void;
   saveSigTemplate: (template: SigTemplate) => void;
+  deleteSigTemplate: (id: string) => void;
 
   // Real & Live Utilities
   isAuthenticated: boolean;
@@ -271,6 +272,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   toggleAutomation: noop,
   deleteAutomation: noop,
   saveSigTemplate: noop,
+  deleteSigTemplate: noop,
   isAuthenticated: false,
   loginWithGoogle: noop,
   loginWithEmail: async () => ({ success: false, message: '' }),
@@ -2509,9 +2511,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let updated: SigTemplate[];
       if (idx >= 0) {
         updated = [...prev];
-        updated[idx] = template;
+        if (template.isDefault) {
+          updated = updated.map((t) => (t.id === template.id ? template : { ...t, isDefault: false }));
+        } else {
+          updated[idx] = template;
+        }
       } else {
-        updated = [...prev, template];
+        if (template.isDefault) {
+          updated = [...prev.map((t) => ({ ...t, isDefault: false })), template];
+        } else {
+          updated = [...prev, template];
+        }
       }
 
       const cleanEmail = (
@@ -2531,6 +2541,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Immediately sync to cloud so navigation doesn't lose template
+      syncToCloud(cleanEmail, { sigTemplates: updated }, user);
+
+      return updated;
+    });
+  };
+
+  const deleteSigTemplate = (id: string) => {
+    setSigTemplates((prev) => {
+      const updated = prev.filter((t) => t.id !== id);
+
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.sigTemplates = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+        } catch {}
+      }
+
+      // Immediately sync deletion to cloud so MySQL DB removes the template permanently
       syncToCloud(cleanEmail, { sigTemplates: updated }, user);
 
       return updated;
@@ -3564,6 +3601,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleAutomation,
         deleteAutomation,
         saveSigTemplate,
+        deleteSigTemplate,
         isAuthenticated,
         loginWithGoogle,
         loginWithEmail,

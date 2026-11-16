@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
@@ -20,6 +20,7 @@ import {
   Highlighter,
   Plus,
   Trash2,
+  Star,
   Edit3,
   Eye,
   Check,
@@ -142,7 +143,7 @@ export default function ImageGeneratorPage() {
 
 function SocialImageGeneratorContent() {
   const router = useRouter();
-  const { sigTemplates, saveSigTemplate } = useApp();
+  const { sigTemplates, saveSigTemplate, deleteSigTemplate } = useApp();
 
   // Active top-level tab: 'templates' | 'editor' | 'generator' | 'reels'
   const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'generator' | 'reels'>('templates');
@@ -151,30 +152,41 @@ function SocialImageGeneratorContent() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
     sigTemplates[0]?.id || 'tmpl_1'
   );
-  const activeTemplate =
-    sigTemplates.find((t) => t.id === selectedTemplateId) || sigTemplates[0] || {
-      id: 'tmpl_default',
-      name: 'Default 1200x630 Template',
-      canvasWidth: 1200,
-      canvasHeight: 630,
-      templateImageUrl:
-        'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&h=630&fit=crop&q=80',
-      layerMode: 'overlay',
-      featuredImageBox: { x: 40, y: 40, width: 1120, height: 380, borderRadius: 12 },
-      titleBox: {
-        x: 40,
-        y: 450,
-        width: 1120,
-        height: 150,
-        fontSize: 44,
-        lineHeight: 1.35,
-        textColor: '#FFFFFF',
-        highlightColor: '#FBBF24',
-        fontFamily: 'Noto Sans Devanagari',
-        alignment: 'left',
-      },
-      isDefault: true,
-    };
+
+  // Auto-heal selectedTemplateId if current template was deleted or missing
+  useEffect(() => {
+    if (sigTemplates.length > 0 && !sigTemplates.some((t) => t.id === selectedTemplateId)) {
+      setSelectedTemplateId(sigTemplates[0].id);
+    }
+  }, [sigTemplates, selectedTemplateId]);
+
+  const activeTemplate = useMemo(() => {
+    return (
+      sigTemplates.find((t) => t.id === selectedTemplateId) ||
+      sigTemplates[0] || {
+        id: 'tmpl_default',
+        name: 'Default News Template',
+        canvasWidth: 1080,
+        canvasHeight: 1350,
+        templateImageUrl: '/uploads/media_8c7a84d712a33674.png',
+        layerMode: 'overlay',
+        featuredImageBox: { x: 40, y: 120, width: 1000, height: 700, borderRadius: 16 },
+        titleBox: {
+          x: 60,
+          y: 860,
+          width: 960,
+          height: 380,
+          fontSize: 52,
+          lineHeight: 1.4,
+          textColor: '#FFFFFF',
+          highlightColor: '#FBBF24',
+          fontFamily: 'Noto Sans Devanagari',
+          alignment: 'left',
+        },
+        isDefault: true,
+      }
+    );
+  }, [sigTemplates, selectedTemplateId]);
 
   // ── Template Editor State ──
   const [templateName, setTemplateName] = useState(activeTemplate.name);
@@ -185,18 +197,21 @@ function SocialImageGeneratorContent() {
     activeTemplate.layerMode || 'overlay'
   );
 
-  // Boxes
-  const [fBox, setFBox] = useState(
-    activeTemplate.featuredImageBox || { x: 40, y: 40, width: 1120, height: 380, borderRadius: 12 }
+  // Boxes (Independently tracked per template)
+  type FBoxType = NonNullable<SigTemplate['featuredImageBox']>;
+  type TBoxType = NonNullable<SigTemplate['titleBox']>;
+
+  const [fBox, setFBox] = useState<FBoxType>(
+    activeTemplate.featuredImageBox || { x: 40, y: 120, width: 1000, height: 700, borderRadius: 16 }
   );
-  const [tBox, setTBox] = useState(
+  const [tBox, setTBox] = useState<TBoxType>(
     activeTemplate.titleBox || {
-      x: 40,
-      y: 450,
-      width: 1120,
-      height: 150,
-      fontSize: 44,
-      lineHeight: 1.35,
+      x: 60,
+      y: 860,
+      width: 960,
+      height: 380,
+      fontSize: 52,
+      lineHeight: 1.4,
       textColor: '#FFFFFF',
       highlightColor: '#FBBF24',
       fontFamily: 'Noto Sans Devanagari',
@@ -208,6 +223,7 @@ function SocialImageGeneratorContent() {
   const [activeBox, setActiveBox] = useState<'featured' | 'title'>('featured');
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('Template saved successfully!');
 
   // Custom Uploaded Fonts State
   const [customFonts, setCustomFonts] = useState<Array<{ name: string; url: string }>>([]);
@@ -252,9 +268,9 @@ function SocialImageGeneratorContent() {
   // ── New Template Modal State ──
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newTmplName, setNewTmplName] = useState('');
-  const [newTmplWidth, setNewTmplWidth] = useState(1200);
-  const [newTmplHeight, setNewTmplHeight] = useState(630);
-  const [newTmplSelectedPreset, setNewTmplSelectedPreset] = useState<string>('fb_landscape');
+  const [newTmplWidth, setNewTmplWidth] = useState(1080);
+  const [newTmplHeight, setNewTmplHeight] = useState(1350);
+  const [newTmplSelectedPreset, setNewTmplSelectedPreset] = useState<string>('insta_portrait');
   const [newTmplImageUrl, setNewTmplImageUrl] = useState('');
   const [newTmplLayerMode, setNewTmplLayerMode] = useState<'overlay' | 'background'>('overlay');
   const [newTmplIsDefault, setNewTmplIsDefault] = useState(false);
@@ -265,30 +281,55 @@ function SocialImageGeneratorContent() {
   const visualEditorContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Synchronize local states when switching selected template
+  // This guarantees each template strictly maintains its own independent boxes and dimensions
   useEffect(() => {
-    if (activeTemplate) {
-      setTemplateName(activeTemplate.name);
-      setCanvasWidth(activeTemplate.canvasWidth);
-      setCanvasHeight(activeTemplate.canvasHeight);
-      setTemplateImageUrl(activeTemplate.templateImageUrl);
-      setLayerMode(activeTemplate.layerMode || 'overlay');
-      setFBox(activeTemplate.featuredImageBox || { x: 40, y: 40, width: 1120, height: 380, borderRadius: 12 });
+    const targetTmpl = sigTemplates.find((t) => t.id === selectedTemplateId) || sigTemplates[0];
+    if (targetTmpl) {
+      setTemplateName(targetTmpl.name);
+      setCanvasWidth(targetTmpl.canvasWidth);
+      setCanvasHeight(targetTmpl.canvasHeight);
+      setTemplateImageUrl(targetTmpl.templateImageUrl || '');
+      setLayerMode(targetTmpl.layerMode || 'overlay');
+
+      const isPort = (targetTmpl.canvasHeight || 1350) > (targetTmpl.canvasWidth || 1080);
+      setFBox(
+        targetTmpl.featuredImageBox
+          ? { ...targetTmpl.featuredImageBox }
+          : isPort
+          ? { x: 40, y: 120, width: targetTmpl.canvasWidth - 80, height: Math.round(targetTmpl.canvasHeight * 0.52), borderRadius: 16 }
+          : { x: 0, y: 0, width: targetTmpl.canvasWidth, height: Math.round(targetTmpl.canvasHeight * 0.65), borderRadius: 0 }
+      );
       setTBox(
-        activeTemplate.titleBox || {
-          x: 40,
-          y: 450,
-          width: 1120,
-          height: 150,
-          fontSize: 44,
-          lineHeight: 1.35,
-          textColor: '#FFFFFF',
-          highlightColor: '#FBBF24',
-          fontFamily: 'Noto Sans Devanagari',
-          alignment: 'left',
-        }
+        targetTmpl.titleBox
+          ? { ...targetTmpl.titleBox }
+          : isPort
+          ? {
+              x: 60,
+              y: Math.round(targetTmpl.canvasHeight * 0.64),
+              width: targetTmpl.canvasWidth - 120,
+              height: Math.round(targetTmpl.canvasHeight * 0.3),
+              fontSize: 52,
+              lineHeight: 1.4,
+              textColor: '#FFFFFF',
+              highlightColor: '#FBBF24',
+              fontFamily: 'Noto Sans Devanagari',
+              alignment: 'left',
+            }
+          : {
+              x: 40,
+              y: Math.round(targetTmpl.canvasHeight * 0.68),
+              width: targetTmpl.canvasWidth - 80,
+              height: Math.round(targetTmpl.canvasHeight * 0.28),
+              fontSize: 44,
+              lineHeight: 1.35,
+              textColor: '#FFFFFF',
+              highlightColor: '#FBBF24',
+              fontFamily: 'Noto Sans Devanagari',
+              alignment: 'left',
+            }
       );
     }
-  }, [selectedTemplateId, activeTemplate]);
+  }, [selectedTemplateId]);
 
   // Live render generator preview
   const handleRenderPreview = useCallback(async () => {
@@ -326,21 +367,81 @@ function SocialImageGeneratorContent() {
     }
   }, [activeTab, isPreviewMode, handleRenderPreview]);
 
-  // Save current template edits
+  // Save current template edits into database and local state
   const handleSaveCurrentTemplate = () => {
     const updated: SigTemplate = {
+      ...activeTemplate,
       id: selectedTemplateId,
       name: templateName,
       canvasWidth,
       canvasHeight,
       templateImageUrl,
       layerMode,
-      featuredImageBox: fBox,
-      titleBox: tBox,
+      featuredImageBox: { ...fBox },
+      titleBox: { ...tBox },
       videoConfig: activeTemplate.videoConfig,
       isDefault: activeTemplate.isDefault,
     };
     saveSigTemplate(updated);
+    setSaveMessage(`Template "${templateName}" saved to database!`);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
+  };
+
+  // Switch template inside visual editor and auto-save the previous template
+  const handleSwitchTemplateInEditor = (newId: string) => {
+    if (newId === selectedTemplateId) return;
+
+    // Auto-save current template first so adjustments are never lost
+    const currentUpdated: SigTemplate = {
+      ...activeTemplate,
+      id: selectedTemplateId,
+      name: templateName,
+      canvasWidth,
+      canvasHeight,
+      templateImageUrl,
+      layerMode,
+      featuredImageBox: { ...fBox },
+      titleBox: { ...tBox },
+    };
+    saveSigTemplate(currentUpdated);
+
+    setSelectedTemplateId(newId);
+  };
+
+  // Set template as default for WordPress / RSS automation
+  const handleSetDefaultTemplate = (templateId: string) => {
+    const tmpl = sigTemplates.find((t) => t.id === templateId);
+    if (!tmpl) return;
+    saveSigTemplate({ ...tmpl, isDefault: true });
+    setSaveMessage(`"${tmpl.name}" is now the default template!`);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
+  };
+
+  // Delete template permanently from database and local state
+  const handleDeleteTemplate = (templateId: string, name: string) => {
+    if (sigTemplates.length <= 1) {
+      alert('Aapke account me kam se kam 1 template hona zaroori hai. Is template ko delete nahi kiya ja sakta.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Kya aap template "${name}" ko delete karna chahte hain? Ye template database se permanently remove ho jayega.`
+    );
+    if (!confirmed) return;
+
+    deleteSigTemplate(templateId);
+
+    // If deleting currently active template, switch to first remaining
+    if (selectedTemplateId === templateId) {
+      const remaining = sigTemplates.filter((t) => t.id !== templateId);
+      if (remaining.length > 0) {
+        setSelectedTemplateId(remaining[0].id);
+      }
+    }
+
+    setSaveMessage(`Template "${name}" deleted from database.`);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
   };
@@ -357,33 +458,58 @@ function SocialImageGeneratorContent() {
     e.preventDefault();
     if (!newTmplName.trim()) return;
 
+    const w = Number(newTmplWidth) || 1080;
+    const h = Number(newTmplHeight) || 1350;
+    const isPortrait = h > w;
+
     const newId = `tmpl_${Date.now()}`;
     const newTemplate: SigTemplate = {
       id: newId,
       name: newTmplName.trim(),
-      canvasWidth: Number(newTmplWidth) || 1200,
-      canvasHeight: Number(newTmplHeight) || 630,
-      templateImageUrl: newTmplImageUrl.trim() || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&h=630&fit=crop&q=80',
+      canvasWidth: w,
+      canvasHeight: h,
+      templateImageUrl: newTmplImageUrl.trim() || '/uploads/media_8c7a84d712a33674.png',
       layerMode: newTmplLayerMode,
-      featuredImageBox: {
-        x: 40,
-        y: 40,
-        width: Number(newTmplWidth) - 80,
-        height: Math.round(Number(newTmplHeight) * 0.6),
-        borderRadius: 12,
-      },
-      titleBox: {
-        x: 40,
-        y: Math.round(Number(newTmplHeight) * 0.68),
-        width: Number(newTmplWidth) - 80,
-        height: Math.round(Number(newTmplHeight) * 0.28),
-        fontSize: 44,
-        lineHeight: 1.35,
-        textColor: '#FFFFFF',
-        highlightColor: '#FBBF24',
-        fontFamily: 'Noto Sans Devanagari',
-        alignment: 'left',
-      },
+      featuredImageBox: isPortrait
+        ? {
+            x: Math.round(w * 0.04),
+            y: Math.round(h * 0.08),
+            width: Math.round(w * 0.92),
+            height: Math.round(h * 0.52),
+            borderRadius: 16,
+          }
+        : {
+            x: 0,
+            y: 0,
+            width: w,
+            height: Math.round(h * 0.65),
+            borderRadius: 0,
+          },
+      titleBox: isPortrait
+        ? {
+            x: Math.round(w * 0.06),
+            y: Math.round(h * 0.64),
+            width: Math.round(w * 0.88),
+            height: Math.round(h * 0.3),
+            fontSize: Math.max(36, Math.round(h * 0.038)),
+            lineHeight: 1.35,
+            textColor: '#FFFFFF',
+            highlightColor: '#FBBF24',
+            fontFamily: 'Noto Sans Devanagari',
+            alignment: 'left',
+          }
+        : {
+            x: 40,
+            y: Math.round(h * 0.68),
+            width: w - 80,
+            height: Math.round(h * 0.28),
+            fontSize: 44,
+            lineHeight: 1.35,
+            textColor: '#FFFFFF',
+            highlightColor: '#FBBF24',
+            fontFamily: 'Noto Sans Devanagari',
+            alignment: 'left',
+          },
       isDefault: newTmplIsDefault,
     };
 
@@ -391,6 +517,9 @@ function SocialImageGeneratorContent() {
     setSelectedTemplateId(newId);
     setIsNewModalOpen(false);
     setActiveTab('editor');
+    setSaveMessage(`New template "${newTmplName}" created!`);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
   };
 
   // Handle local template file upload (FileReader -> Base64 data URL)
@@ -767,10 +896,18 @@ function SocialImageGeneratorContent() {
                       </div>
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <h4 className="font-extrabold text-sm text-slate-900 leading-snug line-clamp-1">
                         {t.name}
                       </h4>
+                      <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-500 font-medium">
+                        <span className="truncate bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                          📸 Cutout: {t.featuredImageBox?.width || 0}×{t.featuredImageBox?.height || 0}
+                        </span>
+                        <span className="truncate bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                          📝 Text: {t.titleBox?.width || 0}×{t.titleBox?.height || 0}
+                        </span>
+                      </div>
                       <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
                         <Type className="w-3 h-3 text-slate-400" />
                         <span>{t.titleBox?.fontFamily || 'Noto Sans Devanagari'} • {t.titleBox?.fontSize || 44}px</span>
@@ -780,38 +917,64 @@ function SocialImageGeneratorContent() {
 
                   {/* Actions */}
                   <div className="pt-2 border-t border-[#F0F2F6] flex items-center justify-between gap-1.5 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenVisualEditor(t.id)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer transition-colors"
-                    >
-                      <Layout className="w-3.5 h-3.5" />
-                      <span>Visual Editor</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenVisualEditor(t.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                      >
+                        <Layout className="w-3.5 h-3.5" />
+                        <span>Visual Editor</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedTemplateId(t.id);
-                        setActiveTab('reels');
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer transition-colors border border-rose-200"
-                    >
-                      <Film className="w-3.5 h-3.5" />
-                      <span>Reel</span>
-                    </button>
+                      {!t.isDefault && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetDefaultTemplate(t.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold cursor-pointer transition-colors border border-amber-200"
+                          title="Set as Default template for WordPress & RSS"
+                        >
+                          <Star className="w-3.5 h-3.5" />
+                          <span>Set Default</span>
+                        </button>
+                      )}
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedTemplateId(t.id);
-                        setActiveTab('generator');
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#FF007A] text-xs font-bold cursor-pointer transition-colors border border-pink-100"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Test</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTemplateId(t.id);
+                          setActiveTab('reels');
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer transition-colors border border-rose-200"
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        <span>Reel</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTemplateId(t.id);
+                          setActiveTab('generator');
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#FF007A] text-xs font-bold cursor-pointer transition-colors border border-pink-100"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Test</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTemplate(t.id, t.name)}
+                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold cursor-pointer transition-colors border border-red-200"
+                        title="Delete template from database"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -825,16 +988,33 @@ function SocialImageGeneratorContent() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'editor' && (
         <div className="space-y-4">
-          {/* Editor Header Bar */}
+          {saveSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{saveMessage}</span>
+            </div>
+          )}
+
+          {/* Editor Header Bar with Template Switcher */}
           <div className="bg-white rounded-2xl border border-[#EEF1F6] p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)]">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-slate-500">Editing Template:</span>
-              <span className="text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-md">
-                {templateName}
-              </span>
+              <span className="text-xs font-bold text-slate-500">Active Template:</span>
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => handleSwitchTemplateInEditor(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#FF007A]/20"
+              >
+                {sigTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.canvasWidth}×{t.canvasHeight}) {t.isDefault ? '★ Default' : ''}
+                  </option>
+                ))}
+              </select>
+
               <span className="text-[11px] font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                 {canvasWidth}×{canvasHeight}
               </span>
+
               {/* Layer Mode Badge */}
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
@@ -845,6 +1025,23 @@ function SocialImageGeneratorContent() {
               >
                 {layerMode === 'overlay' ? 'Layer: Photo behind PNG Frame' : 'Layer: Template Background'}
               </span>
+
+              {activeTemplate.isDefault ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <Star className="w-3 h-3 fill-emerald-500" />
+                  <span>Default</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSetDefaultTemplate(selectedTemplateId)}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 cursor-pointer flex items-center gap-1"
+                  title="Make this default for WordPress & RSS automations"
+                >
+                  <Star className="w-3 h-3" />
+                  <span>Set as Default</span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-2 self-end lg:self-auto flex-wrap">
@@ -868,6 +1065,16 @@ function SocialImageGeneratorContent() {
               >
                 <Check className="w-3.5 h-3.5" />
                 <span>Save Template</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDeleteTemplate(selectedTemplateId, templateName)}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold cursor-pointer transition-colors"
+                title="Delete this template permanently"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
               </button>
             </div>
           </div>
