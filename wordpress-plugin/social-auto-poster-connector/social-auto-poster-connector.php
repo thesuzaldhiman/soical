@@ -3,7 +3,7 @@
  * Plugin Name: Social Auto Poster Connector (Multi-Titles & Instant Dispatch)
  * Plugin URI: https://game.khabarmonkey.com
  * Description: Connects WordPress directly to Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line) and automatically pushes published posts to your Facebook Pages and social channels with unique titles and first-comment links.
- * Version: 1.3.3
+ * Version: 1.3.4
  * Author: Suzal Dhiman (Khabar Monkey Media)
  * Author URI: https://game.khabarmonkey.com
  * License: GPL-2.0+
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-define('SAP_CONNECTOR_VERSION', '1.3.3');
+define('SAP_CONNECTOR_VERSION', '1.3.4');
 define('SAP_CONNECTOR_DIR', plugin_dir_path(__FILE__));
 define('SAP_CONNECTOR_URL', plugin_dir_url(__FILE__));
 
@@ -31,11 +31,15 @@ class Social_Auto_Poster_Connector {
     }
 
     private function __construct() {
+        // Register Post Meta with Gutenberg REST API support
+        add_action('init', array($this, 'register_post_metas'));
+
         // Admin menu & settings
         add_action('admin_menu', array($this, 'register_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
         add_action('wp_ajax_sap_test_connection', array($this, 'ajax_test_connection'));
         add_action('wp_ajax_sap_manual_dispatch', array($this, 'ajax_manual_dispatch'));
+        add_action('wp_ajax_sap_get_target_pages', array($this, 'ajax_get_target_pages'));
 
         // Post editor meta box
         add_action('add_meta_boxes', array($this, 'add_social_titles_meta_box'));
@@ -487,13 +491,49 @@ class Social_Auto_Poster_Connector {
     }
 
     /* ==========================================================================
-       2. POST EDITOR META BOX (PER LINE 1 TITLE)
+       2. POST EDITOR META BOX (PER-PAGE TITLES & SUBTITLES)
        ========================================================================== */
+
+    public function register_post_metas() {
+        register_post_meta('post', '_sap_social_titles', array(
+            'show_in_rest'  => true,
+            'single'        => true,
+            'type'          => 'string',
+            'auth_callback' => function() { return current_user_can('edit_posts'); }
+        ));
+        register_post_meta('post', '_sap_page_variations', array(
+            'show_in_rest'  => true,
+            'single'        => true,
+            'type'          => 'string',
+            'auth_callback' => function() { return current_user_can('edit_posts'); }
+        ));
+    }
+
+    public function ajax_get_target_pages() {
+        check_ajax_referer('sap_get_pages_nonce', 'nonce');
+        $webhook_url = get_option('sap_webhook_url', '');
+        $secret_key = get_option('sap_secret_key', '');
+        if (empty($webhook_url)) {
+            wp_send_json_error(array('message' => 'Webhook URL not set'));
+        }
+        $endpoint = add_query_arg(array(
+            'action'   => 'get_targets',
+            'site_url' => get_site_url(),
+            'secret'   => $secret_key,
+        ), $webhook_url);
+
+        $res = wp_remote_get($endpoint, array('timeout' => 8));
+        if (is_wp_error($res) || wp_remote_retrieve_response_code($res) !== 200) {
+            wp_send_json_error(array('message' => 'Failed to reach SaaS targets endpoint'));
+        }
+        $data = json_decode(wp_remote_retrieve_body($res), true);
+        wp_send_json_success($data);
+    }
 
     public function add_social_titles_meta_box() {
         add_meta_box(
             'sap_social_titles_box',
-            '📱 Social Auto Poster — Multi-Page Titles',
+            '📱 Social Auto Poster — Multi-Page Titles & Subtitles',
             array($this, 'render_social_titles_meta_box'),
             'post',
             'normal',
@@ -504,38 +544,72 @@ class Social_Auto_Poster_Connector {
     public function render_social_titles_meta_box($post) {
         wp_nonce_field('sap_save_titles_nonce', 'sap_titles_nonce');
         $saved_titles = get_post_meta($post->ID, '_sap_social_titles', true);
+        $saved_variations = get_post_meta($post->ID, '_sap_page_variations', true);
+        $post_title = get_the_title($post->ID);
         ?>
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-            <p style="margin: 0 0 8px 0; font-size: 13px; color: #475569; line-height: 1.5;">
-                Apne connected Facebook Pages ke liye yahan alag-alag titles daalein. 
-                <strong>Har line mein ek title likhein (1 Title Per Line)</strong>.<br>
-                <span style="font-size: 12px; color: #64748b;">
-                    • Default Post Title ➔ Page A par jayega.<br>
-                    • Line 1 Title ➔ Page B par jayega (naya image card banega).<br>
-                    • Line 2 Title ➔ Page C par jayega (naya image card banega).<br>
-                    • Line 3 Title ➔ Page D par jayega (naya image card banega).
-                </span>
-            </p>
-
-            <textarea 
-                name="sap_social_titles" 
-                id="sap_social_titles" 
-                rows="5" 
-                style="width: 100%; padding: 10px 12px; font-family: monospace; font-size: 13px; line-height: 1.6; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; background: #fafafa;"
-                placeholder="Line 1: Himachal Weather Alert: Bhaari barfbari ke baad 3 highway band&#10;Line 2: Kullu-Manali mein mausam ka kehar, pahaadon par safed chaadar&#10;Line 3: Shimla mein record barfbari, sailaniyon ke liye advisory jaari"
-            ><?php echo esc_textarea($saved_titles); ?></textarea>
-
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; flex-wrap: wrap; gap: 8px;">
-                <div id="sap_titles_counter" style="font-size: 12px; color: #334155; font-weight: 500;">
-                    <span id="sap_badge_count" style="display: inline-block; background: #0f172a; color: #fff; padding: 2px 8px; border-radius: 12px; font-weight: 700; margin-right: 4px;">0</span>
-                    <span>Extra Titles entered</span>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <h4 style="margin: 0; font-size: 14px; font-weight: 700; color: #0f172a;">
+                        🎯 Facebook Pages Multi-Headline &amp; Subtitle Studio
+                    </h4>
+                    <p style="margin: 3px 0 0 0; font-size: 12px; color: #64748b;">
+                        Har destination page ke liye alag Headline aur Subtitle set karein. Har page par unique AI News Card ban kar jayega.
+                    </p>
                 </div>
 
-                <?php if ($post->post_status === 'publish') : ?>
-                    <button type="button" id="sap_btn_manual_push" class="button button-secondary" style="font-size: 12px; font-weight: 600; border-color: #0284c7; color: #0284c7;">
-                        🚀 Re-dispatch to Social Poster Now
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button type="button" id="sap_btn_toggle_mode" class="button" style="font-size: 11px; padding: 3px 10px; border-radius: 6px;">
+                        ⚡ Switch to Bulk Textarea Mode
                     </button>
-                <?php endif; ?>
+                    <?php if ($post->post_status === 'publish') : ?>
+                        <button type="button" id="sap_btn_manual_push" class="button button-primary" style="font-size: 11px; font-weight: 600; background: #0284c7; border-color: #0284c7; padding: 3px 12px; border-radius: 6px;">
+                            🚀 Re-dispatch Now
+                        </button>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- VIEW MODE 1: VISUAL PER-PAGE CARDS (DEFAULT) -->
+            <div id="sap_cards_container" style="display: flex; flex-direction: column; gap: 12px;">
+                <div id="sap_loading_targets" style="padding: 12px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; font-size: 12px; color: #64748b; text-align: center;">
+                    ⏳ Connected destination pages load ho rahe hain...
+                </div>
+            </div>
+
+            <div style="margin-top: 10px;">
+                <button type="button" id="sap_btn_add_card" class="button" style="font-size: 12px; padding: 4px 12px; border-radius: 6px; font-weight: 600; border-color: #94a3b8;">
+                    ➕ Add Another Page Variation
+                </button>
+            </div>
+
+            <!-- VIEW MODE 2: FAST BULK TEXTAREA (COLLAPSIBLE / SECONDARY) -->
+            <div id="sap_bulk_container" style="display: none; margin-top: 14px; padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <label for="sap_social_titles" style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                    ⚡ Bulk Fast-Paste (Format: <code>Headline | Subtitle</code> per line)
+                </label>
+                <textarea 
+                    name="sap_social_titles" 
+                    id="sap_social_titles" 
+                    rows="4" 
+                    style="width: 100%; padding: 10px 12px; font-family: monospace; font-size: 13px; line-height: 1.6; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; background: #ffffff;"
+                    placeholder="Line 1: हिमाचल मौसम अलर्ट | भारी बर्फबारी से 3 नेशनल हाईवे बंद&#10;Line 2: शिमला और मनाली में मौसम का कहर | सैलानियों के लिए एडवाइजरी जारी&#10;Line 3: 24 घंटे में भारी बारिश की चेतावनी | प्रशासन ने जारी किए हेल्पलाइन नंबर"
+                ><?php echo esc_textarea($saved_titles); ?></textarea>
+                <p style="margin: 4px 0 0 0; font-size: 11px; color: #64748b;">
+                    💡 Tip: Har line mein <code>|</code> pipe lagakar aap Subtitle alag likh sakte hain (Jaise: <code>Headline | Subtitle</code>). Line 1 ➔ Page 1, Line 2 ➔ Page 2, Line 3 ➔ Page 3.
+                </p>
+            </div>
+
+            <!-- Hidden input holding JSON of structured variations -->
+            <input type="hidden" name="sap_page_variations" id="sap_page_variations" value="<?php echo esc_attr($saved_variations); ?>" />
+
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid #f1f5f9; flex-wrap: wrap; gap: 8px;">
+                <div id="sap_titles_counter" style="font-size: 12px; color: #334155; font-weight: 500;">
+                    <span id="sap_badge_count" style="display: inline-block; background: #0f172a; color: #fff; padding: 2px 8px; border-radius: 12px; font-weight: 700; margin-right: 4px;">0</span>
+                    <span>Page Variations Configured</span>
+                </div>
+
+                <div id="sap_manual_push_result" style="font-size: 12px; display: none;"></div>
             </div>
 
             <?php
@@ -555,48 +629,255 @@ class Social_Auto_Poster_Connector {
                 <span><?php echo esc_html($clean_msg); ?></span>
             </div>
             <?php endif; ?>
-
-            <div id="sap_titles_preview_chips" style="display: flex; flex-direction: column; gap: 4px; margin-top: 10px;"></div>
-            <div id="sap_manual_push_result" style="margin-top: 8px; font-size: 12px; display: none;"></div>
         </div>
 
         <script>
         (function() {
-            function updateTitlesPreview() {
-                var textarea = document.getElementById('sap_social_titles');
-                var countBadge = document.getElementById('sap_badge_count');
-                var chipsContainer = document.getElementById('sap_titles_preview_chips');
-                if (!textarea || !countBadge || !chipsContainer) return;
+            var rawVariations = <?php echo !empty($saved_variations) ? $saved_variations : '[]'; ?>;
+            var defaultPostTitle = <?php echo wp_json_encode($post_title); ?>;
+            var targetPages = [];
+            var isBulkMode = false;
 
-                var raw = textarea.value || '';
-                var lines = raw.split(/\r?\n/).map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+            var cardsContainer = document.getElementById('sap_cards_container');
+            var bulkContainer = document.getElementById('sap_bulk_container');
+            var hiddenInput = document.getElementById('sap_page_variations');
+            var textarea = document.getElementById('sap_social_titles');
+            var badgeCount = document.getElementById('sap_badge_count');
+            var toggleBtn = document.getElementById('sap_btn_toggle_mode');
+            var addCardBtn = document.getElementById('sap_btn_add_card');
 
-                countBadge.innerText = lines.length;
-                chipsContainer.innerHTML = '';
+            function getPostTitle() {
+                var wpTitleEl = document.getElementById('title') || document.querySelector('.editor-post-title__input');
+                return (wpTitleEl && (wpTitleEl.value || wpTitleEl.innerText || wpTitleEl.textContent)) || defaultPostTitle || '';
+            }
 
-                if (lines.length > 0) {
-                    var labels = ['Page B (Extra Title 1)', 'Page C (Extra Title 2)', 'Page D (Extra Title 3)', 'Page E (Extra Title 4)'];
-                    lines.forEach(function(line, idx) {
-                        var chip = document.createElement('div');
-                        chip.style.cssText = 'padding: 4px 8px; background: #f1f5f9; border-left: 3px solid #0284c7; border-radius: 4px; font-size: 11px; color: #1e293b;';
-                        var label = labels[idx] || ('Page ' + (idx + 2) + ' Title');
-                        chip.innerHTML = '<strong style="color:#0369a1;">' + label + ':</strong> ' + escapeHtml(line);
-                        chipsContainer.appendChild(chip);
-                    });
+            // Sync from visual cards to hidden JSON and bulk textarea
+            function syncFromCards() {
+                var cardEls = cardsContainer.querySelectorAll('.sap-card-row');
+                var variations = [];
+                var lines = [];
+
+                cardEls.forEach(function(el, idx) {
+                    var pageId = el.getAttribute('data-page-id') || '';
+                    var pageName = el.getAttribute('data-page-name') || ('Page ' + (idx + 1));
+                    var titleInput = el.querySelector('.sap-input-title');
+                    var subtitleInput = el.querySelector('.sap-input-subtitle');
+
+                    var titleVal = titleInput ? titleInput.value.trim() : '';
+                    var subVal = subtitleInput ? subtitleInput.value.trim() : '';
+
+                    if (titleVal || subVal) {
+                        variations.push({
+                            page_id: pageId,
+                            page_name: pageName,
+                            title: titleVal,
+                            subtitle: subVal
+                        });
+
+                        var line = titleVal;
+                        if (subVal) {
+                            line += ' | ' + subVal;
+                        }
+                        lines.push(line);
+                    }
+                });
+
+                if (hiddenInput) {
+                    hiddenInput.value = JSON.stringify(variations);
+                }
+                if (textarea && !isBulkMode) {
+                    textarea.value = lines.join('\n');
+                }
+                if (badgeCount) {
+                    badgeCount.innerText = variations.length;
                 }
             }
 
-            function escapeHtml(text) {
-                var div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
+            // Sync from textarea to cards
+            function syncFromTextarea() {
+                if (!textarea) return;
+                var lines = textarea.value.split(/\r?\n/).map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                var variations = [];
+
+                lines.forEach(function(line, idx) {
+                    var title = line;
+                    var subtitle = '';
+                    if (line.indexOf('|') !== -1) {
+                        var parts = line.split('|');
+                        title = parts[0].trim();
+                        subtitle = parts.slice(1).join('|').trim();
+                    }
+                    var pg = targetPages[idx] || {};
+                    variations.push({
+                        page_id: pg.id || pg.pageId || '',
+                        page_name: pg.name || ('Page ' + (idx + 1)),
+                        title: title,
+                        subtitle: subtitle
+                    });
+                });
+
+                if (hiddenInput) {
+                    hiddenInput.value = JSON.stringify(variations);
+                }
+                if (badgeCount) {
+                    badgeCount.innerText = variations.length;
+                }
+                renderCards(variations);
+            }
+
+            function createCardHtml(variation, index) {
+                var pageId = variation.page_id || '';
+                var pageName = variation.page_name || ('Page ' + (index + 1));
+                var title = variation.title || (index === 0 ? getPostTitle() : '');
+                var subtitle = variation.subtitle || '';
+
+                var card = document.createElement('div');
+                card.className = 'sap-card-row';
+                card.setAttribute('data-page-id', pageId);
+                card.setAttribute('data-page-name', pageName);
+                card.style.cssText = 'background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);';
+
+                card.innerHTML = 
+                    '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">' +
+                        '<div style="display: flex; align-items: center; gap: 8px;">' +
+                            '<span style="background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">' +
+                                '🌐 ' + escapeHtml(pageName) +
+                            '</span>' +
+                            '<span style="font-size: 11px; color: #64748b;">(Page #' + (index + 1) + ')</span>' +
+                        '</div>' +
+                        (index > 0 ? '<button type="button" class="sap-btn-remove-card button-link-delete" style="font-size: 11px; color: #ef4444; text-decoration: none; cursor: pointer;">✕ Remove</button>' : '') +
+                    '</div>' +
+                    '<div style="display: flex; flex-direction: column; gap: 6px;">' +
+                        '<div>' +
+                            '<label style="display: block; font-size: 11px; font-weight: 600; color: #475569; margin-bottom: 2px;">Headline (Main Card Title):</label>' +
+                            '<input type="text" class="sap-input-title" style="width: 100%; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;" value="' + escapeAttr(title) + '" placeholder="e.g. Himachal News: Bhaari barfbari se raste band" />' +
+                        '</div>' +
+                        '<div>' +
+                            '<label style="display: block; font-size: 11px; font-weight: 600; color: #475569; margin-bottom: 2px;">Subtitle / Highlight Line (Optional):</label>' +
+                            '<input type="text" class="sap-input-subtitle" style="width: 100%; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; color: #334155;" value="' + escapeAttr(subtitle) + '" placeholder="e.g. Shimla aur Manali mein record barfbari, advisory jaari" />' +
+                        '</div>' +
+                    '</div>';
+
+                var titleInput = card.querySelector('.sap-input-title');
+                var subtitleInput = card.querySelector('.sap-input-subtitle');
+                var removeBtn = card.querySelector('.sap-btn-remove-card');
+
+                if (titleInput) titleInput.addEventListener('input', syncFromCards);
+                if (subtitleInput) subtitleInput.addEventListener('input', syncFromCards);
+                if (removeBtn) {
+                    removeBtn.addEventListener('click', function() {
+                        card.remove();
+                        syncFromCards();
+                    });
+                }
+
+                return card;
+            }
+
+            function renderCards(variationsList) {
+                cardsContainer.innerHTML = '';
+                var list = variationsList && variationsList.length > 0 ? variationsList : [];
+
+                if (list.length === 0 && targetPages.length > 0) {
+                    list = targetPages.map(function(p, i) {
+                        return {
+                            page_id: p.id || p.pageId,
+                            page_name: p.name,
+                            title: i === 0 ? getPostTitle() : '',
+                            subtitle: ''
+                        };
+                    });
+                } else if (list.length === 0) {
+                    list = [
+                        { page_id: '', page_name: 'Primary Facebook Page (Default)', title: getPostTitle(), subtitle: '' },
+                        { page_id: '', page_name: 'Secondary Facebook Page', title: '', subtitle: '' }
+                    ];
+                }
+
+                list.forEach(function(v, idx) {
+                    cardsContainer.appendChild(createCardHtml(v, idx));
+                });
+                syncFromCards();
+            }
+
+            function escapeHtml(t) {
+                var d = document.createElement('div');
+                d.textContent = t || '';
+                return d.innerHTML;
+            }
+
+            function escapeAttr(t) {
+                return (t || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            }
+
+            // Fetch live targets from SaaS
+            function loadLiveTargets() {
+                var fd = new FormData();
+                fd.append('action', 'sap_get_target_pages');
+                fd.append('nonce', '<?php echo esc_js(wp_create_nonce('sap_get_pages_nonce')); ?>');
+
+                fetch(ajaxurl, {
+                    method: 'POST',
+                    body: fd
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                    if (res.success && res.data && res.data.pages) {
+                        targetPages = res.data.pages;
+                        if (!rawVariations || rawVariations.length === 0) {
+                            renderCards([]);
+                        }
+                    }
+                })
+                .catch(function() {
+                    // Non-blocking fallback
+                });
             }
 
             document.addEventListener('DOMContentLoaded', function() {
-                var textarea = document.getElementById('sap_social_titles');
+                renderCards(rawVariations);
+                loadLiveTargets();
+
+                if (toggleBtn) {
+                    toggleBtn.addEventListener('click', function() {
+                        isBulkMode = !isBulkMode;
+                        if (isBulkMode) {
+                            bulkContainer.style.display = 'block';
+                            cardsContainer.style.display = 'none';
+                            addCardBtn.style.display = 'none';
+                            toggleBtn.innerText = '📱 Switch to Visual Cards Mode';
+                        } else {
+                            bulkContainer.style.display = 'none';
+                            cardsContainer.style.display = 'flex';
+                            addCardBtn.style.display = 'inline-block';
+                            toggleBtn.innerText = '⚡ Switch to Bulk Textarea Mode';
+                            syncFromTextarea();
+                        }
+                    });
+                }
+
+                if (addCardBtn) {
+                    addCardBtn.addEventListener('click', function() {
+                        var currentCount = cardsContainer.querySelectorAll('.sap-card-row').length;
+                        var targetPage = targetPages[currentCount] || { name: 'Page ' + (currentCount + 1), id: '' };
+                        var newCard = createCardHtml({
+                            page_id: targetPage.id || '',
+                            page_name: targetPage.name,
+                            title: '',
+                            subtitle: ''
+                        }, currentCount);
+                        cardsContainer.appendChild(newCard);
+                        syncFromCards();
+                    });
+                }
+
                 if (textarea) {
-                    textarea.addEventListener('input', updateTitlesPreview);
-                    updateTitlesPreview();
+                    textarea.addEventListener('input', function() {
+                        if (isBulkMode) {
+                            var lines = textarea.value.split(/\r?\n/).map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                            if (badgeCount) badgeCount.innerText = lines.length;
+                        }
+                    });
                 }
 
                 var pushBtn = document.getElementById('sap_btn_manual_push');
@@ -621,10 +902,10 @@ class Social_Auto_Poster_Connector {
                         .then(function(r) { return r.json(); })
                         .then(function(data) {
                             pushBtn.disabled = false;
-                            pushBtn.innerText = '🚀 Re-dispatch to Social Poster Now';
+                            pushBtn.innerText = '🚀 Re-dispatch Now';
                             if (data.success) {
                                 pushRes.style.color = '#065f46';
-                                pushRes.innerText = '✅ Dispatched successfully to ' + (data.data.count || 1) + ' social channels!';
+                                pushRes.innerText = '✅ Dispatched successfully to social channels!';
                             } else {
                                 pushRes.style.color = '#991b1b';
                                 pushRes.innerText = '❌ Failed: ' + (data.data.message || 'Error dispatching');
@@ -632,7 +913,7 @@ class Social_Auto_Poster_Connector {
                         })
                         .catch(function(err) {
                             pushBtn.disabled = false;
-                            pushBtn.innerText = '🚀 Re-dispatch to Social Poster Now';
+                            pushBtn.innerText = '🚀 Re-dispatch Now';
                             pushRes.style.color = '#991b1b';
                             pushRes.innerText = '❌ Error: ' + err.message;
                         });
@@ -660,6 +941,11 @@ class Social_Auto_Poster_Connector {
         if (isset($_POST['sap_social_titles'])) {
             $sanitized = sanitize_textarea_field($_POST['sap_social_titles']);
             update_post_meta($post_id, '_sap_social_titles', $sanitized);
+        }
+
+        if (isset($_POST['sap_page_variations'])) {
+            $variations_raw = wp_unslash($_POST['sap_page_variations']);
+            update_post_meta($post_id, '_sap_page_variations', $variations_raw);
         }
     }
 
@@ -767,9 +1053,20 @@ class Social_Auto_Poster_Connector {
         }
     }
 
+    public function normalize_image_url($url) {
+        if (empty($url) || !is_string($url)) return '';
+        $clean = trim($url);
+        if (strpos($clean, '//') === 0) {
+            $clean = 'https:' . $clean;
+        } elseif (strpos($clean, '/') === 0) {
+            $clean = rtrim(get_site_url(), '/') . $clean;
+        }
+        return $clean;
+    }
+
     public function is_valid_image_url($url) {
         if (empty($url) || !is_string($url)) return false;
-        $clean = trim($url);
+        $clean = $this->normalize_image_url($url);
         $lower = strtolower($clean);
         if (strpos($clean, 'http://') !== 0 && strpos($clean, 'https://') !== 0) return false;
         if (strpos($lower, 'avatar') !== false ||
@@ -790,12 +1087,25 @@ class Social_Auto_Poster_Connector {
         // Match src, data-src, data-lazy-src, data-original, data-actualsrc
         if (preg_match_all('/(?:src|data-src|data-lazy-src|data-original|data-actualsrc)=["\']([^"\']+)["\']/i', $html, $matches)) {
             foreach ($matches[1] as $candidate) {
-                $cand = trim($candidate);
+                $cand = $this->normalize_image_url($candidate);
                 if ($this->is_valid_image_url($cand)) {
                     return $cand;
                 }
             }
         }
+
+        // Also check srcset attribute for high-res responsive images
+        if (preg_match('/srcset=["\']([^"\']+)["\']/i', $html, $srcset_m)) {
+            $parts = explode(',', $srcset_m[1]);
+            foreach ($parts as $part) {
+                $token = trim(explode(' ', trim($part))[0]);
+                $cand = $this->normalize_image_url($token);
+                if ($this->is_valid_image_url($cand)) {
+                    return $cand;
+                }
+            }
+        }
+
         return '';
     }
 
@@ -820,14 +1130,14 @@ class Social_Auto_Poster_Connector {
         if ($thumbnail_id) {
             $img_src = wp_get_attachment_image_src($thumbnail_id, 'full');
             if ($img_src && !empty($img_src[0]) && $this->is_valid_image_url($img_src[0])) {
-                return esc_url_raw($img_src[0]);
+                return esc_url_raw($this->normalize_image_url($img_src[0]));
             }
         }
 
         // 2. Auto Engine External Featured Image Meta (_ae_external_featured_image)
         $ae_img = get_post_meta($post_id, '_ae_external_featured_image', true);
         if (!empty($ae_img) && is_string($ae_img) && $this->is_valid_image_url($ae_img)) {
-            return esc_url_raw($ae_img);
+            return esc_url_raw($this->normalize_image_url($ae_img));
         }
 
         // 3. Known external featured image plugins meta
@@ -842,7 +1152,7 @@ class Social_Auto_Poster_Connector {
         foreach ($meta_keys as $mk) {
             $val = get_post_meta($post_id, $mk, true);
             if (!empty($val) && is_string($val) && $this->is_valid_image_url($val)) {
-                return esc_url_raw($val);
+                return esc_url_raw($this->normalize_image_url($val));
             }
         }
 
@@ -876,7 +1186,7 @@ class Social_Auto_Poster_Connector {
                 foreach ($wp_matches[1] as $json_str) {
                     $data = json_decode($json_str, true);
                     if (!empty($data['url']) && $this->is_valid_image_url($data['url'])) {
-                        return esc_url_raw($data['url']);
+                        return esc_url_raw($this->normalize_image_url($data['url']));
                     }
                 }
             }
@@ -894,7 +1204,7 @@ class Social_Auto_Poster_Connector {
         if (!empty($attachments)) {
             $att_src = wp_get_attachment_image_src($attachments[0]->ID, 'full');
             if ($att_src && !empty($att_src[0]) && $this->is_valid_image_url($att_src[0])) {
-                return esc_url_raw($att_src[0]);
+                return esc_url_raw($this->normalize_image_url($att_src[0]));
             }
         }
 
@@ -911,7 +1221,25 @@ class Social_Auto_Poster_Connector {
 
         $post_id = $post->ID;
         $main_title = get_the_title($post_id);
+
+        // 1. Retrieve raw variations and social titles (with $_POST fallback if just published)
         $raw_titles = get_post_meta($post_id, '_sap_social_titles', true);
+        if (empty($raw_titles) && isset($_POST['sap_social_titles'])) {
+            $raw_titles = sanitize_textarea_field($_POST['sap_social_titles']);
+        }
+
+        $raw_variations = get_post_meta($post_id, '_sap_page_variations', true);
+        if (empty($raw_variations) && isset($_POST['sap_page_variations'])) {
+            $raw_variations = wp_unslash($_POST['sap_page_variations']);
+        }
+
+        $parsed_variations = array();
+        if (!empty($raw_variations)) {
+            $decoded = json_decode($raw_variations, true);
+            if (is_array($decoded)) {
+                $parsed_variations = $decoded;
+            }
+        }
 
         // Parse titles line by line
         $social_titles = array();
@@ -942,6 +1270,7 @@ class Social_Auto_Poster_Connector {
             'post_id'        => $post_id,
             'title'          => $main_title,
             'main_title'     => $main_title,
+            'variations'     => $parsed_variations,
             'social_titles'  => $social_titles,
             'permalink'      => $permalink,
             'image_url'      => $featured_image,

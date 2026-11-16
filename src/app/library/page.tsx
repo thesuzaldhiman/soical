@@ -1277,10 +1277,38 @@ function PostInspectorDrawer({
     return getTargetLiveLink(post, selectedPage?.id || selectedPageId);
   }, [post, selectedPage?.id, selectedPageId, getTargetLiveLink]);
 
-  const generatedImage = liveCardUrl || post.mediaUrl || undefined;
+  const selectedPageResult = useMemo(() => {
+    return post.results?.find(
+      (r) =>
+        r.pageId === selectedPage?.id ||
+        r.pageId === selectedPage?.pageId ||
+        r.pageName === selectedPage?.name
+    );
+  }, [post.results, selectedPage]);
+
+  const activeTitle = selectedPageResult?.titleUsed || post.title;
+  const activeSubtitle = selectedPageResult?.subtitleUsed;
+  const pageGeneratedImage = selectedPageResult?.mediaUrl || liveCardUrl || post.mediaUrl || undefined;
+
+  const generatedImage = pageGeneratedImage;
   const sourceImage =
     post.featuredImageUrl ||
     (post.thumbnailUrl && post.thumbnailUrl !== post.mediaUrl ? post.thumbnailUrl : undefined);
+
+  const activeCaption = useMemo(() => {
+    if (!activeTitle) return post.message;
+    let text = activeTitle;
+    if (activeSubtitle) {
+      text += `\n📌 ${activeSubtitle}`;
+    }
+    const messageRest = post.message && post.message.includes('\n\n')
+      ? post.message.split('\n\n').slice(1).join('\n\n')
+      : '';
+    if (messageRest) {
+      text += `\n\n${messageRest}`;
+    }
+    return text;
+  }, [activeTitle, activeSubtitle, post.message]);
 
   const hasBothImages = !!(
     generatedImage &&
@@ -1661,7 +1689,7 @@ function PostInspectorDrawer({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <p className="text-[13px] text-slate-900 leading-relaxed whitespace-pre-wrap font-normal break-words">
-                  {post.message || 'No caption text provided'}
+                  {activeCaption || 'No caption text provided'}
                 </p>
               </div>
               <div className="flex justify-end">

@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
     name: 'Social Auto Poster Connector',
     slug: 'social-auto-poster-connector',
     plugin: 'social-auto-poster-connector/social-auto-poster-connector.php',
-    version: '1.3.3',
-    new_version: '1.3.3',
+    version: '1.3.4',
+    new_version: '1.3.4',
     author: 'Suzal Dhiman (Khabar Monkey Media)',
     author_profile: 'https://game.khabarmonkey.com',
     homepage: 'https://game.khabarmonkey.com',
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     last_updated: new Date().toISOString().split('T')[0],
     download_url: downloadUrl,
     package: downloadUrl,
-    upgrade_notice: 'Version 1.3.3: Solved Auto Engine inline content image race conditions with shutdown queue, full figure extraction, and REST API sync.',
+    upgrade_notice: 'Version 1.3.4: Added Per-Page Title & Subtitle Studio, live connected page mapping, Gutenberg REST API meta registration, and bulletproof content image extraction.',
     sections: {
       description:
         'Connects WordPress directly to CreatorFlow Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line), automatic multi-page image variations, category sync, and first-comment article links for maximum reach.',
