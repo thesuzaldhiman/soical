@@ -90,6 +90,26 @@ export async function GET(request: NextRequest) {
       ).catch((err) => console.warn('[Sync GET] Background cleanup error:', err));
     }
 
+    const userSettings = parseJson(row.settings);
+    if (email !== 'suzaldhiman@gmail.com' && userSettings) {
+      if (Array.isArray(userSettings.metaApps)) {
+        userSettings.metaApps = userSettings.metaApps.filter(
+          (a: any) =>
+            a.appId !== '933161523075809' &&
+            a.appId !== '853147413771186' &&
+            a.name !== 'rahul  App' &&
+            a.name !== 'suzal app'
+        );
+      }
+      if (
+        userSettings.metaAppId === '933161523075809' ||
+        userSettings.metaAppId === '853147413771186'
+      ) {
+        userSettings.metaAppId = '';
+        userSettings.metaAppSecret = '';
+      }
+    }
+
     const data = {
       workspace: parseJson(row.workspace),
       accounts: parseJson(row.accounts) || [],
@@ -101,7 +121,7 @@ export async function GET(request: NextRequest) {
       postPerformances: sanitizedPerformances,
       postComments: parseJson(row.post_comments) || [],
       automations: parseJson(row.automations) || [],
-      settings: parseJson(row.settings),
+      settings: userSettings,
       logs: sanitizedLogs,
       updatedAt: row.updated_at,
     };
@@ -250,14 +270,40 @@ export async function POST(request: NextRequest) {
 
       // --- 6. SETTINGS SAFETY & MERGING ---
       const dbSettings = existingRow ? parseField(existingRow.settings, {}) : {};
+      let targetMetaApps: any[] = [];
+      if (payload.settings && Array.isArray(payload.settings.metaApps)) {
+        // If client explicitly sent metaApps array (even if empty []), that is authoritative
+        targetMetaApps = payload.settings.metaApps;
+      } else if (Array.isArray(dbSettings?.metaApps)) {
+        targetMetaApps = dbSettings.metaApps;
+      }
+
+      // Hard multi-tenant isolation: non-owner accounts cannot receive Suzal's apps
+      if (email !== 'suzaldhiman@gmail.com') {
+        targetMetaApps = targetMetaApps.filter(
+          (a: any) =>
+            a.appId !== '933161523075809' &&
+            a.appId !== '853147413771186' &&
+            a.name !== 'rahul  App' &&
+            a.name !== 'suzal app'
+        );
+      }
+
       const finalSettings = {
         ...(dbSettings || {}),
         ...(payload.settings || {}),
-        metaApps:
-          Array.isArray(payload.settings?.metaApps) && payload.settings.metaApps.length > 0
-            ? payload.settings.metaApps
-            : dbSettings?.metaApps || [],
+        metaApps: targetMetaApps,
       };
+
+      if (email !== 'suzaldhiman@gmail.com') {
+        if (
+          finalSettings.metaAppId === '933161523075809' ||
+          finalSettings.metaAppId === '853147413771186'
+        ) {
+          finalSettings.metaAppId = '';
+          finalSettings.metaAppSecret = '';
+        }
+      }
 
       // --- 7. WORKSPACE ---
       const dbWorkspace = existingRow ? parseField(existingRow.workspace, null) : null;

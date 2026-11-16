@@ -178,26 +178,7 @@ function SettingsContent() {
           },
         ];
       }
-      setMetaApps((prev) => {
-        const merged = apps.map((app) => {
-          const prevMatch = prev.find((p) => p.id === app.id || p.appId === app.appId);
-          if (
-            prevMatch &&
-            prevMatch.name &&
-            prevMatch.name !== 'Primary Meta Developer App' &&
-            app.name === 'Primary Meta Developer App'
-          ) {
-            return { ...app, name: prevMatch.name };
-          }
-          return app;
-        });
-        prev.forEach((p) => {
-          if (!merged.some((m) => m.id === p.id || m.appId === p.appId)) {
-            merged.push(p);
-          }
-        });
-        return merged;
-      });
+      setMetaApps(apps);
       if (settings.ytClientId !== undefined) setYtClientId(settings.ytClientId);
       if (settings.ytClientSecret !== undefined) setYtClientSecret(settings.ytClientSecret);
       if (settings.ytApiKey !== undefined) setYtApiKey(settings.ytApiKey);
@@ -505,9 +486,6 @@ function SettingsContent() {
         payload.pages = updatedPages;
         payload.accounts = updatedAccounts;
         localStorage.setItem(userKey, JSON.stringify(payload));
-        localStorage.setItem('sap_app_settings', JSON.stringify(newSettings));
-        localStorage.setItem('sap_social_pages', JSON.stringify(updatedPages));
-        localStorage.setItem('sap_social_accounts', JSON.stringify(updatedAccounts));
 
         fetch('/api/user/sync', {
           method: 'POST',
@@ -566,7 +544,6 @@ function SettingsContent() {
         const payload = userStored ? JSON.parse(userStored) : { accounts, pages, workspace };
         payload.settings = newSettings;
         localStorage.setItem(userKey, JSON.stringify(payload));
-        localStorage.setItem('sap_app_settings', JSON.stringify(newSettings));
 
         fetch('/api/user/sync', {
           method: 'POST',

@@ -503,6 +503,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = email.toLowerCase().trim();
     const userKey = getStorageKeyForEmail(cleanEmail);
 
+    // Strict multi-tenant state isolation: reset React state immediately so previous user's credentials never leak
+    setAccounts([]);
+    setPages([]);
+    setCategories(INITIAL_CATEGORIES);
+    setPosts([]);
+    setSigTemplates(INITIAL_SIG_TEMPLATES);
+    setPageAnalytics({});
+    setPostPerformances([]);
+    setPostComments([]);
+    setAutomations([]);
+    setSettings(INITIAL_SETTINGS);
+    setLogs([]);
+
     // 1. Instant local cache load
     if (typeof localStorage !== 'undefined') {
       let stored = localStorage.getItem(userKey);
@@ -513,7 +526,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          const localMetaApps: MetaAppConfig[] = Array.isArray(parsed.settings?.metaApps) ? parsed.settings.metaApps : [];
+          let localMetaApps: MetaAppConfig[] = Array.isArray(parsed.settings?.metaApps) ? parsed.settings.metaApps : [];
+          if (cleanEmail !== 'suzaldhiman@gmail.com') {
+            localMetaApps = localMetaApps.filter(
+              (a) =>
+                a.appId !== '933161523075809' &&
+                a.appId !== '853147413771186' &&
+                a.name !== 'rahul  App' &&
+                a.name !== 'suzal app'
+            );
+          }
 
           if (parsed.accounts) {
             let sanitizedAccs = sanitizeAccounts(parsed.accounts);
@@ -576,21 +598,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (parsed.automations) setAutomations(parsed.automations);
           if (Array.isArray(parsed.logs)) setLogs(parsed.logs);
           if (parsed.settings) {
-            setSettings((prev) => {
-              const incomingMetaApps = Array.isArray(parsed.settings.metaApps) ? parsed.settings.metaApps : [];
-              const localMetaApps = Array.isArray(prev.metaApps) ? prev.metaApps : [];
-              const mergedApps = [...incomingMetaApps];
-              localMetaApps.forEach((la) => {
-                if (!mergedApps.some((ma) => ma.id === la.id || ma.appId === la.appId)) {
-                  mergedApps.push(la);
-                }
-              });
-              return {
-                ...prev,
-                ...parsed.settings,
-                metaApps: mergedApps.length > 0 ? mergedApps : prev.metaApps,
-              };
-            });
+            let userMetaApps = Array.isArray(parsed.settings.metaApps) ? parsed.settings.metaApps : [];
+            if (cleanEmail !== 'suzaldhiman@gmail.com') {
+              userMetaApps = userMetaApps.filter(
+                (a) =>
+                  a.appId !== '933161523075809' &&
+                  a.appId !== '853147413771186' &&
+                  a.name !== 'rahul  App' &&
+                  a.name !== 'suzal app'
+              );
+            }
+            const cleanSettings: AppSettings = {
+              ...INITIAL_SETTINGS,
+              ...parsed.settings,
+              metaApps: userMetaApps,
+            };
+            if (cleanEmail !== 'suzaldhiman@gmail.com') {
+              if (cleanSettings.metaAppId === '933161523075809' || cleanSettings.metaAppId === '853147413771186') {
+                cleanSettings.metaAppId = '';
+                cleanSettings.metaAppSecret = '';
+              }
+            }
+            setSettings(cleanSettings);
           }
           if (parsed.workspace) setWorkspace(parsed.workspace);
         } catch (e) {
@@ -628,7 +657,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then((res) => {
           if (res.success && res.data) {
             const db = res.data;
-            const dbMetaApps: MetaAppConfig[] = Array.isArray(db.settings?.metaApps) ? db.settings.metaApps : [];
+            let dbMetaApps: MetaAppConfig[] = Array.isArray(db.settings?.metaApps) ? db.settings.metaApps : [];
+            if (cleanEmail !== 'suzaldhiman@gmail.com') {
+              dbMetaApps = dbMetaApps.filter(
+                (a) =>
+                  a.appId !== '933161523075809' &&
+                  a.appId !== '853147413771186' &&
+                  a.name !== 'rahul  App' &&
+                  a.name !== 'suzal app'
+              );
+            }
 
             // Read cached custom meta apps strictly from user-scoped localStorage (never global)
             let cachedCustomMetaApps: MetaAppConfig[] = [];
@@ -641,9 +679,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 }
               } catch {}
             }
+            if (cleanEmail !== 'suzaldhiman@gmail.com') {
+              cachedCustomMetaApps = cachedCustomMetaApps.filter(
+                (a) =>
+                  a.appId !== '933161523075809' &&
+                  a.appId !== '853147413771186' &&
+                  a.name !== 'rahul  App' &&
+                  a.name !== 'suzal app'
+              );
+            }
 
-            const incomingMetaApps: MetaAppConfig[] = dbMetaApps;
-            let effectiveMetaApps = incomingMetaApps.map((ia) => {
+            let effectiveMetaApps = dbMetaApps.map((ia) => {
               const localMatch = cachedCustomMetaApps.find((ca) => ca.id === ia.id || ca.appId === ia.appId);
               if (localMatch && localMatch.name && localMatch.name !== 'Primary Meta Developer App') {
                 return { ...ia, name: localMatch.name };
@@ -655,8 +701,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 effectiveMetaApps.push(ca);
               }
             });
-            if (effectiveMetaApps.length === 0 && dbMetaApps.length > 0) {
-              effectiveMetaApps = dbMetaApps;
+            if (cleanEmail !== 'suzaldhiman@gmail.com') {
+              effectiveMetaApps = effectiveMetaApps.filter(
+                (a) =>
+                  a.appId !== '933161523075809' &&
+                  a.appId !== '853147413771186' &&
+                  a.name !== 'rahul  App' &&
+                  a.name !== 'suzal app'
+              );
             }
 
             let healedPages: SocialPage[] = [];
@@ -752,18 +804,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
             let finalSettingsObj: AppSettings | null = null;
             if (db.settings && typeof db.settings === 'object') {
-              setSettings((prev) => {
-                const finalMetaApps = effectiveMetaApps.length > 0 ? effectiveMetaApps : (prev.metaApps || []);
+              let cleanDbMetaApps = Array.isArray(db.settings.metaApps) ? db.settings.metaApps : [];
+              if (cleanEmail !== 'suzaldhiman@gmail.com') {
+                cleanDbMetaApps = cleanDbMetaApps.filter(
+                  (a) =>
+                    a.appId !== '933161523075809' &&
+                    a.appId !== '853147413771186' &&
+                    a.name !== 'rahul  App' &&
+                    a.name !== 'suzal app'
+                );
+              }
+              const finalMetaApps = effectiveMetaApps.length > 0 ? effectiveMetaApps : cleanDbMetaApps;
 
-                const finalSettings = {
-                  ...prev,
-                  ...db.settings,
-                  metaApps: finalMetaApps,
-                };
-                finalSettingsObj = finalSettings;
-
-                return finalSettings;
-              });
+              const finalSettings: AppSettings = {
+                ...INITIAL_SETTINGS,
+                ...db.settings,
+                metaApps: finalMetaApps,
+              };
+              if (cleanEmail !== 'suzaldhiman@gmail.com') {
+                if (
+                  finalSettings.metaAppId === '933161523075809' ||
+                  finalSettings.metaAppId === '853147413771186'
+                ) {
+                  finalSettings.metaAppId = '';
+                  finalSettings.metaAppSecret = '';
+                }
+              }
+              finalSettingsObj = finalSettings;
+              setSettings(finalSettings);
             }
             if (db.workspace) setWorkspace(db.workspace);
 
@@ -3047,6 +3115,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPostPerformances([]);
     setPostComments([]);
     setAutomations([]);
+    setSettings(INITIAL_SETTINGS);
+    setLogs([]);
+    setWorkspace(INITIAL_WORKSPACE);
   };
 
   const clearAllData = () => {

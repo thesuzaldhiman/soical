@@ -237,6 +237,52 @@ export async function initDbTables(): Promise<boolean> {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
 
+      // Safe multi-tenant cleanup: Ensure non-owner accounts never hold leaked credentials from suzaldhiman@gmail.com
+      try {
+        const [nonOwnerRows] = await connection.query<any[]>(
+          `SELECT email, settings FROM app_user_data WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com'`
+        );
+        for (const uRow of nonOwnerRows || []) {
+          if (!uRow.settings) continue;
+          let parsedSettings: any = null;
+          try {
+            parsedSettings = typeof uRow.settings === 'object' ? uRow.settings : JSON.parse(uRow.settings);
+          } catch {}
+          if (parsedSettings && Array.isArray(parsedSettings.metaApps)) {
+            const hasLeakedApps = parsedSettings.metaApps.some(
+              (a: any) =>
+                a.appId === '933161523075809' ||
+                a.appId === '853147413771186' ||
+                a.name === 'rahul  App' ||
+                a.name === 'suzal app'
+            );
+            if (hasLeakedApps || uRow.email.toLowerCase().trim() === 'me.sumitji@gmail.com') {
+              const cleanApps = parsedSettings.metaApps.filter(
+                (a: any) =>
+                  a.appId !== '933161523075809' &&
+                  a.appId !== '853147413771186' &&
+                  a.name !== 'rahul  App' &&
+                  a.name !== 'suzal app'
+              );
+              parsedSettings.metaApps = cleanApps;
+              if (
+                parsedSettings.metaAppId === '933161523075809' ||
+                parsedSettings.metaAppId === '853147413771186'
+              ) {
+                parsedSettings.metaAppId = '';
+                parsedSettings.metaAppSecret = '';
+              }
+              await connection.query(`UPDATE app_user_data SET settings = ? WHERE email = ?`, [
+                JSON.stringify(parsedSettings),
+                uRow.email,
+              ]);
+            }
+          }
+        }
+      } catch (cleanErr) {
+        console.warn('[MySQL] Non-owner credential isolation cleanup note:', cleanErr);
+      }
+
       tablesInitialized = true;
       console.log('[MySQL] Database tables successfully initialized.');
       return true;

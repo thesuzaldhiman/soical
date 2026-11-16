@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
-import { Post, PostStatus, Platform, PostComment, PostPerformanceMetric } from '@/types';
+import { Post, PostStatus, Platform, PostComment, PostPerformanceMetric, SigTemplate } from '@/types';
 import {
   Layers,
   Search,
@@ -39,6 +39,7 @@ import {
   Check,
   Calendar,
   Eye,
+  Sparkles,
 } from 'lucide-react';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 
@@ -62,6 +63,7 @@ function LibraryContent() {
   const {
     posts,
     pages,
+    sigTemplates,
     postPerformances,
     postComments,
     createPostComment,
@@ -587,12 +589,17 @@ function LibraryContent() {
                 <div>
                   {/* Media Thumbnail Container */}
                   <div className="relative aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden border-b border-slate-100">
-                    {post.mediaUrl ? (
+                    {post.mediaUrl || post.thumbnailUrl ? (
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={post.thumbnailUrl || post.mediaUrl}
+                          src={post.mediaUrl || post.thumbnailUrl}
                           alt="Post preview"
+                          onError={(e) => {
+                            if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {
+                              e.currentTarget.src = post.thumbnailUrl;
+                            }
+                          }}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         {post.postType === 'video' && (
@@ -774,14 +781,19 @@ function LibraryContent() {
                   {/* Left: Thumbnail & Message */}
                   <div className="flex items-start gap-3.5 flex-1 min-w-0">
                     {/* Media Thumbnail Container */}
-                    {post.mediaUrl ? (
+                    {post.mediaUrl || post.thumbnailUrl ? (
                       <div className="w-24 h-18 sm:w-28 sm:h-20 rounded-xl overflow-hidden bg-slate-950 border border-slate-200 relative group/media shrink-0 flex items-center justify-center shadow-2xs">
                         {post.postType === 'video' ? (
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={post.thumbnailUrl || post.mediaUrl}
+                              src={post.mediaUrl || post.thumbnailUrl}
                               alt="Video preview"
+                              onError={(e) => {
+                                if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {
+                                  e.currentTarget.src = post.thumbnailUrl;
+                                }
+                              }}
                               className="w-full h-full object-cover group-hover/media:scale-105 transition-transform duration-300"
                             />
                             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
@@ -797,7 +809,7 @@ function LibraryContent() {
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={post.thumbnailUrl || post.mediaUrl}
+                              src={post.mediaUrl || post.thumbnailUrl}
                               alt="Post media"
                               onError={(e) => {
                                 if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {
@@ -1005,12 +1017,17 @@ function LibraryContent() {
           key={selectedPost.id}
           post={selectedPost}
           pages={pages}
+          sigTemplates={sigTemplates}
           postPerformances={postPerformances}
           postComments={postComments}
           onClose={() => setSelectedPost(null)}
           onApprove={handleApprove}
           onDelete={(post) => setPostPendingDelete(post)}
           onRetry={(id) => retryPost(id)}
+          onPostUpdated={(updated) => {
+            setSelectedPost(updated);
+            refreshPosts();
+          }}
           getTargetLiveLink={getTargetLiveLink}
           formatArrivalTime={formatArrivalTime}
           statusBadge={statusBadge}
@@ -1181,12 +1198,14 @@ function LibraryContent() {
 interface PostInspectorDrawerProps {
   post: Post;
   pages: any[];
+  sigTemplates?: SigTemplate[];
   postPerformances: PostPerformanceMetric[];
   postComments: PostComment[];
   onClose: () => void;
   onApprove: (postId: string) => Promise<void>;
   onDelete: (post: Post) => void;
   onRetry: (postId: string) => void;
+  onPostUpdated?: (updated: Post) => void;
   getTargetLiveLink: (post: Post, pageId: string) => { url: string; label: string } | null;
   formatArrivalTime: (iso?: string) => string;
   statusBadge: (status: PostStatus) => string;
@@ -1198,12 +1217,14 @@ interface PostInspectorDrawerProps {
 function PostInspectorDrawer({
   post,
   pages,
+  sigTemplates,
   postPerformances,
   postComments,
   onClose,
   onApprove,
   onDelete,
   onRetry,
+  onPostUpdated,
   getTargetLiveLink,
   formatArrivalTime,
   statusBadge,
@@ -1234,6 +1255,99 @@ function PostInspectorDrawer({
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
   const [commentSuccess, setCommentSuccess] = useState<string | null>(null);
+
+  // Facebook Preview State
+  const [selectedPageId, setSelectedPageId] = useState<string>(
+    availablePages[0]?.id || post.pageIds?.[0] || ''
+  );
+  const [mediaViewMode, setMediaViewMode] = useState<'generated' | 'source'>('generated');
+  const [isGeneratingCard, setIsGeneratingCard] = useState<boolean>(false);
+  const [liveCardUrl, setLiveCardUrl] = useState<string | null>(null);
+  const [cardGenSuccess, setCardGenSuccess] = useState<string | null>(null);
+
+  const selectedPage = useMemo(() => {
+    return (
+      pages.find((p) => p.id === selectedPageId || p.pageId === selectedPageId) ||
+      availablePages[0] ||
+      pages[0]
+    );
+  }, [pages, selectedPageId, availablePages]);
+
+  const pageLiveLink = useMemo(() => {
+    return getTargetLiveLink(post, selectedPage?.id || selectedPageId);
+  }, [post, selectedPage?.id, selectedPageId, getTargetLiveLink]);
+
+  const generatedImage = liveCardUrl || post.mediaUrl || undefined;
+  const sourceImage =
+    post.featuredImageUrl ||
+    (post.thumbnailUrl && post.thumbnailUrl !== post.mediaUrl ? post.thumbnailUrl : undefined);
+
+  const hasBothImages = !!(
+    generatedImage &&
+    sourceImage &&
+    generatedImage !== sourceImage
+  );
+
+  const isLikelyBrandedCard =
+    !!liveCardUrl ||
+    !!post.isAiGenerated ||
+    (!!post.mediaUrl &&
+      (post.mediaUrl.includes('/uploads/media_') ||
+        post.mediaUrl.startsWith('data:image/') ||
+        post.postType === 'video'));
+
+  const displayImageSrc =
+    mediaViewMode === 'source' && sourceImage
+      ? sourceImage
+      : (generatedImage || sourceImage || post.thumbnailUrl || '');
+
+  const handleGenerateCardNow = async () => {
+    setIsGeneratingCard(true);
+    setCardGenSuccess(null);
+    try {
+      const template =
+        sigTemplates?.find((t) => t.id === post.sigTemplateId) ||
+        sigTemplates?.find((t) => t.isDefault && t.templateImageUrl) ||
+        sigTemplates?.[0];
+
+      const res = await fetch('/api/card/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          headline: post.title || post.message.split('\n')[0],
+          featuredImageUrl: sourceImage || post.mediaUrl,
+          templateId: template?.id,
+          template,
+          postId: post.id,
+          category: selectedPage?.category || 'News',
+          siteName: selectedPage?.name || 'Himachal Samachar',
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.cardUrl) {
+        setLiveCardUrl(data.cardUrl);
+        setMediaViewMode('generated');
+        setCardGenSuccess('✨ Branded Card successfully generated!');
+        if (onPostUpdated) {
+          onPostUpdated({
+            ...post,
+            mediaUrl: data.cardUrl,
+            thumbnailUrl: data.cardUrl,
+            featuredImageUrl: sourceImage || post.mediaUrl,
+            isAiGenerated: true,
+            sigTemplateId: template?.id,
+          });
+        }
+      } else {
+        alert('Card generation failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      alert('Error generating card: ' + err.message);
+    } finally {
+      setIsGeneratingCard(false);
+    }
+  };
 
   const hasFetchedRef = useRef<string | null>(null);
 
@@ -1452,76 +1566,322 @@ function PostInspectorDrawer({
             )}
           </div>
 
-          {/* Media Preview Box */}
-          {post.mediaUrl ? (
-            <div className="rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 relative group flex items-center justify-center">
-              {post.postType === 'video' ? (
-                <video
-                  src={post.mediaUrl}
-                  controls
-                  className="max-h-72 w-auto object-contain rounded-xl"
-                />
-              ) : (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={post.thumbnailUrl || post.mediaUrl}
-                  alt="Post full preview"
-                  onError={(e) => {
-                    if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {
-                      e.currentTarget.src = post.thumbnailUrl;
-                    }
-                  }}
-                  className="max-h-72 w-auto object-contain rounded-xl"
-                />
-              )}
+          {/* ========================================================================= */}
+          {/* AUTHENTIC FACEBOOK LIVE POST FEED PREVIEW CARD                           */}
+          {/* ========================================================================= */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4 animate-fade-in">
+            {/* Facebook Header: Page Info & Live Link */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="relative shrink-0">
+                  {selectedPage?.avatarUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={selectedPage.avatarUrl}
+                      alt={selectedPage.name}
+                      className="w-11 h-11 rounded-full object-cover border border-slate-200 shadow-2xs"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-2xs">
+                      {selectedPage?.name?.charAt(0) || 'F'}
+                    </div>
+                  )}
+                  <div className="absolute -bottom-1 -right-1 p-0.5 bg-white rounded-full shadow-2xs">
+                    <SocialIcon platform="facebook" className="w-4 h-4 rounded-full" />
+                  </div>
+                </div>
 
-              <a
-                href={post.mediaUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-black/75 hover:bg-black text-white text-[11px] font-bold flex items-center gap-1 shadow-md backdrop-blur-md transition-all border border-white/20"
-              >
-                <ExternalLink className="w-3 h-3" />
-                <span>Full Media</span>
-              </a>
-            </div>
-          ) : (
-            <div className="p-6 rounded-2xl bg-[#F8F9FD] border border-dashed border-slate-200 text-center text-slate-500 text-xs">
-              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
-              <span>Text-only post without attached photo or video</span>
-            </div>
-          )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-bold text-sm text-slate-900 truncate">
+                      {selectedPage?.name || 'Facebook Page'}
+                    </span>
+                    <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-600 text-white text-[9px] font-bold">
+                      ✓
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5 font-medium">
+                    <span>{formatArrivalTime(post.createdAt)}</span>
+                    <span>•</span>
+                    <span title="Public">🌐</span>
+                    <span>•</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {post.postType === 'video' ? 'Reel' : 'Post'}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-          {/* Caption / Content Box */}
-          <div className="rounded-2xl bg-[#F8F9FD] border border-[#EEF1F6] p-4 space-y-2">
-            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              <span>Post Caption &amp; Content</span>
+              {/* View on Facebook Button if published */}
+              {pageLiveLink ? (
+                <a
+                  href={pageLiveLink.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer"
+                >
+                  <SocialIcon platform="facebook" className="w-3.5 h-3.5" />
+                  <span>View on Facebook</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : post.status === 'draft' ? (
+                <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold uppercase">
+                  Draft Preview
+                </span>
+              ) : null}
+            </div>
+
+            {/* Multiple Target Pages Switcher (If dispatched to multiple pages) */}
+            {availablePages.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs border-b border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+                  Preview as:
+                </span>
+                {availablePages.map((pg) => {
+                  const isSelected = (selectedPage?.id || selectedPage?.pageId) === (pg.id || pg.pageId);
+                  return (
+                    <button
+                      key={pg.id || pg.pageId}
+                      type="button"
+                      onClick={() => setSelectedPageId(pg.id || pg.pageId)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent'
+                      }`}
+                    >
+                      {pg.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Caption Text Box */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-[13px] text-slate-900 leading-relaxed whitespace-pre-wrap font-normal break-words">
+                  {post.message || 'No caption text provided'}
+                </p>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleCopyCaption}
+                  className="text-[11px] text-slate-400 hover:text-slate-700 flex items-center gap-1 font-semibold transition-colors cursor-pointer"
+                >
+                  {copiedCaption ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedCaption ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Media Mode Switcher (If both Generated Card and WordPress Source Photo exist) */}
+            {hasBothImages && (
+              <div className="flex items-center justify-between pt-1">
+                <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setMediaViewMode('generated')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      mediaViewMode === 'generated'
+                        ? 'bg-white text-blue-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Actual Facebook Image (Branded)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMediaViewMode('source')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      mediaViewMode === 'source'
+                        ? 'bg-white text-blue-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
+                    <span>WordPress Source Photo</span>
+                  </button>
+                </div>
+
+                {displayImageSrc && (
+                  <a
+                    href={displayImageSrc}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-semibold"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Full Size</span>
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* The Actual Post Media (Generated Card Image or Video Reel) */}
+            {displayImageSrc || post.postType === 'video' ? (
+              <div className="rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 relative group flex items-center justify-center shadow-inner">
+                {post.postType === 'video' && mediaViewMode !== 'source' ? (
+                  <video
+                    src={post.mediaUrl}
+                    controls
+                    className="max-h-[460px] w-auto max-w-full object-contain rounded-xl shadow-lg"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={displayImageSrc}
+                    alt="Facebook post actual preview"
+                    onError={(e) => {
+                      if (sourceImage && e.currentTarget.src !== sourceImage) {
+                        e.currentTarget.src = sourceImage;
+                      }
+                    }}
+                    className="max-h-[460px] w-auto max-w-full object-contain rounded-xl shadow-md"
+                  />
+                )}
+
+                {/* Branded Overlay Badge */}
+                <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md text-white text-[10px] font-bold flex items-center gap-1.5 border border-white/20 shadow-md">
+                  <Sparkles className="w-3 h-3 text-purple-400" />
+                  <span>
+                    {post.postType === 'video'
+                      ? 'AI Video Reel (9:16)'
+                      : mediaViewMode === 'source'
+                      ? 'WP Featured Photo'
+                      : isLikelyBrandedCard
+                      ? 'Branded News Card'
+                      : 'Actual Facebook Image'}
+                  </span>
+                </div>
+
+                {/* Full Size External Link */}
+                {displayImageSrc && (
+                  <a
+                    href={displayImageSrc}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-black/80 hover:bg-black text-white text-[11px] font-bold flex items-center gap-1 shadow-md backdrop-blur-md transition-all border border-white/20"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Full Image</span>
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="p-6 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center text-slate-500 text-xs">
+                <FileText className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+                <span>Text-only post without attached photo or video</span>
+              </div>
+            )}
+
+            {/* Quick Action: Generate Branded Card on-demand if missing */}
+            {!isLikelyBrandedCard && (
+              <div className="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-purple-950">
+                      Want to render this as a Branded News Card?
+                    </div>
+                    <div className="text-[11px] text-purple-700">
+                      Apply your SIG headline frame template onto this photo.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isGeneratingCard}
+                  onClick={handleGenerateCardNow}
+                  className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  {isGeneratingCard ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  <span>{isGeneratingCard ? 'Generating...' : '⚡ Generate Branded Card'}</span>
+                </button>
+              </div>
+            )}
+
+            {cardGenSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span>{cardGenSuccess}</span>
+              </div>
+            )}
+
+            {/* Facebook Reactions & Metrics Summary */}
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center -space-x-1">
+                  <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center border border-white shadow-2xs">👍</span>
+                  <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center border border-white shadow-2xs">❤️</span>
+                  <span className="w-5 h-5 rounded-full bg-amber-400 text-white text-[10px] flex items-center justify-center border border-white shadow-2xs">😮</span>
+                </div>
+                <span className="font-bold text-slate-700 ml-1">{displayLikes}</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-500 text-[11px] font-medium">
+                <span>{displayComments} comments</span>
+                <span>•</span>
+                <span>{displayShares} shares</span>
+              </div>
+            </div>
+
+            {/* Facebook Action Buttons (Like / Comment / Share) */}
+            <div className="grid grid-cols-3 gap-1 py-1 border-y border-slate-100 text-xs font-semibold text-slate-600">
               <button
                 type="button"
-                onClick={handleCopyCaption}
-                className="text-slate-500 hover:text-slate-900 flex items-center gap-1 transition-colors cursor-pointer"
+                className="py-2 rounded-xl hover:bg-slate-50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                {copiedCaption ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
+                <ThumbsUp className="w-4 h-4 text-slate-500" />
+                <span>Like</span>
+              </button>
+              <button
+                type="button"
+                className="py-2 rounded-xl hover:bg-slate-50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <MessageSquare className="w-4 h-4 text-slate-500" />
+                <span>Comment</span>
+              </button>
+              <button
+                type="button"
+                className="py-2 rounded-xl hover:bg-slate-50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Share2 className="w-4 h-4 text-slate-500" />
+                <span>Share</span>
               </button>
             </div>
-            <p className="text-xs text-slate-900 font-semibold leading-relaxed whitespace-pre-wrap">
-              {post.message || 'No caption message provided'}
-            </p>
-          </div>
 
-          {/* First Comment Trigger Callout */}
-          {post.commentText && (
-            <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-1">
-              <div className="flex items-center gap-1.5 text-[10px] font-black text-blue-900 uppercase tracking-wider">
-                <MessageSquare className="w-3.5 h-3.5 text-blue-700" />
-                <span>Auto-First Comment</span>
+            {/* Facebook Pinned First Comment */}
+            {post.commentText && (
+              <div className="pt-1 space-y-1.5">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Facebook First Comment (Pinned)
+                </div>
+                <div className="flex items-start gap-2.5 bg-slate-50/80 p-3 rounded-2xl border border-slate-100">
+                  <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 shadow-2xs">
+                    {selectedPage?.name?.charAt(0) || 'F'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-xs text-slate-900">{selectedPage?.name || 'Page'}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Author</span>
+                      </div>
+                      <p className="text-xs text-slate-800 mt-1 whitespace-pre-wrap font-medium leading-relaxed">
+                        {post.commentText}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold mt-1 pl-1">
+                      <span className="hover:text-blue-600 cursor-pointer">Like</span>
+                      <span className="hover:text-blue-600 cursor-pointer">Reply</span>
+                      <span>Just now</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-blue-950 font-medium whitespace-pre-wrap">
-                {post.commentText}
-              </p>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Destination Pages & Actual Live Post Links */}
           <div className="space-y-3">
