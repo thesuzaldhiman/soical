@@ -40,7 +40,7 @@ function saveLocalPosts(posts: Post[]) {
   }
 }
 
-async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail.com') {
+async function persistPosts(newPosts: Post[], email: string = 'me.sumitji@gmail.com') {
   const localCurrent = getLocalPosts();
   saveLocalPosts([...newPosts, ...localCurrent]);
 
@@ -102,7 +102,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
   posts: Post[];
   sigTemplates: SigTemplate[];
 }> {
-  const fallbackEmail = (explicitEmail || 'suzaldhiman@gmail.com').toLowerCase().trim();
+  const fallbackEmail = (explicitEmail || 'me.sumitji@gmail.com').toLowerCase().trim();
   const pool = getDbPool();
   if (!pool) {
     return {

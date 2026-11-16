@@ -55,9 +55,11 @@ export function AppSidebar() {
   ).length;
 
   const pendingApprovalsCount = allUsers.filter((u) => u.approvalStatus === 'pending').length;
+  const cleanEmail = user?.email?.toLowerCase().trim();
   const isElevated =
     user?.role === 'owner' ||
-    user?.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
+    cleanEmail === 'me.sumitji@gmail.com' ||
+    cleanEmail === 'suzaldhiman@gmail.com';
 
   const navGroups: NavGroup[] = [
     {

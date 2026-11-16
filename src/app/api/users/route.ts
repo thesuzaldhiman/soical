@@ -142,7 +142,8 @@ export async function POST(request: NextRequest) {
         const userObj = mapRowToUser(userRow);
 
         // Password verification
-        const validPass = userRow.password;
+        const expectedDefault = email === 'me.sumitji@gmail.com' ? 'sumit1234' : (isOwner ? 'janusd11' : null);
+        const validPass = userRow.password || expectedDefault;
         if (validPass && password !== validPass) {
           return NextResponse.json(
             { success: false, message: 'Incorrect password. Please try again.' },
@@ -201,16 +202,32 @@ export async function POST(request: NextRequest) {
       }
 
       // Offline / fallback mode
-      if (password !== 'janusd11') {
-        return NextResponse.json(
-          { success: false, message: 'Incorrect password. Please try again.' },
-          { status: 401 }
-        );
+      const expectedPass = email === 'me.sumitji@gmail.com' ? 'sumit1234' : 'janusd11';
+      if (password === expectedPass) {
+        const fallbackUser: User = email === 'me.sumitji@gmail.com'
+          ? {
+              id: 'usr_sumit',
+              name: 'Sumit',
+              email: 'me.sumitji@gmail.com',
+              avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+              role: 'member',
+              approvalStatus: 'approved',
+              provider: 'email',
+              subscription: {
+                tier: 'agency',
+                status: 'active',
+                expiresAt: null,
+                maxConnectedPages: 50,
+                maxDailyPosts: 500,
+                features: { canUseAI: true, canUseBulkScheduler: true, canUseAutomationFeed: true, canUseAnalytics: true },
+              },
+            }
+          : INITIAL_USER;
+        return NextResponse.json({ success: true, user: fallbackUser, message: 'Signed in successfully' });
       }
-      return NextResponse.json({ success: true, user: INITIAL_USER, message: 'Signed in as owner' });
       return NextResponse.json(
-        { success: false, message: 'Database connection offline. Please try again.' },
-        { status: 503 }
+        { success: false, message: 'Incorrect password. Please try again.' },
+        { status: 401 }
       );
     }
 

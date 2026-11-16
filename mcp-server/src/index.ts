@@ -9,7 +9,7 @@ import {
 
 const APP_URL = (process.env.APP_API_URL || 'https://game.khabarmonkey.com').replace(/\/+$/, '');
 const MCP_SECRET = process.env.MCP_SECRET_KEY || 'sap_mcp_live_secret_99x8a7b6c5d4e3';
-const DEFAULT_USER_EMAIL = (process.env.USER_EMAIL || 'suzaldhiman@gmail.com').toLowerCase().trim();
+const DEFAULT_USER_EMAIL = (process.env.USER_EMAIL || 'me.sumitji@gmail.com').toLowerCase().trim();
 
 /**
  * Helper to call the Social Auto Poster MCP API endpoint scoped to a specific user account email
@@ -82,7 +82,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             email: {
               type: 'string',
-              description: 'User account email (defaults to the currently authenticated account: suzaldhiman@gmail.com). Allows multi-tenant account isolation.',
+              description: 'User account email (defaults to the currently authenticated account: me.sumitji@gmail.com). Allows multi-tenant account isolation.',
               default: DEFAULT_USER_EMAIL,
             },
             filterMode: {

@@ -84,11 +84,12 @@ export async function initDbTables(): Promise<boolean> {
       await addColumnIfNotExists('rejection_reason', 'TEXT NULL');
       await addColumnIfNotExists('last_login_at', 'TIMESTAMP NULL');
 
-      // Ensure Super Admin user (Suzal Dhiman - suzaldhiman@gmail.com) always exists with password 'janusd11'
+      // Ensure Super Admin user (Suzal Dhiman - suzaldhiman@gmail.com) exists with password 'janusd11'
       await connection.query(`
         INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, password, subscription_tier)
         VALUES ('usr_01', 'suzaldhiman@gmail.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'email', 'janusd11', 'agency')
         ON DUPLICATE KEY UPDATE
+          name = 'Suzal Dhiman',
           role = 'owner',
           approval_status = 'approved',
           provider = 'email',
@@ -96,7 +97,7 @@ export async function initDbTables(): Promise<boolean> {
           subscription_tier = 'agency';
       `);
 
-      // Ensure Sumit Ji (me.sumitji@gmail.com) exists with password 'sumit1234' and approved status
+      // Ensure Sumit (me.sumitji@gmail.com) exists with password 'sumit1234' and approved status
       const sumitSubscription = {
         tier: 'agency',
         status: 'active',
@@ -114,9 +115,9 @@ export async function initDbTables(): Promise<boolean> {
       await connection.query(`
         INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, password, subscription_tier, subscription_data)
         VALUES (
-          'usr_sumitji',
+          'usr_sumit',
           'me.sumitji@gmail.com',
-          'Sumit Ji',
+          'Sumit',
           'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
           'member',
           'approved',
@@ -126,7 +127,7 @@ export async function initDbTables(): Promise<boolean> {
           ?
         )
         ON DUPLICATE KEY UPDATE
-          name = 'Sumit Ji',
+          name = 'Sumit',
           password = 'sumit1234',
           approval_status = 'approved',
           role = 'member',

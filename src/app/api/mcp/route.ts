@@ -56,7 +56,7 @@ function saveLocalPosts(posts: Post[]) {
   }
 }
 
-async function getUserState(email: string = 'suzaldhiman@gmail.com') {
+async function getUserState(email: string = 'me.sumitji@gmail.com') {
   const cleanEmail = email.toLowerCase().trim();
   const pool = getDbPool();
   if (!pool) {
@@ -101,7 +101,7 @@ async function getUserState(email: string = 'suzaldhiman@gmail.com') {
   };
 }
 
-async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail.com') {
+async function persistPosts(newPosts: Post[], email: string = 'me.sumitji@gmail.com') {
   // Always update local cache
   const localCurrent = getLocalPosts();
   saveLocalPosts([...newPosts, ...localCurrent]);
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const action = searchParams.get('action') || 'targets';
-  const email = searchParams.get('email') || 'suzaldhiman@gmail.com';
+  const email = searchParams.get('email') || 'me.sumitji@gmail.com';
 
   const state = await getUserState(email);
 
@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       action = 'schedule',
-      email = 'suzaldhiman@gmail.com',
+      email = 'me.sumitji@gmail.com',
       // Target Selection Options
       targetMode = 'all', // 'wordpress_only' | 'social_only' | 'all'
       targetPageIds = [],
