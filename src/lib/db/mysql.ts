@@ -96,25 +96,43 @@ export async function initDbTables(): Promise<boolean> {
           subscription_tier = 'agency';
       `);
 
-      // Explicitly update password and provider for suzaldhiman@gmail.com
-      await connection.query(`
-        UPDATE app_users
-        SET password = 'janusd11', provider = 'email', role = 'owner', approval_status = 'approved', subscription_tier = 'agency'
-        WHERE LOWER(TRIM(email)) = 'suzaldhiman@gmail.com';
-      `);
+      // Ensure Sumit Ji (me.sumitji@gmail.com) exists with password 'sumit1234' and approved status
+      const sumitSubscription = {
+        tier: 'agency',
+        status: 'active',
+        expiresAt: null,
+        maxConnectedPages: 50,
+        maxDailyPosts: 500,
+        features: {
+          canUseAI: true,
+          canUseBulkScheduler: true,
+          canUseAutomationFeed: true,
+          canUseAnalytics: true,
+        },
+      };
 
-      // Strictly purge ALL other accounts and data from database so ONLY suzaldhiman@gmail.com exists
       await connection.query(`
-        DELETE FROM app_users WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com';
-      `);
-      await connection.query(`
-        DELETE FROM app_user_data WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com';
-      `);
-      try {
-        await connection.query(`
-          DELETE FROM app_audit_logs WHERE LOWER(TRIM(admin_email)) != 'suzaldhiman@gmail.com';
-        `);
-      } catch {}
+        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, password, subscription_tier, subscription_data)
+        VALUES (
+          'usr_sumitji',
+          'me.sumitji@gmail.com',
+          'Sumit Ji',
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+          'member',
+          'approved',
+          'email',
+          'sumit1234',
+          'agency',
+          ?
+        )
+        ON DUPLICATE KEY UPDATE
+          name = 'Sumit Ji',
+          password = 'sumit1234',
+          approval_status = 'approved',
+          role = 'member',
+          subscription_tier = 'agency',
+          subscription_data = ?;
+      `, [JSON.stringify(sumitSubscription), JSON.stringify(sumitSubscription)]);
 
       await connection.query(`
         CREATE TABLE IF NOT EXISTS app_user_data (
@@ -134,6 +152,44 @@ export async function initDbTables(): Promise<boolean> {
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
+
+      // Ensure clean, fully-isolated user data row exists for me.sumitji@gmail.com
+      await connection.query(`
+        INSERT IGNORE INTO app_user_data (
+          email, workspace, accounts, pages, categories, posts, sig_templates, page_analytics, post_performances, post_comments, automations, settings, logs
+        ) VALUES (
+          'me.sumitji@gmail.com',
+          ?,
+          '[]',
+          '[]',
+          '[]',
+          '[]',
+          '[]',
+          '{}',
+          '[]',
+          '[]',
+          '[]',
+          ?,
+          '[]'
+        );
+      `, [
+        JSON.stringify({
+          id: 'ws_sumitji',
+          name: "Sumit Ji's Workspace",
+          slug: 'workspace',
+          plan: 'agency',
+          monthlyPostsLimit: 1500,
+          monthlyPostsUsed: 0,
+          connectedChannelsLimit: 50,
+        }),
+        JSON.stringify({
+          metaApps: [],
+          openaiApiKey: '',
+          antiBanLevel: 'balanced',
+          autoHashtags: true,
+          linkShortener: true,
+        })
+      ]);
 
       // Safe column migration for logs in app_user_data
       try {

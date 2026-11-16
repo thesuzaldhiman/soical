@@ -50,7 +50,7 @@ function mapRowToUser(row: any): User {
   };
 }
 
-// GET: Retrieve registered user for Auth synchronization (Suzal Dhiman ONLY)
+// GET: Retrieve registered users for Auth & Admin synchronization
 export async function GET() {
   const pool = getDbPool();
 
@@ -65,15 +65,15 @@ export async function GET() {
   try {
     await initDbTables();
 
-    // Actively delete any rogue non-Suzal users from MySQL
-    await pool.query("DELETE FROM app_users WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com'");
-    await pool.query("DELETE FROM app_user_data WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com'");
-
     const [rows] = await pool.query<any[]>(
-      "SELECT * FROM app_users WHERE LOWER(TRIM(email)) = 'suzaldhiman@gmail.com' LIMIT 1"
+      'SELECT * FROM app_users ORDER BY created_at DESC'
     );
 
     const users: User[] = (rows && rows.length > 0) ? rows.map(mapRowToUser) : [INITIAL_USER];
+
+    if (!users.some((u) => u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com')) {
+      users.unshift(INITIAL_USER);
+    }
 
     return NextResponse.json({
       success: true,
@@ -110,18 +110,7 @@ export async function POST(request: NextRequest) {
       }
 
       const email = rawEmail.toLowerCase().trim();
-      if (email !== 'suzaldhiman@gmail.com') {
-        return NextResponse.json(
-          {
-            success: false,
-            code: 'ACCESS_RESTRICTED',
-            message: 'Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.',
-          },
-          { status: 403 }
-        );
-      }
-
-      const isOwner = true;
+      const isOwner = isOwnerEmail(email);
 
       if (pool) {
         await initDbTables();
@@ -152,9 +141,9 @@ export async function POST(request: NextRequest) {
         const userRow = rows[0];
         const userObj = mapRowToUser(userRow);
 
-        // Strict Password verification (password must match 'janusd11')
-        const validPass = userRow.password || 'janusd11';
-        if (password !== validPass && password !== 'janusd11') {
+        // Password verification
+        const validPass = userRow.password;
+        if (validPass && password !== validPass) {
           return NextResponse.json(
             { success: false, message: 'Incorrect password. Please try again.' },
             { status: 401 }
@@ -225,16 +214,118 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. REGISTRATION (Closed - Single User System)
+    // 2. REGISTRATION
     if (action === 'register') {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'REGISTRATION_CLOSED',
-          message: 'Public registration is closed. This system is private and restricted to suzaldhiman@gmail.com.',
+      const { name, email: rawEmail, password, tierPreference } = body;
+      if (!rawEmail || !rawEmail.includes('@')) {
+        return NextResponse.json({ success: false, message: 'Valid email required' }, { status: 400 });
+      }
+
+      const email = rawEmail.toLowerCase().trim();
+      const isOwner = isOwnerEmail(email);
+      const role = isOwner ? 'owner' : 'member';
+      const approvalStatus = isOwner ? 'approved' : 'pending';
+      const tier = isOwner ? 'agency' : tierPreference || 'starter';
+      const userId = `usr_${Date.now()}`;
+      const defaultAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80';
+
+      const subscriptionData: UserSubscription = {
+        tier,
+        status: isOwner ? 'active' : 'trial',
+        expiresAt: null,
+        maxConnectedPages: tier === 'agency' ? 50 : tier === 'pro' ? 15 : 5,
+        maxDailyPosts: tier === 'agency' ? 500 : tier === 'pro' ? 100 : 30,
+        features: {
+          canUseAI: true,
+          canUseBulkScheduler: tier !== 'free',
+          canUseAutomationFeed: tier === 'agency',
+          canUseAnalytics: true,
         },
-        { status: 403 }
-      );
+      };
+
+      if (pool) {
+        await initDbTables();
+
+        // Check if user already exists in DB
+        const [existing] = await pool.query<any[]>(
+          'SELECT email FROM app_users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+          [email]
+        );
+
+        if (existing && existing.length > 0) {
+          return NextResponse.json({
+            success: false,
+            message: 'This email is already registered. Please sign in.',
+          }, { status: 409 });
+        }
+
+        await pool.query(
+          `INSERT INTO app_users (
+            id, email, name, avatar, role, approval_status, provider,
+            password, subscription_tier, subscription_data
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            userId,
+            email,
+            name?.trim() || email.split('@')[0],
+            defaultAvatar,
+            role,
+            approvalStatus,
+            'email',
+            password || null,
+            tier,
+            JSON.stringify(subscriptionData),
+          ]
+        );
+
+        // Initialize clean isolated user data row
+        await pool.query(
+          `INSERT IGNORE INTO app_user_data (
+            email, workspace, accounts, pages, categories, posts, sig_templates, page_analytics, post_performances, post_comments, automations, settings, logs
+          ) VALUES (?, ?, '[]', '[]', '[]', '[]', '[]', '{}', '[]', '[]', '[]', ?, '[]')`,
+          [
+            email,
+            JSON.stringify({
+              id: `ws_${email.replace(/[^a-z0-9_]/g, '_')}`,
+              name: `${name?.trim() || email.split('@')[0]}'s Workspace`,
+              slug: 'workspace',
+              plan: tier,
+              monthlyPostsLimit: tier === 'agency' ? 1500 : 500,
+              monthlyPostsUsed: 0,
+              connectedChannelsLimit: tier === 'agency' ? 50 : 15,
+            }),
+            JSON.stringify({
+              metaApps: [],
+              openaiApiKey: '',
+              antiBanLevel: 'balanced',
+              autoHashtags: true,
+              linkShortener: true,
+            }),
+          ]
+        );
+      }
+
+      const createdUser: User = {
+        id: userId,
+        name: name?.trim() || email.split('@')[0],
+        email,
+        avatar: defaultAvatar,
+        role,
+        approvalStatus,
+        provider: 'email',
+        password,
+        createdAt: new Date().toISOString(),
+        subscription: subscriptionData,
+      };
+
+      return NextResponse.json({
+        success: true,
+        isPending: !isOwner,
+        user: createdUser,
+        message: isOwner
+          ? 'Super Admin registered successfully!'
+          : 'Registration request submitted. Awaiting admin approval.',
+      });
     }
 
     // 2. APPROVE USER (Admin only)

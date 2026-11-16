@@ -13,7 +13,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const isAuthorized =
-    isAuthenticated && user?.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
+    isAuthenticated &&
+    Boolean(user?.email) &&
+    (user.approvalStatus === 'approved' || user.role === 'owner');
 
   useEffect(() => {
     if (isHydrated && !isAuthorized) {

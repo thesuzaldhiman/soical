@@ -415,11 +415,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Strictly filter so only suzaldhiman@gmail.com is retained
-            const cleaned = parsed.filter(
-              (u: User) => u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com'
-            );
-            return cleaned.length > 0 ? cleaned : INITIAL_ALL_USERS;
+            return parsed;
           }
         }
       } catch {}
@@ -434,13 +430,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.users) && data.users.length > 0) {
-          const cleanUsers = data.users.filter(
-            (u: User) => u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com'
-          );
-          const finalUsers = cleanUsers.length > 0 ? cleanUsers : INITIAL_ALL_USERS;
-          setAllUsers(finalUsers);
+          setAllUsers(data.users);
           if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('sap_all_registered_users', JSON.stringify(finalUsers));
+            localStorage.setItem('sap_all_registered_users', JSON.stringify(data.users));
           }
         }
       })
@@ -905,9 +897,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (loggedInUser && loggedInUser.email) {
         const clean = loggedInUser.email.toLowerCase().trim();
-        // Strict lockdown: only suzaldhiman@gmail.com is permitted
-        if (clean !== 'suzaldhiman@gmail.com') {
-          console.warn(`[Security Guard] Evicting unauthorized user session: ${clean}`);
+        const isApproved =
+          clean === 'suzaldhiman@gmail.com' ||
+          loggedInUser.approvalStatus === 'approved' ||
+          loggedInUser.role === 'owner';
+
+        if (!isApproved) {
+          console.warn(`[Security Guard] User not approved or unauthorized: ${clean}`);
           try {
             if (typeof localStorage !== 'undefined') {
               localStorage.removeItem('sap_current_user_email');
@@ -922,17 +918,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           loggedInUser = null;
         } else {
           loggedInUser = {
-            ...INITIAL_USER,
-            name: loggedInUser.name || INITIAL_USER.name,
-            avatar: loggedInUser.avatar || INITIAL_USER.avatar,
-            role: 'owner',
+            ...loggedInUser,
+            name: loggedInUser.name || (clean === 'suzaldhiman@gmail.com' ? INITIAL_USER.name : clean.split('@')[0]),
+            avatar:
+              loggedInUser.avatar ||
+              (clean === 'suzaldhiman@gmail.com'
+                ? INITIAL_USER.avatar
+                : `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80`),
+            role: clean === 'suzaldhiman@gmail.com' ? 'owner' : (loggedInUser.role || 'member'),
             approvalStatus: 'approved',
             lastLoginAt: new Date().toISOString(),
           };
         }
       }
 
-      if (loggedInUser && loggedInUser.email === 'suzaldhiman@gmail.com') {
+      if (loggedInUser && loggedInUser.email) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setUser(loggedInUser);
         setIsAuthenticated(true);
@@ -948,16 +948,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Active security guard: if any user other than suzaldhiman@gmail.com is loaded, instantly evict
+  // Active security guard: if an unapproved or suspended user session is active, safely evict
   useEffect(() => {
     if (!isHydrated) return;
     const currentEmail = (user?.email || '').toLowerCase().trim();
-    if (currentEmail && currentEmail !== 'suzaldhiman@gmail.com') {
-      console.warn(`[Security Guard] Evicting active session for: ${currentEmail}`);
+    if (
+      currentEmail &&
+      currentEmail !== 'suzaldhiman@gmail.com' &&
+      user?.approvalStatus &&
+      user.approvalStatus !== 'approved' &&
+      user.role !== 'owner'
+    ) {
+      console.warn(`[Security Guard] Evicting unapproved session for: ${currentEmail}`);
       try {
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem('sap_current_user_email');
-          localStorage.removeItem('sap_all_registered_users');
           localStorage.removeItem(`sap_user_profile_${currentEmail.replace(/[^a-z0-9_]/g, '_')}`);
           localStorage.removeItem(`sap_saas_user_${currentEmail.replace(/[^a-z0-9_]/g, '_')}`);
         }
@@ -969,7 +974,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUser(GUEST_USER);
       setIsAuthenticated(false);
       if (typeof window !== 'undefined') {
-        window.location.replace('/login?error=' + encodeURIComponent('Access restricted. Only suzaldhiman@gmail.com is authorized.'));
+        window.location.replace('/login?error=' + encodeURIComponent('Your account is pending admin approval.'));
       }
     }
   }, [isHydrated, user]);
@@ -2560,9 +2565,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { success: false, message: 'Please enter a valid email address.' };
     }
-    if (cleanEmail !== 'suzaldhiman@gmail.com') {
-      return { success: false, message: 'Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.' };
-    }
     if (!password) {
       return { success: false, message: 'Please enter your password.' };
     }
@@ -2647,16 +2649,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const registerUser = async (
-    _name: string,
-    _email: string,
-    _tierPreference: SubscriptionTier = 'starter',
-    _password?: string
+    name: string,
+    email: string,
+    tierPreference: SubscriptionTier = 'starter',
+    password?: string
   ) => {
-    return {
-      success: false,
-      user: GUEST_USER,
-      message: 'Public registration is closed. Platform access is restricted to suzaldhiman@gmail.com.',
-    };
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register',
+          name,
+          email,
+          tierPreference,
+          password,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return {
+          success: false,
+          user: GUEST_USER,
+          message: data.message || 'Registration failed. Please try again.',
+        };
+      }
+      return {
+        success: true,
+        user: data.user,
+        message: data.message || 'Registration request submitted for approval.',
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        user: GUEST_USER,
+        message: e.message || 'Network error during registration.',
+      };
+    }
   };
 
   const approveUser = (

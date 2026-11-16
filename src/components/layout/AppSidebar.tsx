@@ -132,6 +132,24 @@ export function AppSidebar() {
     },
   ];
 
+  if (isElevated) {
+    navGroups.push({
+      id: 'admin',
+      title: 'ADMINISTRATION',
+      items: [
+        {
+          href: '/admin',
+          label: 'Admin Panel',
+          icon: ShieldCheck,
+          badge:
+            pendingApprovalsCount > 0
+              ? { text: `${pendingApprovalsCount} req`, variant: 'pink' }
+              : undefined,
+        },
+      ],
+    });
+  }
+
   // State to manage collapsed groups
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 

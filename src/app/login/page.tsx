@@ -65,10 +65,6 @@ function LoginContent() {
       return;
     }
     const cleanEmail = email.toLowerCase().trim();
-    if (cleanEmail !== 'suzaldhiman@gmail.com') {
-      setFormError('Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.');
-      return;
-    }
     if (!password) {
       setFormError('Please enter your password.');
       return;
@@ -105,7 +101,7 @@ function LoginContent() {
 
       {/* Main Login Card (Tasklify Clean Neutral Studio Aesthetic) */}
       <div className="max-w-md w-full mx-auto my-auto animate-fade-in">
-        {isAuthenticated && user?.email && user.email.toLowerCase().trim() === 'suzaldhiman@gmail.com' ? (
+        {isAuthenticated && user?.email ? (
           <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 sm:p-8 shadow-xs space-y-6 text-center animate-fade-in">
             <div className="w-16 h-16 rounded-2xl bg-slate-900 border-2 border-white shadow-xs mx-auto overflow-hidden flex items-center justify-center text-white font-bold text-xl">
               {user.avatar ? (
@@ -179,7 +175,7 @@ function LoginContent() {
                   <input
                     type="email"
                     required
-                    placeholder="suzaldhiman@gmail.com"
+                    placeholder="name@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900"
@@ -228,9 +224,12 @@ function LoginContent() {
               </button>
             </form>
 
-            {/* Private workspace badge */}
-            <div className="text-center text-xs text-slate-500 pt-1 font-medium">
-              Private Platform &bull; Restricted to Authorized Administrator
+            {/* Sign Up / Request Access Link */}
+            <div className="text-center text-xs text-slate-500 pt-1">
+              Don't have an account?{' '}
+              <Link href="/signup" className="font-bold text-slate-900 hover:underline">
+                Request Access / Sign Up
+              </Link>
             </div>
 
             {/* Trust & Compliance Badge */}
