@@ -585,7 +585,6 @@ function SettingsContent() {
           const payload = userStored ? JSON.parse(userStored) : { accounts, pages, workspace };
           payload.settings = newSettings;
           localStorage.setItem(userKey, JSON.stringify(payload));
-          localStorage.setItem('sap_app_settings', JSON.stringify(newSettings));
 
           fetch('/api/user/sync', {
             method: 'POST',

@@ -1366,6 +1366,31 @@ function AccountsContent() {
                           ]
                         : [];
 
+                      if (appsList.length === 0) {
+                        return (
+                          <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-center space-y-3">
+                            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mx-auto text-amber-700">
+                              <AlertCircle className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-xs text-amber-900">
+                                No Meta Developer App Configured
+                              </h4>
+                              <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
+                                Please add your Facebook Meta App credentials in Settings to connect your Facebook account and pages.
+                              </p>
+                            </div>
+                            <Link
+                              href="/settings"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] text-white font-bold text-xs shadow-xs transition-all hover:scale-[1.01]"
+                            >
+                              <span>Configure Meta App in Settings</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          </div>
+                        );
+                      }
+
                       if (appsList.length > 1) {
                         return (
                           <div className="space-y-3">
@@ -1429,11 +1454,11 @@ function AccountsContent() {
                         );
                       }
 
-                      // Single App or default fallback
+                      // Exactly 1 configured Meta Developer App
                       const activeApp = appsList[0];
-                      const activeAppId = activeApp?.appId || settings?.metaAppId || '109283746501928';
-                      const activeAppSecret = activeApp?.appSecret || settings?.metaAppSecret || '';
-                      const activeAppName = activeApp?.name || 'Primary Meta App';
+                      const activeAppId = activeApp.appId;
+                      const activeAppSecret = activeApp.appSecret || '';
+                      const activeAppName = activeApp.name || 'Primary Meta App';
 
                       return (
                         <div className="space-y-3">

@@ -601,7 +601,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             let userMetaApps = Array.isArray(parsed.settings.metaApps) ? parsed.settings.metaApps : [];
             if (cleanEmail !== 'suzaldhiman@gmail.com') {
               userMetaApps = userMetaApps.filter(
-                (a) =>
+                (a: any) =>
                   a.appId !== '933161523075809' &&
                   a.appId !== '853147413771186' &&
                   a.name !== 'rahul  App' &&
@@ -807,7 +807,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               let cleanDbMetaApps = Array.isArray(db.settings.metaApps) ? db.settings.metaApps : [];
               if (cleanEmail !== 'suzaldhiman@gmail.com') {
                 cleanDbMetaApps = cleanDbMetaApps.filter(
-                  (a) =>
+                  (a: any) =>
                     a.appId !== '933161523075809' &&
                     a.appId !== '853147413771186' &&
                     a.name !== 'rahul  App' &&

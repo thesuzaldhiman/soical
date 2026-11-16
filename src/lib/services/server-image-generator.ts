@@ -130,14 +130,22 @@ async function fetchImageBuffer(url?: string, timeoutMs: number = 8000): Promise
     }
 
     try {
+      let fetchUrl = trimmed;
+      try {
+        fetchUrl = new URL(trimmed).toString();
+      } catch {
+        fetchUrl = encodeURI(trimmed);
+      }
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const res = await fetch(trimmed, {
+      const res = await fetch(fetchUrl, {
         signal: controller.signal,
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          Referer: 'https://khabarmonkey.com/',
         },
       });
       clearTimeout(timer);
@@ -224,13 +232,27 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
   // 1. Process Featured Photo
   if (photoBuf) {
     try {
-      const resizedPhoto = await sharp(photoBuf)
-        .resize(fBox.width, fBox.height, { fit: 'cover', position: 'center' })
-        .png()
-        .toBuffer();
+      let resizedPhotoBuf: Buffer;
+      const baseResize = sharp(photoBuf).resize(fBox.width, fBox.height, { fit: 'cover', position: 'center' });
+
+      if (fBox.borderRadius && fBox.borderRadius > 0) {
+        const r = Math.min(fBox.borderRadius, Math.floor(Math.min(fBox.width, fBox.height) / 2));
+        const maskSvg = Buffer.from(
+          `<svg width="${fBox.width}" height="${fBox.height}">
+            <rect x="0" y="0" width="${fBox.width}" height="${fBox.height}" rx="${r}" ry="${r}" fill="#fff"/>
+          </svg>`
+        );
+        const intermediatePng = await baseResize.png().toBuffer();
+        resizedPhotoBuf = await sharp(intermediatePng)
+          .composite([{ input: maskSvg, blend: 'dest-in' }])
+          .png()
+          .toBuffer();
+      } else {
+        resizedPhotoBuf = await baseResize.png().toBuffer();
+      }
 
       layers.push({
-        input: resizedPhoto,
+        input: resizedPhotoBuf,
         top: Math.round(fBox.y),
         left: Math.round(fBox.x),
       });

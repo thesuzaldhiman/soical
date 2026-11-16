@@ -625,9 +625,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. Prepare Multi-Title Mapping
-    // [Main Title (Page 1), Extra Title 1 (Page 2), Extra Title 2 (Page 3), Extra Title 3 (Page 4)]
-    const allTitles = enableMultiTitles ? [mainTitle, ...socialTitles] : [mainTitle];
+    // 3. Prepare Multi-Title & Subtitle Mapping
+    // payload can provide:
+    // a) variations: Array<{ page_id?: string, page_name?: string, title?: string, subtitle?: string }>
+    // b) social_titles: Array<string> (where each string can be "Title | Subtitle" or "Title")
+    const incomingVariations: Array<{ page_id?: string; page_name?: string; title?: string; subtitle?: string }> =
+      Array.isArray(payload.variations)
+        ? payload.variations
+        : typeof payload.variations === 'string'
+        ? parseJsonSafe(payload.variations, [])
+        : [];
+
+    const rawSocialTitles: string[] = Array.isArray(payload.social_titles)
+      ? payload.social_titles
+      : typeof payload.social_titles === 'string'
+      ? payload.social_titles.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0)
+      : [];
+
     const dispatchResults: any[] = [];
     const commentText = addFirstComment && permalink ? `👉 पूरी खबर यहाँ पढ़ें: ${permalink}` : '';
     let firstGeneratedCardUrl: string | undefined = undefined;
@@ -635,8 +649,52 @@ export async function POST(request: NextRequest) {
     // Loop through each target page and dispatch according to selected format
     for (let i = 0; i < targetPages.length; i++) {
       const page = targetPages[i];
-      const assignedTitle = enableMultiTitles ? allTitles[i] || mainTitle : mainTitle;
-      const message = `${assignedTitle}\n\n${excerpt}`.trim();
+
+      // Resolve Title and Subtitle for this specific page
+      let assignedTitle = mainTitle;
+      let assignedSubtitle: string | undefined = undefined;
+
+      if (enableMultiTitles) {
+        // Priority 1: Match by pageId or page.name in incomingVariations
+        const matchedVar = incomingVariations.find(
+          (v) =>
+            (v.page_id && (v.page_id === page.id || v.page_id === page.pageId)) ||
+            (v.page_name && v.page_name.trim().toLowerCase() === page.name.trim().toLowerCase())
+        );
+
+        const varAtIndex = incomingVariations[i];
+        const rawLine = rawSocialTitles[i];
+        if (matchedVar && matchedVar.title && matchedVar.title.trim()) {
+          assignedTitle = matchedVar.title.trim();
+          assignedSubtitle = matchedVar.subtitle?.trim() || undefined;
+        } else if (varAtIndex && varAtIndex.title && varAtIndex.title.trim()) {
+          // Priority 2: Match by index in variations array
+          assignedTitle = varAtIndex.title.trim();
+          assignedSubtitle = varAtIndex.subtitle?.trim() || undefined;
+        } else if (rawLine) {
+          // Priority 3: Check rawSocialTitles[i] with "Title | Subtitle" support
+          const trimmedLine = rawLine.trim();
+          if (trimmedLine.includes('|')) {
+            const parts = trimmedLine.split('|');
+            assignedTitle = parts[0]?.trim() || mainTitle;
+            assignedSubtitle = parts.slice(1).join('|').trim() || undefined;
+          } else {
+            assignedTitle = trimmedLine;
+          }
+        } else if (i === 0) {
+          assignedTitle = mainTitle;
+          assignedSubtitle = payload.subtitle || payload.main_subtitle || undefined;
+        }
+      }
+
+      let message = assignedTitle;
+      if (assignedSubtitle) {
+        message += `\n📌 ${assignedSubtitle}`;
+      }
+      if (excerpt) {
+        message += `\n\n${excerpt}`;
+      }
+      message = message.trim();
 
       let postTypeToSend: 'image' | 'link' | 'text' | 'video' = 'image';
       let mediaToSend: string = '';
@@ -660,6 +718,7 @@ export async function POST(request: NextRequest) {
         try {
           const cardBase64 = await generateServerCardImage({
             headline: assignedTitle,
+            subtitle: assignedSubtitle,
             featuredImageUrl: imageUrl || undefined,
             template: templateToUse,
             category: categories[0] || 'News',
@@ -691,6 +750,7 @@ export async function POST(request: NextRequest) {
         try {
           const cardBase64 = await generateServerCardImage({
             headline: assignedTitle,
+            subtitle: assignedSubtitle,
             featuredImageUrl: imageUrl || undefined,
             template: templateToUse,
             category: categories[0] || 'News',
@@ -718,8 +778,10 @@ export async function POST(request: NextRequest) {
           pageName: page.name,
           platform: page.platform,
           titleUsed: assignedTitle,
+          subtitleUsed: assignedSubtitle,
           titleIndex: i + 1,
-          isUniqueVariation: i < allTitles.length,
+          isUniqueVariation: true,
+          mediaUrl: mediaToSend,
           status: 'draft',
           timestamp: new Date().toISOString(),
         });
@@ -759,8 +821,10 @@ export async function POST(request: NextRequest) {
             pageName: page.name,
             platform: page.platform,
             titleUsed: assignedTitle,
+            subtitleUsed: assignedSubtitle,
+            mediaUrl: mediaToSend,
             titleIndex: i + 1,
-            isUniqueVariation: i < allTitles.length,
+            isUniqueVariation: true,
           });
         }
       } catch (dispErr: unknown) {
@@ -770,6 +834,8 @@ export async function POST(request: NextRequest) {
           pageName: page.name,
           platform: page.platform,
           titleUsed: assignedTitle,
+          subtitleUsed: assignedSubtitle,
+          mediaUrl: mediaToSend,
           status: 'failed',
           error: errMsg,
           timestamp: new Date().toISOString(),
@@ -807,6 +873,9 @@ export async function POST(request: NextRequest) {
         platform: (r.platform || 'facebook') as any,
         pageName: r.pageName,
         status: r.status,
+        titleUsed: r.titleUsed,
+        subtitleUsed: r.subtitleUsed,
+        mediaUrl: r.mediaUrl,
         externalPostId: r.externalPostId,
         postUrl: r.postUrl,
         error: r.error,
@@ -826,9 +895,9 @@ export async function POST(request: NextRequest) {
       dispatchFormat,
       message: isDraftMode
         ? `Ingested and saved as Draft in Post Library for review/schedule with AI Card image (${matchedRuleName}).`
-        : `Ingested & dispatched to ${targetPages.length} pages (${matchedRuleName}) with ${allTitles.length} title variations.`,
+        : `Ingested & dispatched to ${targetPages.length} pages (${matchedRuleName}) with ${Math.max(1, incomingVariations.length, rawSocialTitles.length)} title variations.`,
       mainTitle,
-      totalVariations: allTitles.length,
+      totalVariations: Math.max(1, incomingVariations.length, rawSocialTitles.length),
       assignedPagesCount: targetPages.length,
       firstCommentEnabled: !!commentText,
       dispatchedCount: dispatchResults.filter((r) => r.status === 'success').length,
