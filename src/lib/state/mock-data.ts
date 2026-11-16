@@ -16,16 +16,16 @@ import {
 import { DEFAULT_SENSITIVE_WORDS } from '../utils/sensitive-words';
 
 export const INITIAL_USER: User = {
-  id: 'usr_01',
-  name: 'Suzal Dhiman',
-  email: 'suzaldhiman@gmail.com',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+  id: 'usr_sumit',
+  name: 'Sumit',
+  email: 'me.sumitji@gmail.com',
+  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
   role: 'owner',
   approvalStatus: 'approved',
   provider: 'email',
-  password: 'janusd11',
+  password: 'sumit1234',
   createdAt: '2026-01-01T00:00:00Z',
-  lastLoginAt: '2026-11-14T12:00:00Z',
+  lastLoginAt: '2026-11-16T10:00:00Z',
   subscription: {
     tier: 'agency',
     status: 'active',
@@ -43,6 +43,31 @@ export const INITIAL_USER: User = {
 
 export const INITIAL_ALL_USERS: User[] = [
   INITIAL_USER,
+  {
+    id: 'usr_01',
+    name: 'Suzal Dhiman',
+    email: 'suzaldhiman@gmail.com',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+    role: 'owner',
+    approvalStatus: 'approved',
+    provider: 'email',
+    password: 'janusd11',
+    createdAt: '2026-01-01T00:00:00Z',
+    lastLoginAt: '2026-11-14T12:00:00Z',
+    subscription: {
+      tier: 'agency',
+      status: 'active',
+      expiresAt: null,
+      maxConnectedPages: 50,
+      maxDailyPosts: 500,
+      features: {
+        canUseAI: true,
+        canUseBulkScheduler: true,
+        canUseAutomationFeed: true,
+        canUseAnalytics: true,
+      },
+    },
+  },
 ];
 
 export const INITIAL_WORKSPACE: Workspace = {

@@ -36,7 +36,7 @@ function resolveEmail(request: NextRequest, bodyEmail?: string): string {
       }
     } catch {}
   }
-  return 'suzaldhiman@gmail.com';
+  return 'me.sumitji@gmail.com';
 }
 
 /**

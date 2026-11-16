@@ -84,7 +84,20 @@ export async function initDbTables(): Promise<boolean> {
       await addColumnIfNotExists('rejection_reason', 'TEXT NULL');
       await addColumnIfNotExists('last_login_at', 'TIMESTAMP NULL');
 
-      // Ensure Super Admin user (Suzal Dhiman - suzaldhiman@gmail.com) always exists with password 'janusd11'
+      // Ensure Primary Owner user (Sumit - me.sumitji@gmail.com) always exists with password 'sumit1234'
+      await connection.query(`
+        INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, password, subscription_tier)
+        VALUES ('usr_sumit', 'me.sumitji@gmail.com', 'Sumit', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'email', 'sumit1234', 'agency')
+        ON DUPLICATE KEY UPDATE
+          name = 'Sumit',
+          role = 'owner',
+          approval_status = 'approved',
+          provider = 'email',
+          password = 'sumit1234',
+          subscription_tier = 'agency';
+      `);
+
+      // Ensure Super Admin user (Suzal Dhiman - suzaldhiman@gmail.com) exists with password 'janusd11'
       await connection.query(`
         INSERT INTO app_users (id, email, name, avatar, role, approval_status, provider, password, subscription_tier)
         VALUES ('usr_01', 'suzaldhiman@gmail.com', 'Suzal Dhiman', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', 'owner', 'approved', 'email', 'janusd11', 'agency')
@@ -96,23 +109,28 @@ export async function initDbTables(): Promise<boolean> {
           subscription_tier = 'agency';
       `);
 
-      // Explicitly update password and provider for suzaldhiman@gmail.com
+      // Explicitly update passwords and providers
+      await connection.query(`
+        UPDATE app_users
+        SET password = 'sumit1234', provider = 'email', role = 'owner', approval_status = 'approved', subscription_tier = 'agency'
+        WHERE LOWER(TRIM(email)) = 'me.sumitji@gmail.com';
+      `);
       await connection.query(`
         UPDATE app_users
         SET password = 'janusd11', provider = 'email', role = 'owner', approval_status = 'approved', subscription_tier = 'agency'
         WHERE LOWER(TRIM(email)) = 'suzaldhiman@gmail.com';
       `);
 
-      // Strictly purge ALL other accounts and data from database so ONLY suzaldhiman@gmail.com exists
+      // Purge all unauthorized rogue accounts
       await connection.query(`
-        DELETE FROM app_users WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com';
+        DELETE FROM app_users WHERE LOWER(TRIM(email)) NOT IN ('me.sumitji@gmail.com', 'suzaldhiman@gmail.com');
       `);
       await connection.query(`
-        DELETE FROM app_user_data WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com';
+        DELETE FROM app_user_data WHERE LOWER(TRIM(email)) NOT IN ('me.sumitji@gmail.com', 'suzaldhiman@gmail.com');
       `);
       try {
         await connection.query(`
-          DELETE FROM app_audit_logs WHERE LOWER(TRIM(admin_email)) != 'suzaldhiman@gmail.com';
+          DELETE FROM app_audit_logs WHERE LOWER(TRIM(admin_email)) NOT IN ('me.sumitji@gmail.com', 'suzaldhiman@gmail.com');
         `);
       } catch {}
 

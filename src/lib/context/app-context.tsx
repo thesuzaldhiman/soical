@@ -415,9 +415,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Strictly filter so only suzaldhiman@gmail.com is retained
+            // Strictly filter so only authorized accounts are retained
             const cleaned = parsed.filter(
-              (u: User) => u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com'
+              (u: User) => {
+                const em = u.email?.toLowerCase().trim();
+                return em === 'me.sumitji@gmail.com' || em === 'suzaldhiman@gmail.com';
+              }
             );
             return cleaned.length > 0 ? cleaned : INITIAL_ALL_USERS;
           }
@@ -435,7 +438,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((data) => {
         if (data.success && Array.isArray(data.users) && data.users.length > 0) {
           const cleanUsers = data.users.filter(
-            (u: User) => u.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com'
+            (u: User) => {
+              const em = u.email?.toLowerCase().trim();
+              return em === 'me.sumitji@gmail.com' || em === 'suzaldhiman@gmail.com';
+            }
           );
           const finalUsers = cleanUsers.length > 0 ? cleanUsers : INITIAL_ALL_USERS;
           setAllUsers(finalUsers);
@@ -905,8 +911,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (loggedInUser && loggedInUser.email) {
         const clean = loggedInUser.email.toLowerCase().trim();
-        // Strict lockdown: only suzaldhiman@gmail.com is permitted
-        if (clean !== 'suzaldhiman@gmail.com') {
+        // Strict lockdown: only authorized workspace accounts are permitted
+        if (clean !== 'me.sumitji@gmail.com' && clean !== 'suzaldhiman@gmail.com') {
           console.warn(`[Security Guard] Evicting unauthorized user session: ${clean}`);
           try {
             if (typeof localStorage !== 'undefined') {
@@ -921,10 +927,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           } catch {}
           loggedInUser = null;
         } else {
+          const baseUser = clean === 'me.sumitji@gmail.com' ? INITIAL_USER : (INITIAL_ALL_USERS.find((u) => u.email === clean) || INITIAL_USER);
           loggedInUser = {
-            ...INITIAL_USER,
-            name: loggedInUser.name || INITIAL_USER.name,
-            avatar: loggedInUser.avatar || INITIAL_USER.avatar,
+            ...baseUser,
+            name: loggedInUser.name || baseUser.name,
+            avatar: loggedInUser.avatar || baseUser.avatar,
             role: 'owner',
             approvalStatus: 'approved',
             lastLoginAt: new Date().toISOString(),
@@ -932,7 +939,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (loggedInUser && loggedInUser.email === 'suzaldhiman@gmail.com') {
+      if (loggedInUser && (loggedInUser.email === 'me.sumitji@gmail.com' || loggedInUser.email === 'suzaldhiman@gmail.com')) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setUser(loggedInUser);
         setIsAuthenticated(true);
@@ -948,11 +955,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Active security guard: if any user other than suzaldhiman@gmail.com is loaded, instantly evict
+  // Active security guard: if any user other than authorized accounts is loaded, instantly evict
   useEffect(() => {
     if (!isHydrated) return;
     const currentEmail = (user?.email || '').toLowerCase().trim();
-    if (currentEmail && currentEmail !== 'suzaldhiman@gmail.com') {
+    if (currentEmail && currentEmail !== 'me.sumitji@gmail.com' && currentEmail !== 'suzaldhiman@gmail.com') {
       console.warn(`[Security Guard] Evicting active session for: ${currentEmail}`);
       try {
         if (typeof localStorage !== 'undefined') {
@@ -969,7 +976,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUser(GUEST_USER);
       setIsAuthenticated(false);
       if (typeof window !== 'undefined') {
-        window.location.replace('/login?error=' + encodeURIComponent('Access restricted. Only suzaldhiman@gmail.com is authorized.'));
+        window.location.replace('/login?error=' + encodeURIComponent('Access restricted. Please sign in with an authorized account.'));
       }
     }
   }, [isHydrated, user]);
@@ -1301,7 +1308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
@@ -1335,7 +1342,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
@@ -1367,7 +1374,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = (
       user?.email ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-      'suzaldhiman@gmail.com'
+      'me.sumitji@gmail.com'
     ).toLowerCase().trim();
 
     setCategories((prev) => {
@@ -1401,7 +1408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = (
       user?.email ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-      'suzaldhiman@gmail.com'
+      'me.sumitji@gmail.com'
     ).toLowerCase().trim();
 
     setCategories([]);
@@ -1465,7 +1472,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = (
       user?.email ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-      'suzaldhiman@gmail.com'
+      'me.sumitji@gmail.com'
     ).toLowerCase().trim();
     const storageKey = getStorageKeyForEmail(cleanEmail);
     let fullPayload: any = null;
@@ -1568,7 +1575,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = (
       user?.email ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-      'suzaldhiman@gmail.com'
+      'me.sumitji@gmail.com'
     ).toLowerCase().trim();
     if (!cleanEmail || typeof window === 'undefined') return;
 
@@ -1625,7 +1632,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = (
       user?.email ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-      'suzaldhiman@gmail.com'
+      'me.sumitji@gmail.com'
     ).toLowerCase().trim();
     if (!cleanEmail || typeof window === 'undefined') return;
 
@@ -1645,7 +1652,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = (
       user?.email ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-      'suzaldhiman@gmail.com'
+      'me.sumitji@gmail.com'
     ).toLowerCase().trim();
     try {
       await fetch('/api/logs', {
@@ -1664,7 +1671,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = (
       user?.email ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-      'suzaldhiman@gmail.com'
+      'me.sumitji@gmail.com'
     ).toLowerCase().trim();
     try {
       await fetch('/api/logs', {
@@ -1757,7 +1764,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const actualResults = Array.isArray(data?.results) ? data.results : [];
 
       const isSuccess = data?.success || actualResults.some((r: any) => r.status === 'success');
-      const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+      const cleanEmail = (user?.email || 'me.sumitji@gmail.com').toLowerCase().trim();
 
       const postUpdates = {
         status: (isSuccess ? 'published' : 'failed') as PostStatus,
@@ -1965,7 +1972,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (generatedSchedLogs.length > 0) {
         setLogs((prev) => [...generatedSchedLogs, ...prev]);
-        const emailForLog = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+        const emailForLog = (user?.email || 'me.sumitji@gmail.com').toLowerCase().trim();
         fetch('/api/logs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1978,7 +1985,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanUserEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
       try {
         fetch('/api/posts', {
@@ -2173,7 +2180,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
     setPostPerformances((prev) => prev.filter((perf) => perf.postId !== postId));
 
-    const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+    const cleanEmail = (user?.email || 'me.sumitji@gmail.com').toLowerCase().trim();
 
     // Remove from localStorage immediately so page refresh never resurrects it
     const storageKey = getStorageKeyForEmail(cleanEmail);
@@ -2391,7 +2398,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
@@ -2423,7 +2430,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
@@ -2458,7 +2465,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
@@ -2490,7 +2497,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
@@ -2530,7 +2537,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cleanEmail = (
         user?.email ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
-        'suzaldhiman@gmail.com'
+        'me.sumitji@gmail.com'
       ).toLowerCase().trim();
 
       if (typeof localStorage !== 'undefined') {
@@ -2560,8 +2567,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { success: false, message: 'Please enter a valid email address.' };
     }
-    if (cleanEmail !== 'suzaldhiman@gmail.com') {
-      return { success: false, message: 'Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.' };
+    if (cleanEmail !== 'me.sumitji@gmail.com' && cleanEmail !== 'suzaldhiman@gmail.com') {
+      return { success: false, message: 'Access restricted. Only authorized accounts are permitted to access this workspace.' };
     }
     if (!password) {
       return { success: false, message: 'Please enter your password.' };
@@ -2655,7 +2662,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return {
       success: false,
       user: GUEST_USER,
-      message: 'Public registration is closed. Platform access is restricted to suzaldhiman@gmail.com.',
+      message: 'Public registration is closed. Platform access is restricted to authorized users.',
     };
   };
 

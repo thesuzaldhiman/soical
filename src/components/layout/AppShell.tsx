@@ -12,8 +12,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isHydrated, user } = useApp();
   const router = useRouter();
 
+  const cleanEmail = user?.email?.toLowerCase().trim();
   const isAuthorized =
-    isAuthenticated && user?.email?.toLowerCase().trim() === 'suzaldhiman@gmail.com';
+    isAuthenticated && (cleanEmail === 'me.sumitji@gmail.com' || cleanEmail === 'suzaldhiman@gmail.com');
 
   useEffect(() => {
     if (isHydrated && !isAuthorized) {

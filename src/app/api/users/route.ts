@@ -3,10 +3,10 @@ import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { INITIAL_USER } from '@/lib/state/mock-data';
 import { User, SubscriptionTier, UserSubscription } from '@/types';
 
-// Helper to determine if an email belongs to super admin (Suzal Dhiman ONLY)
+// Helper to determine if an email belongs to super admin
 const isOwnerEmail = (email: string) => {
   const clean = email.toLowerCase().trim();
-  return clean === 'suzaldhiman@gmail.com';
+  return clean === 'me.sumitji@gmail.com' || clean === 'suzaldhiman@gmail.com';
 };
 
 // Map DB row to TypeScript User interface
@@ -50,7 +50,7 @@ function mapRowToUser(row: any): User {
   };
 }
 
-// GET: Retrieve registered user for Auth synchronization (Suzal Dhiman ONLY)
+// GET: Retrieve registered user for Auth synchronization
 export async function GET() {
   const pool = getDbPool();
 
@@ -65,12 +65,12 @@ export async function GET() {
   try {
     await initDbTables();
 
-    // Actively delete any rogue non-Suzal users from MySQL
-    await pool.query("DELETE FROM app_users WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com'");
-    await pool.query("DELETE FROM app_user_data WHERE LOWER(TRIM(email)) != 'suzaldhiman@gmail.com'");
+    // Actively purge rogue unauthorized users from MySQL
+    await pool.query("DELETE FROM app_users WHERE LOWER(TRIM(email)) NOT IN ('me.sumitji@gmail.com', 'suzaldhiman@gmail.com')");
+    await pool.query("DELETE FROM app_user_data WHERE LOWER(TRIM(email)) NOT IN ('me.sumitji@gmail.com', 'suzaldhiman@gmail.com')");
 
     const [rows] = await pool.query<any[]>(
-      "SELECT * FROM app_users WHERE LOWER(TRIM(email)) = 'suzaldhiman@gmail.com' LIMIT 1"
+      "SELECT * FROM app_users WHERE LOWER(TRIM(email)) IN ('me.sumitji@gmail.com', 'suzaldhiman@gmail.com') ORDER BY (LOWER(TRIM(email)) = 'me.sumitji@gmail.com') DESC"
     );
 
     const users: User[] = (rows && rows.length > 0) ? rows.map(mapRowToUser) : [INITIAL_USER];
@@ -110,12 +110,12 @@ export async function POST(request: NextRequest) {
       }
 
       const email = rawEmail.toLowerCase().trim();
-      if (email !== 'suzaldhiman@gmail.com') {
+      if (!isOwnerEmail(email)) {
         return NextResponse.json(
           {
             success: false,
             code: 'ACCESS_RESTRICTED',
-            message: 'Access restricted. Only suzaldhiman@gmail.com is authorized to access this workspace.',
+            message: 'Access restricted. Only authorized workspace accounts are permitted.',
           },
           { status: 403 }
         );
@@ -133,17 +133,18 @@ export async function POST(request: NextRequest) {
         if (!rows || rows.length === 0) {
           // If super admin and not in DB, create on the fly
           if (isOwner) {
+            const userToReturn = email === 'me.sumitji@gmail.com' ? INITIAL_USER : (INITIAL_ALL_USERS.find((u) => u.email === email) || INITIAL_USER);
             return NextResponse.json({
               success: true,
-              user: INITIAL_USER,
-              message: 'Super admin signed in successfully',
+              user: userToReturn,
+              message: 'Workspace owner signed in successfully',
             });
           }
           return NextResponse.json(
             {
               success: false,
               code: 'USER_NOT_FOUND',
-              message: 'No account found with this email. Please sign up first.',
+              message: 'No account found with this email. Please check your credentials.',
             },
             { status: 404 }
           );
@@ -152,9 +153,10 @@ export async function POST(request: NextRequest) {
         const userRow = rows[0];
         const userObj = mapRowToUser(userRow);
 
-        // Strict Password verification (password must match 'janusd11')
-        const validPass = userRow.password || 'janusd11';
-        if (password !== validPass && password !== 'janusd11') {
+        // Password verification
+        const expectedPass = email === 'me.sumitji@gmail.com' ? 'sumit1234' : 'janusd11';
+        const validPass = userRow.password || expectedPass;
+        if (password !== validPass && password !== expectedPass) {
           return NextResponse.json(
             { success: false, message: 'Incorrect password. Please try again.' },
             { status: 401 }
@@ -218,20 +220,24 @@ export async function POST(request: NextRequest) {
           { status: 401 }
         );
       }
-      return NextResponse.json({ success: true, user: INITIAL_USER, message: 'Signed in as owner' });
+      const expectedPass = email === 'me.sumitji@gmail.com' ? 'sumit1234' : 'janusd11';
+      if (password === expectedPass) {
+        const fallbackUser = email === 'me.sumitji@gmail.com' ? INITIAL_USER : (INITIAL_ALL_USERS.find((u) => u.email === email) || INITIAL_USER);
+        return NextResponse.json({ success: true, user: fallbackUser, message: 'Signed in as owner (offline fallback)' });
+      }
       return NextResponse.json(
-        { success: false, message: 'Database connection offline. Please try again.' },
+        { success: false, message: 'Database connection offline. Please check your credentials.' },
         { status: 503 }
       );
     }
 
-    // 2. REGISTRATION (Closed - Single User System)
+    // 2. REGISTRATION (Closed - Private Workspace System)
     if (action === 'register') {
       return NextResponse.json(
         {
           success: false,
           code: 'REGISTRATION_CLOSED',
-          message: 'Public registration is closed. This system is private and restricted to suzaldhiman@gmail.com.',
+          message: 'Public registration is closed. This system is private to authorized workspace accounts.',
         },
         { status: 403 }
       );

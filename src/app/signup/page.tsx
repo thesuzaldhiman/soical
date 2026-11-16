@@ -51,7 +51,7 @@ export default function SignupPage() {
               Authorized Account
             </div>
             <div className="font-mono text-slate-900 font-semibold bg-white px-3 py-2 rounded-xl border border-slate-200 text-xs">
-              suzaldhiman@gmail.com
+              me.sumitji@gmail.com
             </div>
           </div>
 
