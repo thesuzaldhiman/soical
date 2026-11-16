@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
-import { sanitizePostMedia } from '@/lib/utils/media-storage';
+import { sanitizePostMedia, sanitizeDeepMedia } from '@/lib/utils/media-storage';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -59,20 +59,35 @@ export async function GET(request: NextRequest) {
     };
 
     const rawPosts = parseJson(row.posts) || [];
-    let hadBase64 = false;
-    const sanitizedPosts = rawPosts.map((p: any) => {
-      const sanitized = sanitizePostMedia(p);
-      if (sanitized.mediaUrl !== p.mediaUrl || sanitized.thumbnailUrl !== p.thumbnailUrl) {
-        hadBase64 = true;
-      }
-      return sanitized;
-    });
+    const rawTemplates = parseJson(row.sig_templates) || [];
+    const rawPerformances = parseJson(row.post_performances) || [];
+    const rawLogs = parseJson(row.logs) || [];
+
+    const sanitizedPosts = sanitizeDeepMedia(rawPosts);
+    const sanitizedTemplates = sanitizeDeepMedia(rawTemplates);
+    const sanitizedPerformances = sanitizeDeepMedia(rawPerformances);
+    // Keep latest 150 logs to prevent infinite bloat
+    const sanitizedLogs = sanitizeDeepMedia(Array.isArray(rawLogs) ? rawLogs.slice(0, 150) : []);
+
+    const hadBase64 =
+      JSON.stringify(sanitizedPosts).length !== JSON.stringify(rawPosts).length ||
+      JSON.stringify(sanitizedTemplates).length !== JSON.stringify(rawTemplates).length ||
+      JSON.stringify(sanitizedPerformances).length !== JSON.stringify(rawPerformances).length ||
+      JSON.stringify(sanitizedLogs).length !== JSON.stringify(rawLogs).length;
 
     if (hadBase64) {
       pool.query(
-        'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
-        [JSON.stringify(sanitizedPosts), email]
-      ).catch(() => {});
+        `UPDATE app_user_data 
+         SET posts = ?, sig_templates = ?, post_performances = ?, logs = ?, updated_at = NOW() 
+         WHERE email = ?`,
+        [
+          JSON.stringify(sanitizedPosts),
+          JSON.stringify(sanitizedTemplates),
+          JSON.stringify(sanitizedPerformances),
+          JSON.stringify(sanitizedLogs),
+          email,
+        ]
+      ).catch((err) => console.warn('[Sync GET] Background cleanup error:', err));
     }
 
     const data = {
@@ -81,13 +96,13 @@ export async function GET(request: NextRequest) {
       pages: parseJson(row.pages) || [],
       categories: parseJson(row.categories),
       posts: sanitizedPosts,
-      sigTemplates: parseJson(row.sig_templates),
+      sigTemplates: sanitizedTemplates,
       pageAnalytics: parseJson(row.page_analytics) || {},
-      postPerformances: parseJson(row.post_performances) || [],
+      postPerformances: sanitizedPerformances,
       postComments: parseJson(row.post_comments) || [],
       automations: parseJson(row.automations) || [],
       settings: parseJson(row.settings),
-      logs: parseJson(row.logs) || [],
+      logs: sanitizedLogs,
       updatedAt: row.updated_at,
     };
 
@@ -231,6 +246,7 @@ export async function POST(request: NextRequest) {
       if (Array.isArray(payload.sigTemplates)) {
         finalTemplates = payload.sigTemplates;
       }
+      finalTemplates = sanitizeDeepMedia(finalTemplates);
 
       // --- 5. PAGES & ACCOUNTS SAFETY ---
       const dbPages: any[] = existingRow ? parseField(existingRow.pages, []) : [];
@@ -273,7 +289,12 @@ export async function POST(request: NextRequest) {
         const timeA = new Date(a.timestamp || 0).getTime();
         const timeB = new Date(b.timestamp || 0).getTime();
         return timeB - timeA;
-      }).slice(0, 1000);
+      });
+      finalLogs = sanitizeDeepMedia(finalLogs.slice(0, 150));
+
+      const finalPerformances = sanitizeDeepMedia(
+        payload.postPerformances || parseField(existingRow?.post_performances, [])
+      );
 
       await pool.query(
         `INSERT INTO app_user_data (
@@ -303,7 +324,7 @@ export async function POST(request: NextRequest) {
           toJson(finalPosts),
           toJson(finalTemplates),
           toJson(payload.pageAnalytics || existingRow?.page_analytics || {}),
-          toJson(payload.postPerformances || existingRow?.post_performances || []),
+          toJson(finalPerformances),
           toJson(payload.postComments || existingRow?.post_comments || []),
           toJson(finalAutomations),
           toJson(finalSettings),

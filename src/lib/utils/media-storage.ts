@@ -48,29 +48,39 @@ export function offloadBase64Media(rawUrl: string | undefined): string | undefin
 }
 
 /**
+ * Deeply traverses any object, array, or primitive and offloads any
+ * data:image/* or data:video/* base64 string to public/uploads/.
+ */
+export function sanitizeDeepMedia<T>(val: T, depth = 0): T {
+  if (depth > 12) return val;
+  if (!val) return val;
+
+  if (typeof val === 'string') {
+    if (val.startsWith('data:image/') || val.startsWith('data:video/')) {
+      return (offloadBase64Media(val) as unknown) as T;
+    }
+    return val;
+  }
+
+  if (Array.isArray(val)) {
+    return (val.map((item) => sanitizeDeepMedia(item, depth + 1)) as unknown) as T;
+  }
+
+  if (typeof val === 'object') {
+    const copy: any = Array.isArray(val) ? [] : {};
+    for (const [k, v] of Object.entries(val)) {
+      copy[k] = sanitizeDeepMedia(v, depth + 1);
+    }
+    return copy as T;
+  }
+
+  return val;
+}
+
+/**
  * Iterates through a post and converts any base64 mediaUrl or thumbnailUrl
  * into lightweight static URLs.
  */
 export function sanitizePostMedia<T extends { mediaUrl?: string; thumbnailUrl?: string }>(post: T): T {
-  let updated = false;
-  let newMediaUrl = post.mediaUrl;
-  let newThumbUrl = post.thumbnailUrl;
-
-  if (newMediaUrl && newMediaUrl.startsWith('data:')) {
-    newMediaUrl = offloadBase64Media(newMediaUrl);
-    updated = true;
-  }
-  if (newThumbUrl && newThumbUrl.startsWith('data:')) {
-    newThumbUrl = offloadBase64Media(newThumbUrl);
-    updated = true;
-  }
-
-  if (updated) {
-    return {
-      ...post,
-      mediaUrl: newMediaUrl,
-      thumbnailUrl: newThumbUrl,
-    };
-  }
-  return post;
+  return sanitizeDeepMedia(post);
 }
