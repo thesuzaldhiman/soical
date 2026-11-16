@@ -214,17 +214,15 @@ export async function POST(request: NextRequest) {
       }
 
       // Offline / fallback mode
-      if (password !== 'janusd11') {
-        return NextResponse.json(
-          { success: false, message: 'Incorrect password. Please try again.' },
-          { status: 401 }
-        );
-      }
       const expectedPass = email === 'me.sumitji@gmail.com' ? 'sumit1234' : 'janusd11';
       if (password === expectedPass) {
         const fallbackUser = email === 'me.sumitji@gmail.com' ? INITIAL_USER : (INITIAL_ALL_USERS.find((u) => u.email === email) || INITIAL_USER);
         return NextResponse.json({ success: true, user: fallbackUser, message: 'Signed in as owner (offline fallback)' });
       }
+      return NextResponse.json(
+        { success: false, message: 'Incorrect password. Please try again.' },
+        { status: 401 }
+      );
       return NextResponse.json(
         { success: false, message: 'Database connection offline. Please check your credentials.' },
         { status: 503 }
