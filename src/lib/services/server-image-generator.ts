@@ -6,6 +6,7 @@ import { getMediaFromDb } from '@/lib/db/mysql';
 
 export interface GenerateCardOptions {
   headline: string;
+  subtitle?: string;
   featuredImageUrl?: string;
   template?: SigTemplate | null;
   category?: string;
@@ -218,7 +219,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     template?.templateImageUrl ? fetchImageBuffer(template.templateImageUrl, 8000) : Promise.resolve(null),
   ]);
 
-  const layers: sharp.OverlayOptions[] = [];
+  const layers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
   // 1. Process Featured Photo
   if (photoBuf) {
@@ -302,16 +303,25 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     });
   }
 
-  // 3. Multi-line Hindi Headline via SVG with Embedded Devanagari HarfBuzz Font
+  // 3. Multi-line Hindi Headline & Subtitle via SVG with Embedded Devanagari HarfBuzz Font
   const activeFont = getFontBase64(tBox.fontFamily);
   const fontSize = tBox.fontSize || 44;
   const lineHeight = fontSize * (tBox.lineHeight || 1.35);
-  const lines = wrapHeadline(headline, tBox.width, fontSize);
+  const headlineLines = wrapHeadline(headline, tBox.width, fontSize);
 
-  const totalTextHeight = lines.length * lineHeight;
+  const subFontSize = Math.round(fontSize * 0.62);
+  const subLineHeight = subFontSize * 1.3;
+  const subtitleLines =
+    options.subtitle && options.subtitle.trim()
+      ? wrapHeadline(options.subtitle.trim(), tBox.width, subFontSize)
+      : [];
+
+  const totalTextHeight =
+    headlineLines.length * lineHeight +
+    (subtitleLines.length > 0 ? subtitleLines.length * subLineHeight + 10 : 0);
   const startY = tBox.y + fontSize + Math.max(0, (tBox.height - totalTextHeight) / 2);
 
-  const textTspans = lines
+  const headlineTspans = headlineLines
     .map((line, idx) => {
       let xCoord = tBox.x;
       let anchor = 'start';
@@ -323,6 +333,24 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
         anchor = 'end';
       }
       return `<tspan x="${Math.round(xCoord)}" dy="${idx === 0 ? 0 : Math.round(lineHeight)}" text-anchor="${anchor}">${escapeXml(
+        line
+      )}</tspan>`;
+    })
+    .join('');
+
+  const subtitleTspans = subtitleLines
+    .map((line, idx) => {
+      let xCoord = tBox.x;
+      let anchor = 'start';
+      if (tBox.alignment === 'center') {
+        xCoord = tBox.x + tBox.width / 2;
+        anchor = 'middle';
+      } else if (tBox.alignment === 'right') {
+        xCoord = tBox.x + tBox.width;
+        anchor = 'end';
+      }
+      const dy = idx === 0 ? Math.round(lineHeight * 0.8 + 8) : Math.round(subLineHeight);
+      return `<tspan x="${Math.round(xCoord)}" dy="${dy}" text-anchor="${anchor}" class="subtitle-text">${escapeXml(
         line
       )}</tspan>`;
     })
@@ -347,9 +375,16 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
           fill: ${tBox.textColor || '#FFFFFF'};
           filter: drop-shadow(0px 3px 8px rgba(0, 0, 0, 0.95));
         }
+        .subtitle-text {
+          font-family: 'DevanagariHeadlineFont', 'Noto Sans Devanagari', sans-serif;
+          font-size: ${subFontSize}px;
+          font-weight: 600;
+          fill: ${tBox.highlightColor || '#FBBF24'};
+          filter: drop-shadow(0px 2px 6px rgba(0, 0, 0, 0.9));
+        }
       </style>
     </defs>
-    <text x="${Math.round(tBox.x)}" y="${Math.round(startY)}" class="headline-text">${textTspans}</text>
+    <text x="${Math.round(tBox.x)}" y="${Math.round(startY)}" class="headline-text">${headlineTspans}${subtitleTspans}</text>
   </svg>`;
 
   layers.push({

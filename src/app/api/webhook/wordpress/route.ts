@@ -5,6 +5,7 @@ import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES } from '@/lib/state/
 import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate } from '@/types';
 import { generateServerCardImage } from '@/lib/services/server-image-generator';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
+import { sanitizePostMedia } from '@/lib/utils/media-storage';
 import fs from 'fs';
 import path from 'path';
 
@@ -41,8 +42,9 @@ function saveLocalPosts(posts: Post[]) {
 }
 
 async function persistPosts(newPosts: Post[], email: string = 'me.sumitji@gmail.com') {
+  const sanitizedNewPosts = newPosts.map((p) => sanitizePostMedia(p));
   const localCurrent = getLocalPosts();
-  saveLocalPosts([...newPosts, ...localCurrent]);
+  saveLocalPosts([...sanitizedNewPosts, ...localCurrent]);
 
   const pool = getDbPool();
   if (!pool) return;
@@ -56,7 +58,7 @@ async function persistPosts(newPosts: Post[], email: string = 'me.sumitji@gmail.
 
     if (rows && rows.length > 0) {
       const existingPosts = parseJsonSafe(rows[0].posts, []);
-      const updatedPosts = [...newPosts, ...existingPosts].slice(0, 500);
+      const updatedPosts = [...sanitizedNewPosts, ...existingPosts].slice(0, 500);
       const ws = parseJsonSafe(rows[0].workspace, { monthlyPostsUsed: 0 });
       const successfulCount = newPosts.filter((p) => p.status === 'published').length;
       ws.monthlyPostsUsed = (ws.monthlyPostsUsed || 0) + successfulCount;
@@ -195,15 +197,21 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
         }
       }
 
-      // Default to first registered user
-      const first = allUsers[0];
+      // Default to user with active configured pages/automations
+      const activeUser =
+        allUsers.find((u) => {
+          const pgs = parseJsonSafe(u.pages, []);
+          const autos = parseJsonSafe(u.automations, []);
+          return pgs.length > 0 || autos.length > 0;
+        }) || allUsers[0];
+
       return {
-        email: first.email,
-        pages: parseJsonSafe(first.pages, DEMO_PAGES),
-        categories: parseJsonSafe(first.categories, []),
-        automations: parseJsonSafe(first.automations, []),
-        posts: parseJsonSafe(first.posts, getLocalPosts()),
-        sigTemplates: parseJsonSafe(first.sig_templates, INITIAL_SIG_TEMPLATES),
+        email: activeUser.email,
+        pages: parseJsonSafe(activeUser.pages, DEMO_PAGES),
+        categories: parseJsonSafe(activeUser.categories, []),
+        automations: parseJsonSafe(activeUser.automations, []),
+        posts: parseJsonSafe(activeUser.posts, getLocalPosts()),
+        sigTemplates: parseJsonSafe(activeUser.sig_templates, INITIAL_SIG_TEMPLATES),
       };
     }
   } catch (err) {
@@ -220,7 +228,46 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
+  const action = searchParams.get('action');
+
+  if (action === 'get_pages' || action === 'get_targets') {
+    const siteUrl = searchParams.get('site_url') || '';
+    const userState = await resolveUserState(siteUrl);
+    const allPages = userState.pages || [];
+    const allAutomations = (userState as any).automations || [];
+
+    const socialPages = allPages.filter(
+      (p) => p.platform === 'facebook' || p.platform === 'telegram' || p.accessToken
+    );
+
+    return NextResponse.json({
+      success: true,
+      pages: socialPages.map((p) => ({
+        id: p.id,
+        pageId: p.pageId,
+        name: p.name,
+        platform: p.platform,
+        category: p.category,
+      })),
+      rules: allAutomations.map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        wpCategory: a.wpCategory,
+        siteUrl: a.siteUrl || a.feedUrl,
+        targetPageIds: a.targetPageIds || [],
+        targetCategoryId: a.targetCategoryId,
+        isActive: a.isActive,
+      })),
+      timestamp: new Date().toISOString(),
+    }, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+      }
+    });
+  }
+
   return NextResponse.json({
     status: 'active',
     service: 'Social Auto Poster WordPress Ingestion Engine',
@@ -741,11 +788,14 @@ export async function POST(request: NextRequest) {
     const newPostRecord: Post = {
       id: `post_wp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       workspaceId: 'ws_default',
-      postType: dispatchFormat === 'link_card' ? 'link' : dispatchFormat === 'text_only' ? 'text' : 'image',
+      postType: dispatchFormat === 'link_card' ? 'link' : dispatchFormat === 'text_only' ? 'text' : dispatchFormat === 'ai_reel' ? 'video' : 'image',
       title: mainTitle,
       message: `${mainTitle}\n\n${excerpt}`.trim(),
       mediaUrl: finalMedia,
-      thumbnailUrl: imageUrl || finalMedia || undefined,
+      thumbnailUrl: finalMedia || imageUrl || undefined,
+      featuredImageUrl: imageUrl || undefined,
+      isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
+      sigTemplateId: selectedSigTemplateId || templateToUse?.id,
       linkUrl: permalink || undefined,
       commentText: commentText || undefined,
       pageIds: targetPages.map((p) => p.id),
