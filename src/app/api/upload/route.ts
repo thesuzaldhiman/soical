@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { saveMediaToDb } from '@/lib/db/mysql';
 
 
 export async function POST(request: NextRequest) {
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
     const filePath = path.join(uploadsDir, filename);
 
     fs.writeFileSync(filePath, buffer);
+
+    // Save to MySQL for permanent persistence across deployments
+    saveMediaToDb(filename, file.type || 'application/octet-stream', buffer).catch(() => {});
 
     const publicUrl = `/uploads/${filename}`;
 

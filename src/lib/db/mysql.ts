@@ -227,6 +227,16 @@ export async function initDbTables(): Promise<boolean> {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
 
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS app_media_storage (
+          id VARCHAR(255) PRIMARY KEY,
+          mime_type VARCHAR(64) NOT NULL,
+          data LONGBLOB NOT NULL,
+          size_bytes INT DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
       tablesInitialized = true;
       console.log('[MySQL] Database tables successfully initialized.');
       return true;
@@ -236,5 +246,49 @@ export async function initDbTables(): Promise<boolean> {
   } catch (err) {
     console.error('[MySQL] Failed to initialize tables:', err);
     return false;
+  }
+}
+
+/**
+ * Saves binary media buffer to MySQL app_media_storage table.
+ */
+export async function saveMediaToDb(id: string, mimeType: string, buffer: Buffer): Promise<boolean> {
+  const pool = getDbPool();
+  if (!pool) return false;
+  try {
+    const cleanId = id.replace(/^\/+/, '').trim();
+    await pool.query(
+      `INSERT INTO app_media_storage (id, mime_type, data, size_bytes)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE mime_type = VALUES(mime_type), data = VALUES(data), size_bytes = VALUES(size_bytes)`,
+      [cleanId, mimeType, buffer, buffer.length]
+    );
+    return true;
+  } catch (err) {
+    console.warn('[MySQL Media Storage] Save failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Retrieves binary media buffer from MySQL app_media_storage table.
+ */
+export async function getMediaFromDb(id: string): Promise<{ mimeType: string; data: Buffer } | null> {
+  const pool = getDbPool();
+  if (!pool) return null;
+  try {
+    const cleanId = id.replace(/^\/+/, '').trim();
+    const [rows] = await pool.query<any[]>(
+      'SELECT mime_type, data FROM app_media_storage WHERE id = ? LIMIT 1',
+      [cleanId]
+    );
+    if (!rows || rows.length === 0) return null;
+    return {
+      mimeType: rows[0].mime_type || 'application/octet-stream',
+      data: Buffer.from(rows[0].data),
+    };
+  } catch (err) {
+    console.warn('[MySQL Media Storage] Fetch failed:', err);
+    return null;
   }
 }

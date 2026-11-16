@@ -3,6 +3,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { VideoMotionEffect } from '@/types';
+import { saveMediaToDb, getMediaFromDb } from '@/lib/db/mysql';
 
 const execFileAsync = promisify(execFile);
 
@@ -88,6 +89,19 @@ async function resolveMediaToLocal(mediaInput?: string, tempPrefix = 'media', ex
   const localFile = path.join(process.cwd(), 'public', cleanPath);
   if (fs.existsSync(localFile)) {
     return localFile;
+  }
+
+  // Handle MySQL database media storage fallback
+  try {
+    const filename = path.basename(cleanPath);
+    const dbMedia = (await getMediaFromDb(cleanPath)) || (await getMediaFromDb(filename));
+    if (dbMedia && dbMedia.data) {
+      const tempFile = path.join(tempDir, `${tempPrefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}${ext}`);
+      fs.writeFileSync(tempFile, dbMedia.data);
+      return tempFile;
+    }
+  } catch (dbErr) {
+    console.warn('[server-video-generator] DB media fallback error:', dbErr);
   }
 
   // Handle remote HTTP/HTTPS URL
@@ -270,6 +284,15 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
 
     const stats = fs.statSync(finalFilePath);
     console.log(`[server-video-generator] Reel created successfully: ${finalFilename} (${stats.size} bytes)`);
+
+    try {
+      const videoBuffer = fs.readFileSync(finalFilePath);
+      const storageId = publicVideoUrl.replace(/^\/+uploads\/+/, '').replace(/^\/+/, '');
+      saveMediaToDb(storageId, 'video/mp4', videoBuffer).catch(() => {});
+      saveMediaToDb(finalFilename, 'video/mp4', videoBuffer).catch(() => {});
+    } catch (e) {
+      console.warn('[server-video-generator] Note on saving video to DB:', e);
+    }
 
     return {
       success: true,

@@ -1,10 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { saveMediaToDb } from '@/lib/db/mysql';
 
 /**
  * Offloads a base64 data URI to a static file in public/uploads/
- * and returns the static URL (/uploads/media_<hash>.<ext>).
+ * and saves to MySQL app_media_storage, returning the static URL (/uploads/media_<hash>.<ext>).
  * If the string is already a URL or empty, returns it as-is.
  */
 export function offloadBase64Media(rawUrl: string | undefined): string | undefined {
@@ -39,6 +40,9 @@ export function offloadBase64Media(rawUrl: string | undefined): string | undefin
     if (!fs.existsSync(filePath)) {
       fs.writeFileSync(filePath, buffer);
     }
+
+    // Persist to MySQL for permanence across deployments
+    saveMediaToDb(filename, mimeType, buffer).catch(() => {});
 
     return `/uploads/${filename}`;
   } catch (err) {

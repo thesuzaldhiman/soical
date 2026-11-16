@@ -797,8 +797,13 @@ function LibraryContent() {
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={post.mediaUrl}
+                              src={post.thumbnailUrl || post.mediaUrl}
                               alt="Post media"
+                              onError={(e) => {
+                                if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {
+                                  e.currentTarget.src = post.thumbnailUrl;
+                                }
+                              }}
                               className="w-full h-full object-cover group-hover/media:scale-105 transition-transform duration-300"
                             />
                             <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-black uppercase text-white">
@@ -1459,8 +1464,13 @@ function PostInspectorDrawer({
               ) : (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={post.mediaUrl}
+                  src={post.thumbnailUrl || post.mediaUrl}
                   alt="Post full preview"
+                  onError={(e) => {
+                    if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {
+                      e.currentTarget.src = post.thumbnailUrl;
+                    }
+                  }}
                   className="max-h-72 w-auto object-contain rounded-xl"
                 />
               )}
