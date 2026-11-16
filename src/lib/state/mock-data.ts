@@ -691,7 +691,7 @@ export const INITIAL_SIG_TEMPLATES: SigTemplate[] = [
     name: 'News Card 1200x630 (Bold Hindi Headline)',
     canvasWidth: 1200,
     canvasHeight: 630,
-    templateImageUrl: 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&h=630&fit=crop&q=80',
+    templateImageUrl: '',
     videoConfig: {
       enabled: true,
       durationSeconds: 15,
@@ -717,14 +717,14 @@ export const INITIAL_SIG_TEMPLATES: SigTemplate[] = [
       fontFamily: 'Noto Sans Devanagari',
       alignment: 'left',
     },
-    isDefault: true,
+    isDefault: false,
   },
   {
     id: 'tmpl_2',
     name: 'Story / Reel Poster 1080x1350 (Portrait News)',
     canvasWidth: 1080,
     canvasHeight: 1350,
-    templateImageUrl: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1080&h=1350&fit=crop&q=80',
+    templateImageUrl: '/uploads/media_8c7a84d712a33674.png',
     videoConfig: {
       enabled: true,
       durationSeconds: 15,
@@ -751,7 +751,7 @@ export const INITIAL_SIG_TEMPLATES: SigTemplate[] = [
       fontFamily: 'Noto Sans Devanagari',
       alignment: 'left',
     },
-    isDefault: false,
+    isDefault: true,
   },
   {
     id: 'tmpl_reel_9x16',

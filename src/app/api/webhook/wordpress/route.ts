@@ -558,11 +558,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Resolve template to use for AI Card Image generation
-    const templateToUse =
+    let templateToUse =
       allSigTemplates.find((t) => t.id === selectedSigTemplateId) ||
+      allSigTemplates.find((t) => t.isDefault && t.templateImageUrl) ||
+      allSigTemplates.find((t) => t.templateImageUrl && t.templateImageUrl.includes('media_')) ||
       allSigTemplates.find((t) => t.isDefault) ||
       allSigTemplates[0] ||
+      INITIAL_SIG_TEMPLATES.find((t) => t.isDefault) ||
       INITIAL_SIG_TEMPLATES[0];
+
+    // If template image is missing or refers to old external unsplash, fallback to default news frame
+    if (!templateToUse.templateImageUrl || templateToUse.templateImageUrl.includes('unsplash.com')) {
+      const defaultFrame = '/uploads/media_8c7a84d712a33674.png';
+      if (fs.existsSync(path.join(process.cwd(), 'public', 'uploads', 'media_8c7a84d712a33674.png'))) {
+        templateToUse = {
+          ...templateToUse,
+          templateImageUrl: defaultFrame,
+        };
+      }
+    }
 
     // 3. Prepare Multi-Title Mapping
     // [Main Title (Page 1), Extra Title 1 (Page 2), Extra Title 2 (Page 3), Extra Title 3 (Page 4)]

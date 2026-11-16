@@ -1,7 +1,10 @@
 import React from 'react';
 import { ImageResponse } from 'next/og';
 import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
 import { SigTemplate } from '@/types';
+import { getMediaFromDb } from '@/lib/db/mysql';
 
 export interface GenerateCardOptions {
   headline: string;
@@ -11,16 +14,36 @@ export interface GenerateCardOptions {
   siteName?: string;
 }
 
+let cachedDevanagariFont: Buffer | null = null;
+
+function getDevanagariFontBuffer(): Buffer | null {
+  if (cachedDevanagariFont) return cachedDevanagariFont;
+  const fontCandidates = [
+    path.join(process.cwd(), 'public', 'fonts', 'NotoSansDevanagari-Bold.ttf'),
+    path.join(process.cwd(), 'fonts', 'NotoSansDevanagari-Bold.ttf'),
+  ];
+  for (const fp of fontCandidates) {
+    if (fs.existsSync(fp)) {
+      try {
+        cachedDevanagariFont = fs.readFileSync(fp);
+        return cachedDevanagariFont;
+      } catch {}
+    }
+  }
+  return null;
+}
+
 /**
- * Pre-fetch image URL and convert to Base64 data URL with Sharp normalization.
- * Satori / Next.js ImageResponse strictly supports standard JPEG and PNG (NOT AVIF).
+ * Pre-fetch image URL / local file / DB media and convert to Base64 data URL with Sharp normalization.
+ * Satori / Next.js ImageResponse strictly supports standard JPEG and PNG (NOT AVIF / WebP directly).
  * Sharp automatically normalizes AVIF, WebP, etc. into high-quality JPEG/PNG buffers.
  */
 async function fetchImageAsBase64(url?: string, timeoutMs: number = 8000): Promise<string | null> {
   if (!url || typeof url !== 'string') return null;
   const trimmed = url.trim();
+  if (!trimmed) return null;
 
-  // Handle data URIs
+  // 1. Handle data URIs
   if (trimmed.startsWith('data:image/')) {
     if (trimmed.startsWith('data:image/avif') || trimmed.startsWith('data:image/webp')) {
       try {
@@ -37,59 +60,132 @@ async function fetchImageAsBase64(url?: string, timeoutMs: number = 8000): Promi
     return trimmed;
   }
 
-  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-    return null;
+  let rawBuffer: Buffer | null = null;
+  let isPng = false;
+
+  // 2. Check if local file or uploads path
+  const isUploadsPath =
+    trimmed.startsWith('/uploads/') ||
+    trimmed.startsWith('uploads/') ||
+    trimmed.startsWith('/public/') ||
+    trimmed.startsWith('public/') ||
+    trimmed.includes('/uploads/') ||
+    !trimmed.startsWith('http');
+
+  if (isUploadsPath) {
+    const cleanPath = trimmed.replace(/^\/+/, '');
+    const filename = path.basename(cleanPath.split('?')[0]);
+
+    const diskCandidates = [
+      path.join(process.cwd(), 'public', 'uploads', filename),
+      path.join(process.cwd(), 'public', cleanPath),
+      path.join(process.cwd(), cleanPath),
+      path.join(process.cwd(), '..', cleanPath),
+    ];
+
+    for (const cand of diskCandidates) {
+      if (fs.existsSync(cand)) {
+        try {
+          rawBuffer = fs.readFileSync(cand);
+          isPng = cand.toLowerCase().endsWith('.png');
+          break;
+        } catch {}
+      }
+    }
+
+    // Fallback to MySQL app_media_storage if not on disk (e.g. after cloud redeploy)
+    if (!rawBuffer) {
+      try {
+        const dbMedia = (await getMediaFromDb(filename)) || (await getMediaFromDb(cleanPath));
+        if (dbMedia && dbMedia.data) {
+          rawBuffer = dbMedia.data;
+          isPng =
+            (dbMedia.mimeType || '').toLowerCase().includes('png') ||
+            filename.toLowerCase().endsWith('.png');
+        }
+      } catch (dbErr) {
+        console.warn(`[server-image-generator] MySQL media lookup warning for ${trimmed}:`, dbErr);
+      }
+    }
   }
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-    const res = await fetch(trimmed, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      },
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      console.warn(`[server-image-generator] Failed to fetch image: ${trimmed} (HTTP ${res.status})`);
-      return null;
+  // 3. Remote URL (http:// or https://)
+  if (!rawBuffer && (trimmed.startsWith('http://') || trimmed.startsWith('https://'))) {
+    // If it points to our own uploads endpoint, avoid network loopback and check disk/DB directly
+    if (trimmed.includes('/uploads/')) {
+      try {
+        const parsedUrl = new URL(trimmed);
+        const filename = path.basename(parsedUrl.pathname);
+        const localFile = path.join(process.cwd(), 'public', 'uploads', filename);
+        if (fs.existsSync(localFile)) {
+          rawBuffer = fs.readFileSync(localFile);
+          isPng = filename.toLowerCase().endsWith('.png');
+        }
+        if (!rawBuffer) {
+          const dbMedia = await getMediaFromDb(filename);
+          if (dbMedia && dbMedia.data) {
+            rawBuffer = dbMedia.data;
+            isPng =
+              (dbMedia.mimeType || '').toLowerCase().includes('png') ||
+              filename.toLowerCase().endsWith('.png');
+          }
+        }
+      } catch {}
     }
 
-    const rawBuffer = Buffer.from(await res.arrayBuffer());
+    // If still not resolved, fetch from network
+    if (!rawBuffer) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    // Normalize image format with Sharp to 100% standard JPEG buffer (or PNG for transparent frames)
-    try {
-      const isPng =
-        trimmed.toLowerCase().includes('.png') ||
-        (res.headers.get('content-type') || '').toLowerCase().includes('png');
+        const res = await fetch(trimmed, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/png,image/jpeg,image/*,*/*;q=0.8',
+          },
+        });
+        clearTimeout(timeout);
 
-      if (isPng) {
-        // Keep alpha channel for PNG frames/templates
-        const pngBuf = await sharp(rawBuffer).png().toBuffer();
-        return `data:image/png;base64,${pngBuf.toString('base64')}`;
-      } else {
-        const jpegBuf = await sharp(rawBuffer).jpeg({ quality: 90, mozjpeg: true }).toBuffer();
-        return `data:image/jpeg;base64,${jpegBuf.toString('base64')}`;
+        if (res.ok) {
+          rawBuffer = Buffer.from(await res.arrayBuffer());
+          isPng =
+            trimmed.toLowerCase().includes('.png') ||
+            (res.headers.get('content-type') || '').toLowerCase().includes('png');
+        } else {
+          console.warn(`[server-image-generator] Failed to fetch remote image: ${trimmed} (HTTP ${res.status})`);
+        }
+      } catch (err) {
+        console.error(`[server-image-generator] Network error fetching ${trimmed}:`, err);
       }
-    } catch (sharpErr) {
-      console.warn(`[server-image-generator] Sharp normalize fallback for ${trimmed}:`, sharpErr);
-      const contentType = res.headers.get('content-type') || 'image/jpeg';
-      return `data:${contentType};base64,${rawBuffer.toString('base64')}`;
     }
-  } catch (err) {
-    console.error(`[server-image-generator] Network error fetching ${trimmed}:`, err);
-    return null;
+  }
+
+  if (!rawBuffer) return null;
+
+  // 4. Normalize image format with Sharp to 100% standard JPEG buffer (or PNG for transparent frames)
+  try {
+    const meta = await sharp(rawBuffer).metadata();
+    if (meta.hasAlpha || isPng) {
+      const pngBuf = await sharp(rawBuffer).png({ compressionLevel: 8 }).toBuffer();
+      return `data:image/png;base64,${pngBuf.toString('base64')}`;
+    } else {
+      const jpegBuf = await sharp(rawBuffer).jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+      return `data:image/jpeg;base64,${jpegBuf.toString('base64')}`;
+    }
+  } catch (sharpErr) {
+    console.warn(`[server-image-generator] Sharp normalize fallback for ${trimmed}:`, sharpErr);
+    return `data:${isPng ? 'image/png' : 'image/jpeg'};base64,${rawBuffer.toString('base64')}`;
   }
 }
 
 /**
  * Generate a high-resolution composite branded news card on the server using Next.js ImageResponse.
- * Overlays the post headline, category badge, and template frame on top of the featured image.
+ * Layer 1 (Bottom): Featured Photo inside featuredImageBox
+ * Layer 2 (Middle): Transparent PNG template frame overlay on top of photo
+ * Layer 3 (Top): Headline and Title text inside titleBox with Devanagari typography
  * Returns a Base64 data URL: "data:image/png;base64,..."
  */
 export async function generateServerCardImage(options: GenerateCardOptions): Promise<string> {
@@ -119,7 +215,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     alignment: 'left',
   };
 
-  // Pre-fetch both featured image and template PNG frame in parallel with timeout
+  // Pre-fetch both featured image and template PNG frame in parallel
   const [photoBase64, templateBase64] = await Promise.all([
     fetchImageAsBase64(featuredImageUrl, 8000),
     template?.templateImageUrl ? fetchImageAsBase64(template.templateImageUrl, 8000) : Promise.resolve(null),
@@ -151,7 +247,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
 
   const layerMode = template?.layerMode || 'overlay';
 
-  // Helper to build photo element
+  // 2. Featured Photo Element
   const photoElement = photoBase64
     ? React.createElement('img', {
         key: 'featured_photo',
@@ -198,7 +294,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
         )
       );
 
-  // Helper to build template element
+  // 3. Template Frame Element (Transparent PNG frame with branding/borders)
   const templateElement = templateBase64
     ? React.createElement('img', {
         key: 'template_frame',
@@ -214,18 +310,17 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
       })
     : null;
 
-  // Layer ordering according to template mode
+  // Layer ordering according to template mode:
+  // Default 'overlay': Photo is in its bounding box (behind), transparent template frame sits on top!
   if (layerMode === 'background') {
-    // Template is behind the photo
     if (templateElement) children.push(templateElement);
     children.push(photoElement);
   } else {
-    // Default 'overlay': Photo is in its bounding box, transparent template frame is on top
     children.push(photoElement);
     if (templateElement) children.push(templateElement);
   }
 
-  // 4. Subtle scrim ONLY if no custom template was uploaded (prevents covering photo on custom branded templates)
+  // 4. Subtle scrim ONLY if no custom template was uploaded
   if (!templateBase64) {
     children.push(
       React.createElement('div', {
@@ -244,7 +339,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     );
   }
 
-  // 5. Title Box with Headline (No category badge overlay as requested)
+  // 5. Title Box with Headline (On top of both photo and template frame)
   children.push(
     React.createElement(
       'div',
@@ -259,20 +354,20 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          padding: '0 12px',
+          padding: '0 16px',
         },
       },
       React.createElement(
-        'div',
+        'span',
         {
           style: {
             fontSize: tBox.fontSize || 42,
             lineHeight: tBox.lineHeight || 1.35,
             color: tBox.textColor || '#ffffff',
-            fontWeight: 'bold',
+            fontWeight: 700,
             textAlign: (tBox.alignment as any) || 'left',
+            fontFamily: 'Noto Sans Devanagari',
             textShadow: '0 4px 16px rgba(0,0,0,0.95)',
-            display: 'flex',
           },
         },
         headline
@@ -294,7 +389,23 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     children
   );
 
-  const res = new ImageResponse(container, { width, height });
+  const devanagariFont = getDevanagariFontBuffer();
+  const fontConfig: any[] = [];
+  if (devanagariFont) {
+    fontConfig.push({
+      name: 'Noto Sans Devanagari',
+      data: devanagariFont,
+      weight: 700,
+      style: 'normal',
+    });
+  }
+
+  const res = new ImageResponse(container, {
+    width,
+    height,
+    ...(fontConfig.length > 0 ? { fonts: fontConfig } : {}),
+  });
+
   const buf = await res.arrayBuffer();
   return `data:image/png;base64,${Buffer.from(buf).toString('base64')}`;
 }
