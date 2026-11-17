@@ -223,20 +223,42 @@ export interface Post {
   updatedAt: string;
 }
 
-export type VideoMotionEffect = 'none' | 'shake' | 'glitter' | 'zoom_in' | 'zoom_out' | 'pulse';
+export type VideoMotionEffect =
+  | 'none'
+  | 'shake'
+  | 'glitter'
+  | 'zoom_in'
+  | 'zoom_out'
+  | 'pulse'
+  | 'pan_left'
+  | 'pan_right'
+  | 'breaking_jitter';
+
+export type VideoOverlayType =
+  | 'none'
+  | 'breaking_banner'
+  | 'audio_wave'
+  | 'film_grain'
+  | 'vignette'
+  | 'particles'
+  | 'red_alert';
 
 export interface SigTemplateVideoConfig {
   enabled?: boolean;
   durationSeconds?: number; // e.g. 10, 15, 30, 60
   effect?: VideoMotionEffect;
+  overlays?: VideoOverlayType[]; // Multiple overlays can be selected!
   musicUrl?: string; // audio file or URL
   musicName?: string;
+  musicCategory?: 'breaking' | 'cricket' | 'devotional' | 'crime' | 'viral' | 'custom';
+  musicVolume?: number; // 0 to 100 (default 100)
   targetPlatforms?: ('facebook' | 'instagram' | 'youtube')[];
 }
 
 export interface SigTemplate {
   id: string;
   name: string;
+  templateType?: 'image' | 'reel';
   canvasWidth: number;
   canvasHeight: number;
   templateImageUrl: string;

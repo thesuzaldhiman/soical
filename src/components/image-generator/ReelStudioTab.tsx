@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { SigTemplate, VideoMotionEffect } from '@/types';
 import {
   Film,
@@ -296,6 +297,14 @@ export function ReelStudioTab({
             <Save className="w-3.5 h-3.5" />
             <span>Save Reel Settings</span>
           </button>
+
+          <Link
+            href="/reel-studio"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white text-xs font-bold cursor-pointer transition-all shadow-xs"
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span>Dedicated Reel Studio →</span>
+          </Link>
         </div>
       </div>
 

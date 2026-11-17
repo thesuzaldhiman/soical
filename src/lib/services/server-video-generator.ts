@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { VideoMotionEffect } from '@/types';
+import { VideoMotionEffect, VideoOverlayType } from '@/types';
 import { saveMediaToDb, getMediaFromDb } from '@/lib/db/mysql';
 
 const execFileAsync = promisify(execFile);
@@ -48,7 +48,9 @@ export interface GenerateVideoReelOptions {
   imageUrl?: string;
   durationSeconds?: number; // default 15
   effect?: VideoMotionEffect; // default 'shake'
+  overlays?: VideoOverlayType[]; // Multiple overlays can be selected!
   musicUrl?: string; // e.g. "/uploads/audio/track.mp3" or remote URL
+  musicVolume?: number; // 0 to 100 (default 100)
   outputFilename?: string;
 }
 
@@ -135,7 +137,9 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     imageUrl,
     durationSeconds = 15,
     effect = 'shake',
+    overlays = [],
     musicUrl,
+    musicVolume = 100,
     outputFilename,
   } = options;
 
@@ -183,6 +187,14 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
         `crop=1080:1920:'30+15*sin(n*0.75)*if(lt(mod(n,75),28),1,0.08)':'50+15*cos(n*0.85)*if(lt(mod(n,75),28),1,0.08)'`;
       break;
 
+    case 'breaking_jitter':
+      // Urgent breaking news strobe jitter & flashing
+      videoFilter =
+        `scale=1140:2020:force_original_aspect_ratio=increase,` +
+        `crop=1080:1920:'30+18*sin(n*1.2)':'50+18*cos(n*1.4)',` +
+        `eq=brightness='0.08*if(lt(mod(n,45),6),1,0)'`;
+      break;
+
     case 'zoom_in':
       // Cinematic slow zoom into the center of the news card
       videoFilter =
@@ -195,6 +207,20 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       videoFilter =
         `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,` +
         `zoompan=z='if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`;
+      break;
+
+    case 'pan_left':
+      // Dynamic pan from right to left
+      videoFilter =
+        `scale=1280:1920:force_original_aspect_ratio=increase,` +
+        `crop=1080:1920:'(1280-1080)*(1-t/${duration})':0`;
+      break;
+
+    case 'pan_right':
+      // Dynamic pan from left to right
+      videoFilter =
+        `scale=1280:1920:force_original_aspect_ratio=increase,` +
+        `crop=1080:1920:'(1280-1080)*(t/${duration})':0`;
       break;
 
     case 'glitter':
@@ -219,17 +245,36 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       break;
   }
 
+  // 4b. Apply Selectable Visual Overlays
+  if (Array.isArray(overlays) && overlays.length > 0) {
+    for (const ov of overlays) {
+      if (ov === 'vignette') {
+        videoFilter += `,vignette=PI/4`;
+      } else if (ov === 'film_grain') {
+        videoFilter += `,noise=alls=12:allf=t+u`;
+      } else if (ov === 'red_alert') {
+        videoFilter += `,drawbox=x=0:y=0:w=iw:h=16:color=red@0.9:t=fill,drawbox=x=0:y=ih-16:w=iw:h=16:color=red@0.9:t=fill`;
+      } else if (ov === 'breaking_banner') {
+        videoFilter += `,drawbox=x=20:y=ih-140:w=iw-40:h=75:color=red@0.88:t=fill`;
+      } else if (ov === 'particles') {
+        videoFilter += `,eq=brightness='0.04*sin(2*PI*t*1.8)':saturation='1.0+0.12*cos(2*PI*t*1.8)'`;
+      }
+    }
+  }
+
   // 5. Build FFmpeg Arguments
   const args: string[] = ['-y', '-loop', '1', '-i', inputImage];
 
+  const volRatio = Math.max(0.05, Math.min(1.0, (musicVolume || 100) / 100));
+
   if (inputMusic && fs.existsSync(inputMusic)) {
-    // Music provided: Trim to duration and apply smooth 1.5s audio fade-out
+    // Music provided: Trim to duration, scale volume, and apply smooth 1.5s audio fade-out
     const fadeStart = Math.max(0, duration - 1.5);
     args.push(
       '-i',
       inputMusic,
       '-filter_complex',
-      `[0:v]${videoFilter}[v];[1:a]atrim=0:${duration},asetpts=PTS-STARTPTS,afade=t=out:st=${fadeStart}:d=1.5[a]`,
+      `[0:v]${videoFilter}[v];[1:a]atrim=0:${duration},asetpts=PTS-STARTPTS,volume=${volRatio.toFixed(2)},afade=t=out:st=${fadeStart}:d=1.5[a]`,
       '-map',
       '[v]',
       '-map',

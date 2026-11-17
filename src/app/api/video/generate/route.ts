@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
-import { VideoMotionEffect } from '@/types';
+import { VideoMotionEffect, VideoOverlayType } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,7 +10,9 @@ export async function POST(request: NextRequest) {
       imageBase64,
       duration = 15,
       effect = 'shake',
+      overlays = [],
       musicUrl,
+      musicVolume = 100,
       outputFilename,
     } = body;
 
@@ -26,7 +28,9 @@ export async function POST(request: NextRequest) {
       imageBase64,
       durationSeconds: Number(duration) || 15,
       effect: (effect as VideoMotionEffect) || 'shake',
+      overlays: Array.isArray(overlays) ? (overlays as VideoOverlayType[]) : [],
       musicUrl,
+      musicVolume: Number(musicVolume) || 100,
       outputFilename,
     });
 

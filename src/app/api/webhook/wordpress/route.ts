@@ -733,7 +733,9 @@ export async function POST(request: NextRequest) {
             imageBase64: cardBase64,
             durationSeconds: vConfig?.durationSeconds || 15,
             effect: vConfig?.effect || 'shake',
+            overlays: vConfig?.overlays || [],
             musicUrl: vConfig?.musicUrl,
+            musicVolume: vConfig?.musicVolume ?? 100,
           });
           mediaToSend = reelRes.videoUrl;
           console.log(`[WP Webhook] Video Reel generated for Page ${page.name}: ${reelRes.videoUrl}`);
