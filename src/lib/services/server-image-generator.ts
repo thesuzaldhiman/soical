@@ -262,10 +262,10 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
 
   const { headline, subtitle, featuredImageUrl, template, siteName } = options;
 
-  const width = template?.canvasWidth || 1200;
-  const height = template?.canvasHeight || 630;
+  const width = Math.max(300, template?.canvasWidth || 1200);
+  const height = Math.max(300, template?.canvasHeight || 630);
 
-  const fBox = template?.featuredImageBox || {
+  const rawFBox = template?.featuredImageBox || {
     x: 0,
     y: 0,
     width,
@@ -273,7 +273,21 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     borderRadius: 0,
   };
 
-  const tBox = template?.titleBox || {
+  // Safe Clamping for Featured Image Box (Prevents Sharp dimension overflow crashes)
+  const safeBoxLeft = Math.max(0, Math.min(Math.round(rawFBox.x || 0), width - 20));
+  const safeBoxTop = Math.max(0, Math.min(Math.round(rawFBox.y || 0), height - 20));
+  const safeBoxWidth = Math.max(20, Math.min(Math.round(rawFBox.width || width), width - safeBoxLeft));
+  const safeBoxHeight = Math.max(20, Math.min(Math.round(rawFBox.height || (height * 0.68)), height - safeBoxTop));
+
+  const fBox = {
+    x: safeBoxLeft,
+    y: safeBoxTop,
+    width: safeBoxWidth,
+    height: safeBoxHeight,
+    borderRadius: rawFBox.borderRadius || 0,
+  };
+
+  const rawTBox = template?.titleBox || {
     x: 40,
     y: Math.round(height * 0.68),
     width: width - 80,
@@ -284,6 +298,19 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     highlightColor: '#FBBF24',
     fontFamily: 'Noto Sans Devanagari',
     alignment: 'left',
+  };
+
+  const safeTitleLeft = Math.max(0, Math.min(Math.round(rawTBox.x || 0), width - 20));
+  const safeTitleTop = Math.max(0, Math.min(Math.round(rawTBox.y || 0), height - 20));
+  const safeTitleWidth = Math.max(20, Math.min(Math.round(rawTBox.width || (width - safeTitleLeft)), width - safeTitleLeft));
+  const safeTitleHeight = Math.max(20, Math.min(Math.round(rawTBox.height || (height * 0.28)), height - safeTitleTop));
+
+  const tBox = {
+    ...rawTBox,
+    x: safeTitleLeft,
+    y: safeTitleTop,
+    width: safeTitleWidth,
+    height: safeTitleHeight,
   };
 
   const [photoBuf, templateBuf] = await Promise.all([
@@ -364,11 +391,19 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
   }
 
   // Intelligent Layer Ordering:
-  // If layerMode is 'background', OR if fBox is placed in the lower area (y >= 300) where
-  // branded news frames have solid colored banner areas, we place the Frame on BOTTOM and Photo ON TOP!
+  // If layerMode is 'background', OR if template image is a branded PNG frame (e.g. contains 'media_', 'fb-templets', 'templet', 'frame')
+  // OR if fBox is placed in the cutout area (y >= 150) where branded news frames have bottom comment banners:
+  // we place the Frame on BOTTOM and Photo ON TOP!
   const isBackgroundMode =
     template?.layerMode === 'background' ||
-    (fBox.y >= 300 && (template?.templateImageUrl?.includes('media_') || template?.templateImageUrl?.includes('fb-templets')));
+    Boolean(
+      template?.templateImageUrl &&
+        (template.templateImageUrl.includes('media_') ||
+          template.templateImageUrl.includes('fb-templets') ||
+          template.templateImageUrl.includes('frame') ||
+          template.templateImageUrl.includes('templet'))
+    ) ||
+    fBox.y >= 150;
 
   if (isBackgroundMode) {
     if (frameLayerItem) layers.push(frameLayerItem);

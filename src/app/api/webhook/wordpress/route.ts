@@ -761,8 +761,46 @@ export async function POST(request: NextRequest) {
             firstGeneratedCardUrl = cardBase64;
           }
         } catch (cardErr) {
-          console.error('[WP Webhook] Server Card generation error:', cardErr);
-          mediaToSend = imageUrl;
+          console.error('[WP Webhook] Server Card generation error with template:', cardErr);
+          // High-reliability fallback: try generating with safe layout so Facebook NEVER gets just a bare photo
+          try {
+            const fallbackCard = await generateServerCardImage({
+              headline: assignedTitle,
+              subtitle: assignedSubtitle,
+              featuredImageUrl: imageUrl || undefined,
+              template: {
+                id: 'tmpl_safe_fallback',
+                name: 'Safe Fallback News Card',
+                canvasWidth: 1080,
+                canvasHeight: 1350,
+                templateImageUrl: '/uploads/media_8c7a84d712a33674.png',
+                layerMode: 'overlay',
+                featuredImageBox: { x: 0, y: 462, width: 1080, height: 784, borderRadius: 12 },
+                titleBox: {
+                  x: 95,
+                  y: 76,
+                  width: 858,
+                  height: 310,
+                  fontSize: 48,
+                  lineHeight: 1.35,
+                  textColor: '#FFFFFF',
+                  highlightColor: '#FBBF24',
+                  fontFamily: 'Noto Sans Devanagari',
+                  alignment: 'center',
+                },
+                isDefault: true,
+              },
+              category: categories[0] || 'News',
+              siteName: payload.site_name || incomingSiteUrl || '',
+            });
+            mediaToSend = fallbackCard;
+            if (!firstGeneratedCardUrl) {
+              firstGeneratedCardUrl = fallbackCard;
+            }
+          } catch (retryErr) {
+            console.error('[WP Webhook] Secondary card fallback also failed, using raw imageUrl:', retryErr);
+            mediaToSend = imageUrl;
+          }
         }
       }
 

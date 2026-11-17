@@ -351,10 +351,10 @@ function AutomationsContent() {
           wpCategory: selectedWpCategory,
           targetCategoryId: targetCategory,
           targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
-          format: dispatchFormat,
+          format: autoGenerateImage ? 'ai_image' : dispatchFormat,
           enableMultiTitle,
           intervalMinutes: 0,
-          autoGenerateImage: dispatchFormat === 'ai_image',
+          autoGenerateImage,
           sigTemplateId: selectedSigTemplateId,
           linkInComment,
           postStatus,
@@ -370,11 +370,11 @@ function AutomationsContent() {
           wpCategory: selectedWpCategory,
           targetCategoryId: targetCategory,
           targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
-          format: dispatchFormat,
+          format: autoGenerateImage ? 'ai_image' : dispatchFormat,
           enableMultiTitle,
           isActive: true,
           intervalMinutes: 0,
-          autoGenerateImage: dispatchFormat === 'ai_image',
+          autoGenerateImage,
           sigTemplateId: selectedSigTemplateId,
           linkInComment,
           postStatus,
@@ -1753,7 +1753,15 @@ function AutomationsContent() {
                       <input
                         type="checkbox"
                         checked={autoGenerateImage}
-                        onChange={(e) => setAutoGenerateImage(e.target.checked)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setAutoGenerateImage(checked);
+                          if (checked && dispatchFormat !== 'ai_image' && dispatchFormat !== 'ai_reel') {
+                            setDispatchFormat('ai_image');
+                          } else if (!checked && dispatchFormat === 'ai_image') {
+                            setDispatchFormat('featured_image');
+                          }
+                        }}
                         className="w-4 h-4 rounded text-slate-900 cursor-pointer"
                       />
                     </div>
