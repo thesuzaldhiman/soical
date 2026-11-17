@@ -428,10 +428,14 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     );
   }
 
-  // H.264 video encoding settings optimal for mobile reels
+  // H.264 video encoding settings optimal for mobile reels and all web browsers
   args.push(
     '-c:v',
     'libx264',
+    '-profile:v',
+    'main',
+    '-level',
+    '4.0',
     '-pix_fmt',
     'yuv420p',
     '-preset',
@@ -444,6 +448,10 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     'aac',
     '-b:a',
     '128k',
+    '-ar',
+    '44100',
+    '-ac',
+    '2',
     '-shortest',
     '-movflags',
     '+faststart',
@@ -461,6 +469,19 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
 
     const stats = fs.statSync(finalFilePath);
     console.log(`[server-video-generator] Reel created successfully: ${finalFilename} (${stats.size} bytes)`);
+
+    // Mirror to public_html/uploads/videos if on Hostinger / LiteSpeed web root
+    const altPublicHtmlDirs = [
+      path.join(process.cwd(), 'public_html', 'uploads', 'videos'),
+      path.join(process.cwd(), '..', 'public_html', 'uploads', 'videos'),
+    ];
+    for (const altDir of altPublicHtmlDirs) {
+      try {
+        if (!fs.existsSync(altDir)) fs.mkdirSync(altDir, { recursive: true });
+        const altFile = path.join(altDir, finalFilename);
+        fs.copyFileSync(finalFilePath, altFile);
+      } catch {}
+    }
 
     try {
       const videoBuffer = fs.readFileSync(finalFilePath);

@@ -370,6 +370,15 @@ export default function ReelStudioPage() {
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [generatedVideoSize, setGeneratedVideoSize] = useState<number | null>(null);
 
+  // ── Reel Player State ──
+  const reelVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [isPlayingReel, setIsPlayingReel] = useState(false);
+  const [isMutedReel, setIsMutedReel] = useState(true);
+  const [reelProgress, setReelProgress] = useState(0);
+  const [reelCurrentTime, setReelCurrentTime] = useState(0);
+  const [reelTotalDuration, setReelTotalDuration] = useState(0);
+  const [showNativeControls, setShowNativeControls] = useState(false);
+
   // ── New Reel Template Modal ──
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newTmplName, setNewTmplName] = useState('');
@@ -978,6 +987,47 @@ export default function ReelStudioPage() {
     sessionStorage.setItem('sap_pending_composer_video', generatedVideoUrl);
     sessionStorage.setItem('sap_pending_composer_text', genHeadline);
     router.push('/composer');
+  };
+
+  // ── Reel Player Handlers ──
+  const handleTogglePlayReel = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!reelVideoRef.current) return;
+    const vid = reelVideoRef.current;
+    if (vid.paused) {
+      vid
+        .play()
+        .then(() => setIsPlayingReel(true))
+        .catch(() => {
+          // If browser blocked unmuted, mute and retry
+          vid.muted = true;
+          setIsMutedReel(true);
+          vid.play().then(() => setIsPlayingReel(true)).catch(() => {});
+        });
+    } else {
+      vid.pause();
+      setIsPlayingReel(false);
+    }
+  };
+
+  const handleToggleMuteReel = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!reelVideoRef.current) return;
+    const vid = reelVideoRef.current;
+    const nextMuted = !vid.muted;
+    vid.muted = nextMuted;
+    setIsMutedReel(nextMuted);
+    if (vid.paused) {
+      vid.play().then(() => setIsPlayingReel(true)).catch(() => {});
+    }
+  };
+
+  const handleRestartReel = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!reelVideoRef.current) return;
+    const vid = reelVideoRef.current;
+    vid.currentTime = 0;
+    vid.play().then(() => setIsPlayingReel(true)).catch(() => {});
   };
 
   return (
@@ -2284,15 +2334,167 @@ export default function ReelStudioPage() {
               {generatedVideoUrl ? (
                 <div className="flex flex-col items-center space-y-4 max-w-sm w-full animate-fade-in">
                   {/* Phone Mockup Frame */}
-                  <div className="relative aspect-[9/16] w-full max-w-[280px] rounded-[36px] overflow-hidden border-4 border-slate-700 shadow-2xl bg-black">
+                  <div className="relative aspect-[9/16] w-full max-w-[280px] rounded-[36px] overflow-hidden border-4 border-slate-700 shadow-2xl bg-black group select-none">
+                    {/* Top Speaker / Camera Notch */}
+                    <div className="absolute top-0 inset-x-0 h-4 flex justify-center z-30 pointer-events-none">
+                      <div className="w-20 h-3.5 bg-black rounded-b-xl border-b border-x border-slate-800 flex items-center justify-center">
+                        <div className="w-2 h-2 rounded-full bg-slate-900 border border-slate-700 mr-2" />
+                        <div className="w-6 h-1 rounded-full bg-slate-800" />
+                      </div>
+                    </div>
+
+                    {/* Sound Pill (Top Right) */}
+                    <button
+                      type="button"
+                      onClick={handleToggleMuteReel}
+                      className={`absolute top-4 right-3 z-30 px-2.5 py-1 rounded-full text-[10px] font-bold backdrop-blur-md shadow-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                        isMutedReel
+                          ? 'bg-rose-950/80 text-rose-300 border border-rose-500/40 animate-pulse'
+                          : 'bg-black/70 text-emerald-300 border border-emerald-500/40'
+                      }`}
+                      title={isMutedReel ? 'Click to Unmute' : 'Click to Mute'}
+                    >
+                      {isMutedReel ? (
+                        <>
+                          <VolumeX className="w-3 h-3 text-rose-400" />
+                          <span>Sound Off</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3 h-3 text-emerald-400" />
+                          <span>Sound On</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* HTML5 Video Element */}
                     <video
+                      ref={reelVideoRef}
+                      key={generatedVideoUrl}
                       src={generatedVideoUrl}
-                      controls
+                      controls={showNativeControls}
                       autoPlay
+                      muted={isMutedReel}
                       loop
                       playsInline
-                      className="w-full h-full object-cover"
+                      preload="auto"
+                      onLoadedMetadata={(e) => {
+                        const vid = e.currentTarget;
+                        setReelTotalDuration(vid.duration || 0);
+                        if (vid.currentTime === 0) vid.currentTime = 0.05;
+                        vid
+                          .play()
+                          .then(() => setIsPlayingReel(true))
+                          .catch(() => {
+                            vid.muted = true;
+                            setIsMutedReel(true);
+                            vid.play().then(() => setIsPlayingReel(true)).catch(() => setIsPlayingReel(false));
+                          });
+                      }}
+                      onTimeUpdate={(e) => {
+                        const vid = e.currentTarget;
+                        setReelCurrentTime(vid.currentTime);
+                        if (vid.duration) {
+                          setReelProgress((vid.currentTime / vid.duration) * 100);
+                        }
+                      }}
+                      onPlay={() => setIsPlayingReel(true)}
+                      onPause={() => setIsPlayingReel(false)}
+                      onClick={handleTogglePlayReel}
+                      className="w-full h-full object-cover cursor-pointer"
                     />
+
+                    {/* Center Big Play Button Overlay (when paused) */}
+                    {!isPlayingReel && !showNativeControls && (
+                      <div
+                        onClick={handleTogglePlayReel}
+                        className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-pointer transition-opacity"
+                      >
+                        <div className="w-16 h-16 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-2xl pl-1 hover:scale-110 transition-transform">
+                          <Play className="w-8 h-8 fill-white" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bottom Custom Reels Overlay & Timeline */}
+                    {!showNativeControls && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute bottom-0 inset-x-0 z-25 p-3.5 pt-6 bg-gradient-to-t from-black/95 via-black/60 to-transparent flex flex-col gap-2 text-white pointer-events-auto"
+                      >
+                        {/* Audio Music Track Title */}
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-300 truncate font-medium">
+                          <Music className="w-3 h-3 text-rose-400 shrink-0" />
+                          <span className="truncate">{musicName || 'Reel Background Beat'}</span>
+                        </div>
+
+                        {/* Interactive Progress Scrubber */}
+                        <div
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                            if (reelVideoRef.current && reelTotalDuration) {
+                              reelVideoRef.current.currentTime = pos * reelTotalDuration;
+                            }
+                          }}
+                          className="w-full h-1.5 hover:h-2.5 bg-white/20 rounded-full overflow-hidden cursor-pointer transition-all"
+                        >
+                          <div
+                            className="h-full bg-gradient-to-r from-pink-500 to-rose-500 rounded-full transition-all"
+                            style={{ width: `${Math.min(100, Math.max(0, reelProgress))}%` }}
+                          />
+                        </div>
+
+                        {/* Control Buttons & Counter */}
+                        <div className="flex items-center justify-between text-[11px] font-mono text-slate-300">
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={handleTogglePlayReel}
+                              className="text-white hover:text-rose-400 transition-colors cursor-pointer"
+                              title={isPlayingReel ? 'Pause' : 'Play'}
+                            >
+                              {isPlayingReel ? (
+                                <Pause className="w-4 h-4" />
+                              ) : (
+                                <Play className="w-4 h-4 fill-white" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRestartReel}
+                              className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+                              title="Restart from beginning"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                            <span>
+                              {Math.floor(reelCurrentTime)}s / {Math.floor(reelTotalDuration || duration)}s
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleToggleMuteReel}
+                            className="text-slate-300 hover:text-white transition-colors cursor-pointer"
+                            title={isMutedReel ? 'Unmute' : 'Mute'}
+                          >
+                            {isMutedReel ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Player Controls Style Switcher */}
+                  <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400">
+                    <button
+                      type="button"
+                      onClick={() => setShowNativeControls(!showNativeControls)}
+                      className="hover:text-rose-400 underline underline-offset-2 cursor-pointer transition-colors"
+                    >
+                      {showNativeControls ? 'Switch to Reels Player UI' : 'Switch to Browser Native Controls'}
+                    </button>
                   </div>
 
                   {/* Metadata and Action Buttons */}

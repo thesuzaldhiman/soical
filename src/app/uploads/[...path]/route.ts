@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { getMediaFromDb, saveMediaToDb } from '@/lib/db/mysql';
 
 const MIME_MAP: Record<string, string> = {
@@ -141,13 +142,7 @@ export async function GET(
 
         const chunkSize = end - start + 1;
         const fileStream = fs.createReadStream(foundPath, { start, end });
-        const webStream = new ReadableStream({
-          start(controller) {
-            fileStream.on('data', (chunk) => controller.enqueue(chunk));
-            fileStream.on('end', () => controller.close());
-            fileStream.on('error', (err) => controller.error(err));
-          },
-        });
+        const webStream = Readable.toWeb(fileStream) as unknown as ReadableStream;
 
         return new NextResponse(webStream, {
           status: 206,
@@ -157,6 +152,7 @@ export async function GET(
             'Content-Length': String(chunkSize),
             'Content-Type': mimeType,
             'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=86400',
           },
         });
       }
