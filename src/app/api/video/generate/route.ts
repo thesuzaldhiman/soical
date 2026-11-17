@@ -9,7 +9,10 @@ export async function POST(request: NextRequest) {
       imageUrl,
       imageBase64,
       duration = 15,
+      durationSeconds,
       effect = 'shake',
+      effects,
+      effectDurationSeconds,
       overlays = [],
       musicUrl,
       musicVolume = 100,
@@ -23,11 +26,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const finalDuration = Number(durationSeconds || duration) || 15;
+
     const result = await generateServerVideoReel({
       imageUrl,
       imageBase64,
-      durationSeconds: Number(duration) || 15,
+      durationSeconds: finalDuration,
       effect: (effect as VideoMotionEffect) || 'shake',
+      effects: Array.isArray(effects) ? (effects as VideoMotionEffect[]) : undefined,
+      effectDurationSeconds: effectDurationSeconds ? Number(effectDurationSeconds) : undefined,
       overlays: Array.isArray(overlays) ? (overlays as VideoOverlayType[]) : [],
       musicUrl,
       musicVolume: Number(musicVolume) || 100,
@@ -40,6 +47,7 @@ export async function POST(request: NextRequest) {
       duration: result.duration,
       sizeBytes: result.sizeBytes,
       effect: result.effect,
+      effects: result.effects,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Video generation failed';

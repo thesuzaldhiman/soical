@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
 
   let metaAppConfigId = (searchParams.get('app_config_id') || '').trim();
   let metaAppName = (searchParams.get('app_name') || '').trim();
+  const mode = (searchParams.get('mode') || searchParams.get('platform') || 'facebook').trim();
 
   // If user is logged in, read settings from MySQL to resolve Meta App
   const userCookie =
@@ -99,6 +100,11 @@ export async function GET(request: NextRequest) {
     'pages_show_list',
     'pages_manage_metadata',
     'read_insights',
+    'instagram_basic',
+    'instagram_content_publish',
+    'instagram_manage_comments',
+    'instagram_manage_insights',
+    'business_management',
   ].join(',');
 
   // Pack state safely (immune to cookie issues and cross-site stripping)
@@ -107,6 +113,7 @@ export async function GET(request: NextRequest) {
     appSecret: appSecret ? appSecret.trim() : '',
     metaAppConfigId: metaAppConfigId || appId.trim(),
     metaAppName: metaAppName || 'Meta App',
+    mode,
     t: Date.now(),
   };
   const stateParam = Buffer.from(JSON.stringify(statePayload)).toString('base64url');
@@ -128,6 +135,7 @@ export async function GET(request: NextRequest) {
         appSecret: appSecret.trim(),
         metaAppConfigId: metaAppConfigId || appId.trim(),
         metaAppName: metaAppName || 'Meta App',
+        mode,
       })),
       {
         path: '/',

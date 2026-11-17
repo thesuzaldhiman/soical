@@ -733,6 +733,8 @@ export async function POST(request: NextRequest) {
             imageBase64: cardBase64,
             durationSeconds: vConfig?.durationSeconds || 15,
             effect: vConfig?.effect || 'shake',
+            effects: vConfig?.effects || (vConfig?.effect ? [vConfig.effect] : ['shake']),
+            effectDurationSeconds: vConfig?.effectDurationSeconds || vConfig?.durationSeconds || 15,
             overlays: vConfig?.overlays || [],
             musicUrl: vConfig?.musicUrl,
             musicVolume: vConfig?.musicVolume ?? 100,

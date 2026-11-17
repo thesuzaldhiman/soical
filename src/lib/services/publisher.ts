@@ -773,6 +773,381 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
         }
       }
 
+      // 5. INSTAGRAM DISPATCH (Meta Graph API)
+      if (target.platform === 'instagram') {
+        const accessToken = target.accessToken;
+        const igUserId = target.pageId;
+
+        if (!accessToken || !igUserId) {
+          results.push({
+            pageId: target.id,
+            pageName: target.name,
+            platform: 'instagram',
+            status: 'failed',
+            error: 'Missing Instagram Business User ID or Page Access Token.',
+            timestamp,
+          });
+          return;
+        }
+
+        try {
+          const publicBaseUrl = 'https://game.khabarmonkey.com';
+
+          // Helper to ensure media URL is a public HTTP/HTTPS URL that Meta servers can fetch
+          const ensurePublicMediaUrl = async (rawUrl: string, isVideo: boolean): Promise<string> => {
+            if (!rawUrl) return '';
+
+            // 1. If it's already an absolute public HTTP/HTTPS URL
+            if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+              // If it points to localhost or 127.0.0.1, replace host with publicBaseUrl
+              if (rawUrl.includes('localhost') || rawUrl.includes('127.0.0.1')) {
+                const parsed = new URL(rawUrl);
+                return `${publicBaseUrl}${parsed.pathname}${parsed.search}`;
+              }
+              return rawUrl;
+            }
+
+            // 2. If it's a relative path e.g. /uploads/video.mp4
+            if (rawUrl.startsWith('/')) {
+              return `${publicBaseUrl}${rawUrl}`;
+            }
+
+            // 3. If it's a base64 data URI
+            if (rawUrl.startsWith('data:')) {
+              const match = rawUrl.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                const mimeType = match[1];
+                const buffer = Buffer.from(match[2], 'base64');
+                let ext = isVideo ? '.mp4' : '.jpg';
+                if (mimeType.includes('png')) ext = '.png';
+                else if (mimeType.includes('webp')) ext = '.webp';
+                else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = '.jpg';
+                else if (mimeType.includes('mp4')) ext = '.mp4';
+
+                const filename = `ig_${isVideo ? 'reel' : 'img'}_${Date.now()}_${Math.floor(Math.random() * 1000)}${ext}`;
+                const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+                if (!fs.existsSync(uploadsDir)) {
+                  fs.mkdirSync(uploadsDir, { recursive: true });
+                }
+                fs.writeFileSync(path.join(uploadsDir, filename), buffer);
+                try {
+                  const { saveMediaToDb } = await import('@/lib/db/mysql');
+                  saveMediaToDb(filename, mimeType, buffer).catch(() => {});
+                } catch {}
+
+                return `${publicBaseUrl}/uploads/${filename}`;
+              }
+            }
+
+            return `${publicBaseUrl}/${rawUrl}`;
+          };
+
+          const isVideoMedia =
+            postType === 'video' ||
+            (typeof mediaUrl === 'string' &&
+              (/\.(mp4|mov|webm|avi|m4v)(\?.*)?$/i.test(mediaUrl) || mediaUrl.includes('video')));
+
+          const captionText = [message || title || '', linkUrl ? `\n\n${linkUrl}` : '']
+            .filter(Boolean)
+            .join('')
+            .trim();
+
+          // A. Video / Reel Publishing
+          if (isVideoMedia) {
+            if (!mediaUrl) {
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'instagram',
+                status: 'failed',
+                error: 'Instagram Reel requires a video file or public video URL.',
+                timestamp,
+              });
+              return;
+            }
+
+            const publicVideoUrl = await ensurePublicMediaUrl(mediaUrl, true);
+
+            // Step 1: Create Reel Container
+            const createRes = await fetch(
+              `https://graph.facebook.com/v19.0/${encodeURIComponent(igUserId)}/media`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  media_type: 'REELS',
+                  video_url: publicVideoUrl,
+                  caption: captionText,
+                  access_token: accessToken,
+                }),
+              }
+            );
+            const createData = await createRes.json();
+
+            if (createData.error || !createData.id) {
+              const errMsg = createData.error?.message || 'Failed creating Instagram Reel container';
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'instagram',
+                status: 'failed',
+                error: errMsg,
+                timestamp,
+              });
+              return;
+            }
+
+            const creationId = createData.id;
+
+            // Step 2: Poll container status until FINISHED
+            let isReady = false;
+            let attempts = 0;
+            const maxAttempts = 25; // ~50s
+
+            while (!isReady && attempts < maxAttempts) {
+              attempts++;
+              await new Promise((res) => setTimeout(res, 2000));
+
+              try {
+                const statusRes = await fetch(
+                  `https://graph.facebook.com/v19.0/${creationId}?fields=status_code,status&access_token=${encodeURIComponent(
+                    accessToken
+                  )}`
+                );
+                const statusData = await statusRes.json();
+
+                if (statusData.status_code === 'FINISHED') {
+                  isReady = true;
+                  break;
+                } else if (statusData.status_code === 'ERROR') {
+                  throw new Error(
+                    `Instagram processing error: ${statusData.status || 'Encoding failed'}`
+                  );
+                } else if (statusData.status_code === 'EXPIRED') {
+                  throw new Error('Instagram container expired.');
+                }
+              } catch (pollErr: any) {
+                if (pollErr.message?.includes('Instagram processing error')) throw pollErr;
+              }
+            }
+
+            // Step 3: Publish container
+            const pubRes = await fetch(
+              `https://graph.facebook.com/v19.0/${encodeURIComponent(igUserId)}/media_publish`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  creation_id: creationId,
+                  access_token: accessToken,
+                }),
+              }
+            );
+            const pubData = await pubRes.json();
+
+            if (pubData.error || !pubData.id) {
+              const errMsg = pubData.error?.message || 'Failed publishing Instagram Reel';
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'instagram',
+                status: 'failed',
+                error: errMsg,
+                timestamp,
+              });
+              return;
+            }
+
+            const mediaId = pubData.id;
+            let postUrl = `https://www.instagram.com/reel/`;
+
+            try {
+              const permRes = await fetch(
+                `https://graph.facebook.com/v19.0/${mediaId}?fields=permalink&access_token=${encodeURIComponent(
+                  accessToken
+                )}`
+              );
+              const permData = await permRes.json();
+              if (permData.permalink) {
+                postUrl = permData.permalink;
+              }
+            } catch {}
+
+            // Step 4: First Comment
+            if (commentText && commentText.trim()) {
+              try {
+                await fetch(
+                  `https://graph.facebook.com/v19.0/${mediaId}/comments`,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                      message: commentText.trim(),
+                      access_token: accessToken,
+                    }),
+                  }
+                );
+              } catch {}
+            }
+
+            results.push({
+              pageId: target.id,
+              pageName: target.name,
+              platform: 'instagram',
+              status: 'success',
+              externalPostId: mediaId,
+              postUrl,
+              timestamp,
+            });
+            return;
+          }
+
+          // B. Photo / Image Publishing
+          if (mediaUrl || postType === 'image') {
+            const publicImageUrl = await ensurePublicMediaUrl(mediaUrl, false);
+
+            if (!publicImageUrl) {
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'instagram',
+                status: 'failed',
+                error: 'Instagram requires an image or video to create a post.',
+                timestamp,
+              });
+              return;
+            }
+
+            // Step 1: Create Image Container
+            const createRes = await fetch(
+              `https://graph.facebook.com/v19.0/${encodeURIComponent(igUserId)}/media`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  image_url: publicImageUrl,
+                  caption: captionText,
+                  access_token: accessToken,
+                }),
+              }
+            );
+            const createData = await createRes.json();
+
+            if (createData.error || !createData.id) {
+              const errMsg = createData.error?.message || 'Failed creating Instagram image container';
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'instagram',
+                status: 'failed',
+                error: errMsg,
+                timestamp,
+              });
+              return;
+            }
+
+            const creationId = createData.id;
+
+            // Brief wait for image container to be ready
+            await new Promise((res) => setTimeout(res, 1200));
+
+            // Step 2: Publish Image Container
+            const pubRes = await fetch(
+              `https://graph.facebook.com/v19.0/${encodeURIComponent(igUserId)}/media_publish`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  creation_id: creationId,
+                  access_token: accessToken,
+                }),
+              }
+            );
+            const pubData = await pubRes.json();
+
+            if (pubData.error || !pubData.id) {
+              const errMsg = pubData.error?.message || 'Failed publishing Instagram photo';
+              results.push({
+                pageId: target.id,
+                pageName: target.name,
+                platform: 'instagram',
+                status: 'failed',
+                error: errMsg,
+                timestamp,
+              });
+              return;
+            }
+
+            const mediaId = pubData.id;
+            let postUrl = `https://www.instagram.com/p/`;
+
+            try {
+              const permRes = await fetch(
+                `https://graph.facebook.com/v19.0/${mediaId}?fields=permalink&access_token=${encodeURIComponent(
+                  accessToken
+                )}`
+              );
+              const permData = await permRes.json();
+              if (permData.permalink) {
+                postUrl = permData.permalink;
+              }
+            } catch {}
+
+            // Step 3: First Comment
+            if (commentText && commentText.trim()) {
+              try {
+                await fetch(
+                  `https://graph.facebook.com/v19.0/${mediaId}/comments`,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                      message: commentText.trim(),
+                      access_token: accessToken,
+                    }),
+                  }
+                );
+              } catch {}
+            }
+
+            results.push({
+              pageId: target.id,
+              pageName: target.name,
+              platform: 'instagram',
+              status: 'success',
+              externalPostId: mediaId,
+              postUrl,
+              timestamp,
+            });
+            return;
+          }
+
+          // C. Text-only (Instagram Graph API requires media)
+          results.push({
+            pageId: target.id,
+            pageName: target.name,
+            platform: 'instagram',
+            status: 'failed',
+            error:
+              'Instagram Graph API does not support text-only posts. Please attach an image or video/reel to publish to Instagram.',
+            timestamp,
+          });
+          return;
+        } catch (igErr: unknown) {
+          const errMsg = igErr instanceof Error ? igErr.message : 'Unknown Instagram publishing error';
+          console.error('[Instagram Publisher Error]:', igErr);
+          results.push({
+            pageId: target.id,
+            pageName: target.name,
+            platform: 'instagram',
+            status: 'failed',
+            error: errMsg,
+            timestamp,
+          });
+          return;
+        }
+      }
+
       // 4. Fallback / Simulated for other channels
       results.push({
         pageId: target.id,

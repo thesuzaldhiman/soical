@@ -245,8 +245,10 @@ export type VideoOverlayType =
 
 export interface SigTemplateVideoConfig {
   enabled?: boolean;
-  durationSeconds?: number; // e.g. 10, 15, 30, 60
-  effect?: VideoMotionEffect;
+  durationSeconds?: number; // e.g. custom duration in seconds (5-90s)
+  effect?: VideoMotionEffect; // single effect (legacy fallback)
+  effects?: VideoMotionEffect[]; // NEW: Multiple simultaneous motion animation styles!
+  effectDurationSeconds?: number; // Custom duration in seconds for animation effects to run
   overlays?: VideoOverlayType[]; // Multiple overlays can be selected!
   musicUrl?: string; // audio file or URL
   musicName?: string;

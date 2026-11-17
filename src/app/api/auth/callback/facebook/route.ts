@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
     let appSecret = (process.env.FACEBOOK_APP_SECRET || '').trim();
     let metaAppConfigId = '';
     let metaAppName = '';
+    let authMode = 'facebook';
 
     // 1. Recover App credentials from state parameter (passed safely through Meta OAuth Dialog)
     if (state) {
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
         if (decoded.appSecret && !appSecret) appSecret = decoded.appSecret.trim();
         if (decoded.metaAppConfigId) metaAppConfigId = String(decoded.metaAppConfigId).trim();
         if (decoded.metaAppName) metaAppName = String(decoded.metaAppName).trim();
+        if (decoded.mode) authMode = String(decoded.mode).trim();
       } catch {
         try {
           const decoded = JSON.parse(Buffer.from(decodeURIComponent(state), 'base64').toString('utf-8'));
@@ -52,6 +54,7 @@ export async function GET(request: NextRequest) {
           if (decoded.appSecret && !appSecret) appSecret = decoded.appSecret.trim();
           if (decoded.metaAppConfigId) metaAppConfigId = String(decoded.metaAppConfigId).trim();
           if (decoded.metaAppName) metaAppName = String(decoded.metaAppName).trim();
+          if (decoded.mode) authMode = String(decoded.mode).trim();
         } catch {}
       }
     }
@@ -67,6 +70,7 @@ export async function GET(request: NextRequest) {
         if (parsed.appSecret && !appSecret) appSecret = parsed.appSecret.trim();
         if (parsed.metaAppConfigId && !metaAppConfigId) metaAppConfigId = String(parsed.metaAppConfigId).trim();
         if (parsed.metaAppName && !metaAppName) metaAppName = String(parsed.metaAppName).trim();
+        if (parsed.mode && authMode === 'facebook') authMode = String(parsed.mode).trim();
       } catch {}
     }
 
@@ -156,12 +160,12 @@ export async function GET(request: NextRequest) {
     const userAccessToken = tokenData.access_token;
     console.log('[Facebook Auth Callback] User access token successfully acquired.');
 
-    // 5. Fetch Facebook Pages and User Profile
+    // 5. Fetch Facebook Pages and User Profile (with linked Instagram Business accounts)
     let rawPages: any[] = [];
     try {
       const pagesUrl = `https://graph.facebook.com/v19.0/me/accounts?access_token=${encodeURIComponent(
         userAccessToken
-      )}&fields=id,name,access_token,category,tasks,picture{url},fan_count,followers_count`;
+      )}&fields=id,name,access_token,category,tasks,picture{url},fan_count,followers_count,instagram_business_account{id,username,name,profile_picture_url,followers_count}`;
       const pagesRes = await fetch(pagesUrl);
       const pagesData = await pagesRes.json();
       if (Array.isArray(pagesData?.data)) {
@@ -183,12 +187,13 @@ export async function GET(request: NextRequest) {
       console.warn('[Facebook Auth Callback] Failed fetching user info:', userErr);
     }
 
-    // 6. Normalize page objects with explicit platform: 'facebook' and fanCount/followersCount
+    // 6. Normalize Facebook Pages and Extract Linked Instagram Business Profiles
     const effectiveMetaAppId = metaAppConfigId || appId;
     const effectiveMetaAppName = metaAppName || 'Meta App';
 
     const normalizedPages = rawPages.map((p: any, idx: number) => {
       const count = Number(p.fan_count ?? p.followers_count ?? 0) || 0;
+      const ig = p.instagram_business_account;
       return {
         id: `pg_fb_${p.id || Date.now()}_${idx}`,
         platform: 'facebook',
@@ -202,11 +207,81 @@ export async function GET(request: NextRequest) {
         isActive: true,
         targetUrl: `https://facebook.com/${p.id}`,
         permissions: Array.isArray(p.tasks) ? p.tasks : ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list'],
+        linkedInstagramId: ig?.id ? String(ig.id) : undefined,
+        linkedInstagramName: ig?.username || undefined,
         lastFollowerSyncAt: new Date().toISOString(),
         metaAppId: effectiveMetaAppId,
         metaAppName: effectiveMetaAppName,
       };
     });
+
+    // Extract Instagram Business Profiles linked to Facebook Pages
+    const normalizedInstagramPages: any[] = [];
+    const normalizedInstagramAccounts: any[] = [];
+    const seenIgIds = new Set<string>();
+
+    for (const p of rawPages) {
+      let ig = p.instagram_business_account;
+      if (ig && ig.id && !seenIgIds.has(String(ig.id))) {
+        seenIgIds.add(String(ig.id));
+        const igId = String(ig.id);
+
+        // Fetch detailed profile info if missing
+        if (!ig.username || !ig.profile_picture_url || ig.followers_count === undefined) {
+          try {
+            const igRes = await fetch(
+              `https://graph.facebook.com/v19.0/${igId}?fields=id,username,name,profile_picture_url,followers_count&access_token=${encodeURIComponent(p.access_token || userAccessToken)}`
+            );
+            const igData = await igRes.json();
+            if (!igData.error) {
+              ig = { ...ig, ...igData };
+            }
+          } catch (e) {
+            console.warn('[Facebook Auth Callback] Error fetching IG details:', e);
+          }
+        }
+
+        const igUsername = ig.username || `ig_${igId}`;
+        const igFollowers = Number(ig.followers_count || 0);
+        const igAvatar = ig.profile_picture_url || '/icons/social/instagram.png';
+        const igAccId = `acc_instagram_${igId}`;
+
+        normalizedInstagramAccounts.push({
+          id: igAccId,
+          platform: 'instagram',
+          accountId: igId,
+          name: `@${igUsername} (${effectiveMetaAppName})`,
+          avatarUrl: igAvatar,
+          status: 'active',
+          accessToken: p.access_token || userAccessToken,
+          tokenExpiresAt: new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString(),
+          lastCheckedAt: new Date().toISOString(),
+          metaAppId: effectiveMetaAppId,
+          metaAppName: effectiveMetaAppName,
+        });
+
+        normalizedInstagramPages.push({
+          id: `pg_ig_${igId}`,
+          accountId: igAccId,
+          platform: 'instagram',
+          pageId: igId,
+          name: `@${igUsername}`,
+          category: 'Instagram Business',
+          avatarUrl: igAvatar,
+          fanCount: igFollowers,
+          followersCount: igFollowers,
+          accessToken: p.access_token || userAccessToken,
+          isActive: true,
+          targetUrl: `https://instagram.com/${igUsername}`,
+          permissions: ['instagram_basic', 'instagram_content_publish', 'instagram_manage_comments'],
+          linkedInstagramId: igId,
+          linkedInstagramName: igUsername,
+          lastFollowerSyncAt: new Date().toISOString(),
+          metaAppId: effectiveMetaAppId,
+          metaAppName: effectiveMetaAppName,
+        });
+      }
+    }
 
     const payload = {
       user: {
@@ -218,7 +293,11 @@ export async function GET(request: NextRequest) {
       userToken: userAccessToken,
       metaAppId: effectiveMetaAppId,
       metaAppName: effectiveMetaAppName,
-      pages: normalizedPages,
+      authMode,
+      pages: [...normalizedPages, ...normalizedInstagramPages],
+      facebookPages: normalizedPages,
+      instagramPages: normalizedInstagramPages,
+      instagramAccounts: normalizedInstagramAccounts,
       importedAt: new Date().toISOString(),
     };
 
@@ -267,30 +346,29 @@ export async function GET(request: NextRequest) {
           }));
 
           // 1. Account Filtering:
-          // Replace existing accounts for this user (payload.user.id), or this metaAppId, or untagged legacy facebook accounts
+          // Keep accounts from other platforms, and Facebook/Instagram accounts from OTHER Meta Apps
           const remainingAccounts = currentAccounts.filter((a: any) => {
-            if (a.platform !== 'facebook') return true;
-            if (a.accountId === payload.user.id) return false;
+            if (a.platform !== 'facebook' && a.platform !== 'instagram') return true;
+            if (a.platform === 'facebook' && a.accountId === payload.user.id) return false;
             if (effectiveMetaAppId && a.metaAppId === effectiveMetaAppId) return false;
             if (!a.metaAppId) return false;
             return true;
           });
-          const updatedAccounts = [newAccount, ...remainingAccounts];
+          const updatedAccounts = [newAccount, ...normalizedInstagramAccounts, ...remainingAccounts];
 
           // 2. Page Filtering (Authoritative Replace for this App / Account):
-          // Keep non-facebook pages, and keep facebook pages from OTHER Meta Apps.
-          // Remove all old facebook pages from this Meta App or legacy untagged facebook pages so only the user's fresh selection remains!
+          // Keep non-facebook and non-instagram pages, and keep pages from OTHER Meta Apps.
           const remainingPages = currentPages.filter((p: any) => {
-            if (p.platform !== 'facebook') return true;
+            if (p.platform !== 'facebook' && p.platform !== 'instagram') return true;
             if (p.metaAppId && effectiveMetaAppId && p.metaAppId !== effectiveMetaAppId) {
               return true;
             }
             return false;
           });
-          const updatedPages = [...newPagesToAdd, ...remainingPages];
+          const updatedPages = [...newPagesToAdd, ...normalizedInstagramPages, ...remainingPages];
 
-          // Generate baseline analytics snapshot so /analytics is never 0/blank
-          normalizedPages.forEach((p: any) => {
+          // Generate baseline analytics snapshot so /analytics is never 0/blank for FB & IG
+          [...normalizedPages, ...normalizedInstagramPages].forEach((p: any) => {
             const count = p.followersCount || p.fanCount || 100;
             const reach = Math.max(50, Math.round(count * 2.5));
             const views = Math.max(80, Math.round(count * 3.8));
@@ -386,12 +464,17 @@ export async function GET(request: NextRequest) {
     // Completely avoids Set-Cookie invalid character crashes, Unicode bugs, and 4KB header size limits.
     const safePayloadJson = JSON.stringify(payload).replace(/</g, '\\u003c');
 
+    const isInstagramMode = authMode === 'instagram';
+    const primaryColor = isInstagramMode ? 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' : '#1877F2';
+    const headerTitle = isInstagramMode ? 'Instagram & Facebook Connected!' : 'Facebook Connected!';
+    const redirectUrl = isInstagramMode ? '/accounts?auth=instagram_success' : '/accounts?auth=facebook_success';
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Facebook Connected | Social Auto Poster</title>
+  <title>${headerTitle} | Social Auto Poster</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -418,7 +501,7 @@ export async function GET(request: NextRequest) {
       width: 56px;
       height: 56px;
       border-radius: 16px;
-      background: #1877F2;
+      background: ${primaryColor};
       display: flex;
       align-items: center;
       justify-content: center;
@@ -465,12 +548,18 @@ export async function GET(request: NextRequest) {
 <body>
   <div class="card">
     <div class="icon-wrap">
+      ${isInstagramMode ? `
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+      </svg>` : `
       <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
         <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-      </svg>
+      </svg>`}
     </div>
-    <h1>Facebook Connected!</h1>
-    <p id="status-text">Importing Facebook Pages and updating workspace...</p>
+    <h1>${headerTitle}</h1>
+    <p id="status-text">Importing connected accounts and updating workspace...</p>
     <div class="badge" id="pages-badge">Connecting...</div>
     <div class="spinner"></div>
   </div>
@@ -479,31 +568,53 @@ export async function GET(request: NextRequest) {
     (function() {
       try {
         var payload = ${safePayloadJson};
-        var pagesCount = (payload.pages || []).length;
+        var fbCount = (payload.facebookPages || []).length;
+        var igCount = (payload.instagramPages || []).length;
+        var totalPages = (payload.pages || []).length;
 
         // 1. Store in localStorage and sessionStorage
         try {
           localStorage.setItem('sap_pending_fb_import', JSON.stringify(payload));
+          if (igCount > 0) {
+            localStorage.setItem('sap_pending_ig_import', JSON.stringify({
+              instagramPages: payload.instagramPages,
+              instagramAccounts: payload.instagramAccounts,
+              metaAppId: payload.metaAppId,
+              metaAppName: payload.metaAppName
+            }));
+          }
         } catch (e) {}
         try {
           sessionStorage.setItem('sap_pending_fb_import', JSON.stringify(payload));
+          if (igCount > 0) {
+            sessionStorage.setItem('sap_pending_ig_import', JSON.stringify({
+              instagramPages: payload.instagramPages,
+              instagramAccounts: payload.instagramAccounts,
+              metaAppId: payload.metaAppId,
+              metaAppName: payload.metaAppName
+            }));
+          }
         } catch (e) {}
 
         // 2. Update status card
         var status = document.getElementById('status-text');
         var badge = document.getElementById('pages-badge');
         if (badge) {
-          badge.textContent = pagesCount + ' Facebook Page' + (pagesCount === 1 ? '' : 's') + ' Ready';
+          if (igCount > 0) {
+            badge.textContent = igCount + ' Instagram + ' + fbCount + ' Facebook Ready';
+          } else {
+            badge.textContent = totalPages + ' Page' + (totalPages === 1 ? '' : 's') + ' Ready';
+          }
         }
         if (status) {
           status.textContent = 'Verified Meta token. Redirecting to Accounts...';
         }
 
         setTimeout(function() {
-          window.location.replace('/accounts?auth=facebook_success');
+          window.location.replace('${redirectUrl}');
         }, 500);
       } catch (err) {
-        console.error('Facebook Bridge Error:', err);
+        console.error('Meta Bridge Error:', err);
         window.location.replace('/accounts?error=' + encodeURIComponent(err.message || 'Import error'));
       }
     })();

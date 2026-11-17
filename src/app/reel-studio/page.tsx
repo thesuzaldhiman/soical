@@ -333,8 +333,14 @@ export default function ReelStudioPage() {
   const [saveMessage, setSaveMessage] = useState('Reel template saved successfully!');
 
   // ── Motion & Music Config State ──
+  const [selectedEffects, setSelectedEffects] = useState<VideoMotionEffect[]>(
+    activeTemplate.videoConfig?.effects || [activeTemplate.videoConfig?.effect || 'shake']
+  );
   const [effect, setEffect] = useState<VideoMotionEffect>(
     activeTemplate.videoConfig?.effect || 'shake'
+  );
+  const [effectDuration, setEffectDuration] = useState<number>(
+    activeTemplate.videoConfig?.effectDurationSeconds || activeTemplate.videoConfig?.durationSeconds || 15
   );
   const [duration, setDuration] = useState<number>(
     activeTemplate.videoConfig?.durationSeconds || 15
@@ -437,12 +443,16 @@ export default function ReelStudioPage() {
       );
 
       // Video config
-      setEffect(target.videoConfig?.effect || 'shake');
-      setDuration(target.videoConfig?.durationSeconds || 15);
-      setSelectedOverlays(target.videoConfig?.overlays || ['vignette']);
-      setMusicUrl(target.videoConfig?.musicUrl || '/uploads/audio/breaking_news_beat.mp3');
-      setMusicName(target.videoConfig?.musicName || 'Breaking News Beat');
-      setMusicVolume(target.videoConfig?.musicVolume ?? 100);
+      const vConf = target.videoConfig || {};
+      const effs = vConf.effects || (vConf.effect ? [vConf.effect] : ['shake']);
+      setSelectedEffects(effs);
+      setEffect(vConf.effect || effs[0] || 'shake');
+      setDuration(vConf.durationSeconds || 15);
+      setEffectDuration(vConf.effectDurationSeconds || vConf.durationSeconds || 15);
+      setSelectedOverlays(vConf.overlays || ['vignette']);
+      setMusicUrl(vConf.musicUrl || '/uploads/audio/breaking_news_beat.mp3');
+      setMusicName(vConf.musicName || 'Breaking News Beat');
+      setMusicVolume(vConf.musicVolume ?? 100);
       setGeneratedVideoUrl(null);
     }
   }, [selectedTemplateId]);
@@ -723,6 +733,27 @@ export default function ReelStudioPage() {
     }
   };
 
+  // Toggle Motion Animation Effect selection (multi-select)
+  const handleToggleEffect = (effId: VideoMotionEffect) => {
+    if (effId === 'none') {
+      setSelectedEffects(['none']);
+      setEffect('none');
+      return;
+    }
+    setSelectedEffects((prev) => {
+      const withoutNone = prev.filter((item) => item !== 'none');
+      let updated: VideoMotionEffect[];
+      if (withoutNone.includes(effId)) {
+        updated = withoutNone.filter((item) => item !== effId);
+        if (updated.length === 0) updated = ['none'];
+      } else {
+        updated = [...withoutNone, effId];
+      }
+      setEffect(updated[0] || 'shake');
+      return updated;
+    });
+  };
+
   // Toggle Video Overlay selection
   const handleToggleOverlay = (ovId: VideoOverlayType) => {
     setSelectedOverlays((prev) => {
@@ -751,7 +782,9 @@ export default function ReelStudioPage() {
       videoConfig: {
         enabled: true,
         durationSeconds: duration,
-        effect,
+        effect: selectedEffects[0] || effect || 'shake',
+        effects: selectedEffects,
+        effectDurationSeconds: effectDuration,
         overlays: selectedOverlays,
         musicUrl,
         musicName,
@@ -785,7 +818,9 @@ export default function ReelStudioPage() {
       videoConfig: {
         enabled: true,
         durationSeconds: duration,
-        effect,
+        effect: selectedEffects[0] || effect || 'shake',
+        effects: selectedEffects,
+        effectDurationSeconds: effectDuration,
         overlays: selectedOverlays,
         musicUrl,
         musicName,
@@ -841,6 +876,8 @@ export default function ReelStudioPage() {
         enabled: true,
         durationSeconds: 15,
         effect: newTmplEffect,
+        effects: [newTmplEffect],
+        effectDurationSeconds: 15,
         overlays: ['vignette'],
         musicUrl: selectedMusicObj.url,
         musicName: selectedMusicObj.name,
@@ -959,7 +996,10 @@ export default function ReelStudioPage() {
         body: JSON.stringify({
           imageBase64: cardDataUrl,
           duration,
-          effect,
+          durationSeconds: duration,
+          effect: selectedEffects[0] || effect || 'shake',
+          effects: selectedEffects,
+          effectDurationSeconds: effectDuration,
           overlays: selectedOverlays,
           musicUrl,
           musicVolume,
@@ -1143,7 +1183,10 @@ export default function ReelStudioPage() {
               {reelTemplates.map((t) => {
                 const isSelected = t.id === selectedTemplateId;
                 const vConf = t.videoConfig || {};
-                const currentEff = MOTION_EFFECTS.find((m) => m.id === vConf.effect) || MOTION_EFFECTS[0];
+                const activeEffectsList = vConf.effects || (vConf.effect ? [vConf.effect] : ['shake']);
+                const currentEff = MOTION_EFFECTS.find((m) => m.id === (activeEffectsList[0] || 'shake')) || MOTION_EFFECTS[0];
+                const reelDur = vConf.durationSeconds || 15;
+                const effDur = vConf.effectDurationSeconds || reelDur;
 
                 return (
                   <div
@@ -1181,7 +1224,7 @@ export default function ReelStudioPage() {
                             {t.canvasWidth || 1080}×{t.canvasHeight || 1920}
                           </span>
                           <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-bold shadow-xs">
-                            {vConf.durationSeconds || 15}s Reel
+                            {reelDur}s Reel ({effDur}s Anim)
                           </span>
                           {t.isDefault && (
                             <span className="px-1.5 py-0.5 rounded-md bg-emerald-500 text-white text-[9px] font-bold shadow-xs">
@@ -1192,11 +1235,21 @@ export default function ReelStudioPage() {
 
                         {/* Motion badge pill on preview */}
                         <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[10px] font-bold text-white bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10">
-                          <span className="flex items-center gap-1">
-                            <span>{currentEff.icon}</span>
-                            <span>{currentEff.name}</span>
-                          </span>
-                          <span className="text-amber-400 font-mono">🎵 {vConf.musicName || 'Beat'}</span>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {activeEffectsList.slice(0, 2).map((effId) => {
+                              const effObj = MOTION_EFFECTS.find((m) => m.id === effId) || MOTION_EFFECTS[0];
+                              return (
+                                <span key={effId} className="flex items-center gap-0.5">
+                                  <span>{effObj.icon}</span>
+                                  <span className="text-[9px] truncate max-w-[70px]">{effObj.name}</span>
+                                </span>
+                              );
+                            })}
+                            {activeEffectsList.length > 2 && (
+                              <span className="text-[9px] text-rose-400 font-bold">+{activeEffectsList.length - 2}</span>
+                            )}
+                          </div>
+                          <span className="text-amber-400 font-mono text-[9px] shrink-0">🎵 {vConf.musicName || 'Beat'}</span>
                         </div>
                       </div>
 
@@ -1962,42 +2015,79 @@ export default function ReelStudioPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left 8 Cols: Animations & Overlays */}
             <div className="lg:col-span-8 space-y-6">
-              {/* Section 1: Motion Animations */}
+              {/* Section 1: Motion Animations (Multi-Select) */}
               <div className="bg-white rounded-3xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
                   <div>
                     <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-rose-600" />
-                      <span>Motion Animation Style</span>
+                      <span>Motion Animation Style (Multi-Select)</span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Choose dynamic camera movement for this template. Runs continuously over the 9:16 reel.
+                      Select multiple motion animation styles simultaneously (e.g. Camera Shake + Slow Zoom In + Glitter). All active effects composite seamlessly.
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
-                    Selected: {MOTION_EFFECTS.find((m) => m.id === effect)?.name}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
+                      {selectedEffects.filter((e) => e !== 'none').length} Active
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const combo: VideoMotionEffect[] = ['shake', 'zoom_in', 'glitter'];
+                        setSelectedEffects(combo);
+                        setEffect('shake');
+                      }}
+                      className="text-[10px] font-bold text-rose-600 hover:text-rose-700 px-2 py-0.5 rounded-lg bg-rose-50/70 border border-rose-200 cursor-pointer"
+                      title="Quick combo: Shake + Zoom In + Glitter"
+                    >
+                      Combo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedEffects(['none']);
+                        setEffect('none');
+                      }}
+                      className="text-[10px] font-bold text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {MOTION_EFFECTS.map((m) => {
-                    const isSelected = effect === m.id;
+                    const isSelected =
+                      m.id === 'none'
+                        ? selectedEffects.includes('none')
+                        : selectedEffects.includes(m.id);
                     return (
-                      <button
+                      <div
                         key={m.id}
-                        type="button"
-                        onClick={() => setEffect(m.id)}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 ${
+                        onClick={() => handleToggleEffect(m.id)}
+                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 select-none relative ${
                           isSelected
-                            ? 'bg-rose-50/50 border-rose-500 ring-2 ring-rose-500/20'
+                            ? 'bg-rose-50/60 border-rose-500 ring-2 ring-rose-500/20 shadow-xs'
                             : 'bg-white border-[#EEF1F6] hover:border-slate-300'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xl">{m.icon}</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${m.badgeColor}`}>
-                            {m.badge}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${m.badgeColor}`}>
+                              {m.badge}
+                            </span>
+                            <span
+                              className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                                isSelected
+                                  ? 'bg-rose-600 border-rose-600 text-white'
+                                  : 'border-slate-300 bg-white'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                            </span>
+                          </div>
                         </div>
                         <div>
                           <h4 className="font-extrabold text-xs text-slate-900 leading-tight">
@@ -2007,7 +2097,7 @@ export default function ReelStudioPage() {
                             {m.description}
                           </p>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -2159,22 +2249,173 @@ export default function ReelStudioPage() {
                   />
                 </div>
 
-                {/* Duration Picker */}
-                <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">Reel Duration:</label>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[10, 15, 30, 60].map((d) => (
+                {/* Animation Active Duration Tuner */}
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Animation Active Duration</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400">
+                        Active motion time before smooth frame freeze
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 font-mono font-bold text-xs">
+                      {effectDuration}s
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEffectDuration((prev) => Math.max(2, prev - 1))}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                    >
+                      -1s
+                    </button>
+                    <input
+                      type="range"
+                      min={2}
+                      max={duration}
+                      value={Math.min(effectDuration, duration)}
+                      onChange={(e) => setEffectDuration(Number(e.target.value))}
+                      className="flex-1 cursor-pointer accent-rose-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEffectDuration((prev) => Math.min(duration, prev + 1))}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                    >
+                      +1s
+                    </button>
+                  </div>
+
+                  {/* Preset Pills for Animation Timing */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[3, 5, 8, 10].map((t) => (
                       <button
-                        key={d}
+                        key={t}
                         type="button"
-                        onClick={() => setDuration(d)}
-                        className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          duration === d
-                            ? 'bg-slate-900 text-white shadow-2xs'
+                        onClick={() => setEffectDuration(Math.min(duration, t))}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                          effectDuration === t
+                            ? 'bg-rose-600 text-white shadow-2xs'
                             : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
                         }`}
                       >
-                        {d}s
+                        {t}s
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setEffectDuration(duration)}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        effectDuration === duration
+                          ? 'bg-slate-900 text-white shadow-2xs'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      }`}
+                    >
+                      Full Reel ({duration}s)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Custom Total Reel Duration Tuner */}
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <CalendarClock className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Custom Reel Duration</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400">
+                        Total MP4 length (5s to 90s)
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={5}
+                        max={90}
+                        value={duration}
+                        onChange={(e) => {
+                          const val = Math.min(90, Math.max(5, Number(e.target.value) || 15));
+                          setDuration(val);
+                          if (effectDuration > val) setEffectDuration(val);
+                        }}
+                        className="w-14 px-1.5 py-0.5 rounded-lg border border-indigo-200 bg-indigo-50/50 text-indigo-700 font-mono font-black text-center text-xs"
+                      />
+                      <span className="text-xs font-bold text-slate-500">s</span>
+                    </div>
+                  </div>
+
+                  {/* Range Slider for Reel Duration */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.max(5, duration - 5);
+                        setDuration(next);
+                        if (effectDuration > next) setEffectDuration(next);
+                      }}
+                      className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] cursor-pointer"
+                      title="-5 seconds"
+                    >
+                      -5s
+                    </button>
+                    <input
+                      type="range"
+                      min={5}
+                      max={90}
+                      step={1}
+                      value={duration}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setDuration(val);
+                        if (effectDuration > val) setEffectDuration(val);
+                      }}
+                      className="flex-1 cursor-pointer accent-indigo-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.min(90, duration + 5);
+                        setDuration(next);
+                      }}
+                      className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] cursor-pointer"
+                      title="+5 seconds"
+                    >
+                      +5s
+                    </button>
+                  </div>
+
+                  {/* Preset Quick Pills for Reel Duration */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { s: 5, label: '5s' },
+                      { s: 10, label: '10s' },
+                      { s: 15, label: '15s' },
+                      { s: 30, label: '30s' },
+                      { s: 45, label: '45s' },
+                      { s: 60, label: '60s' },
+                      { s: 75, label: '75s' },
+                      { s: 90, label: '90s' },
+                    ].map((p) => (
+                      <button
+                        key={p.s}
+                        type="button"
+                        onClick={() => {
+                          setDuration(p.s);
+                          if (effectDuration > p.s) setEffectDuration(p.s);
+                        }}
+                        className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+                          duration === p.s
+                            ? 'bg-slate-900 text-white shadow-2xs ring-1 ring-slate-900'
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        {p.label}
                       </button>
                     ))}
                   </div>
@@ -2289,19 +2530,49 @@ export default function ReelStudioPage() {
               </div>
 
               {/* Active Settings Summary Pill */}
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5 text-[11px]">
-                <div className="flex items-center justify-between text-slate-600 font-semibold">
-                  <span>Effect:</span>
-                  <strong className="text-slate-900">{MOTION_EFFECTS.find((m) => m.id === effect)?.name}</strong>
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-[11px]">
+                <div className="flex items-start justify-between gap-2 text-slate-600 font-semibold">
+                  <span className="shrink-0">Motion Styles:</span>
+                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                    {selectedEffects.filter((e) => e !== 'none').length > 0 ? (
+                      selectedEffects
+                        .filter((e) => e !== 'none')
+                        .map((effId) => {
+                          const mObj = MOTION_EFFECTS.find((m) => m.id === effId);
+                          return (
+                            <span
+                              key={effId}
+                              className="px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[9px] font-bold border border-rose-200 flex items-center gap-1"
+                            >
+                              <span>{mObj?.icon}</span>
+                              <span>{mObj?.name}</span>
+                            </span>
+                          );
+                        })
+                    ) : (
+                      <span className="text-slate-400 font-normal">Static Card Hold</span>
+                    )}
+                  </div>
                 </div>
+
+                <div className="flex items-center justify-between text-slate-600 font-semibold">
+                  <span>Anim Active Time:</span>
+                  <strong className="text-rose-600 font-mono font-bold">
+                    {effectDuration}s
+                    {effectDuration < duration ? ` (holds last ${duration - effectDuration}s)` : ' (full)'}
+                  </strong>
+                </div>
+
+                <div className="flex items-center justify-between text-slate-600 font-semibold">
+                  <span>Custom Reel Duration:</span>
+                  <strong className="text-indigo-600 font-mono font-bold">{duration} seconds</strong>
+                </div>
+
                 <div className="flex items-center justify-between text-slate-600 font-semibold">
                   <span>Audio:</span>
                   <strong className="text-slate-900">{musicName} ({musicVolume}%)</strong>
                 </div>
-                <div className="flex items-center justify-between text-slate-600 font-semibold">
-                  <span>Duration:</span>
-                  <strong className="text-slate-900">{duration} seconds</strong>
-                </div>
+
                 <div className="flex items-center justify-between text-slate-600 font-semibold">
                   <span>Overlays:</span>
                   <strong className="text-slate-900">{selectedOverlays.length} selected</strong>

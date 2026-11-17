@@ -99,6 +99,12 @@ function AccountsContent() {
   const [ytMode, setYtMode] = useState<'oauth' | 'direct'>('oauth');
   const [ytChannelInput, setYtChannelInput] = useState('');
   const [ytApiKeyInput, setYtApiKeyInput] = useState('');
+  // Instagram
+  const [igMode, setIgMode] = useState<'oauth' | 'sync_fb' | 'direct'>('oauth');
+  const [igTokenInput, setIgTokenInput] = useState('');
+  const [igIdInput, setIgIdInput] = useState('');
+  const [igHandleInput, setIgHandleInput] = useState('');
+  const [isSyncingIg, setIsSyncingIg] = useState(false);
   // Generic / Threads
   const [accountNameInput, setAccountNameInput] = useState('');
 

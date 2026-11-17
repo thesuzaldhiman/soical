@@ -115,6 +115,12 @@ export function ReelStudioTab({
   const [duration, setDuration] = useState<number>(
     currentTemplate?.videoConfig?.durationSeconds ?? 15
   );
+  const [effectDuration, setEffectDuration] = useState<number>(
+    currentTemplate?.videoConfig?.effectDurationSeconds ?? currentTemplate?.videoConfig?.durationSeconds ?? 15
+  );
+  const [selectedEffects, setSelectedEffects] = useState<VideoMotionEffect[]>(
+    currentTemplate?.videoConfig?.effects ?? (currentTemplate?.videoConfig?.effect ? [currentTemplate.videoConfig.effect] : ['shake'])
+  );
   const [effect, setEffect] = useState<VideoMotionEffect>(
     currentTemplate?.videoConfig?.effect ?? 'shake'
   );
@@ -141,13 +147,38 @@ export function ReelStudioTab({
   useEffect(() => {
     if (currentTemplate) {
       setEnabled(currentTemplate.videoConfig?.enabled ?? true);
-      setDuration(currentTemplate.videoConfig?.durationSeconds ?? 15);
-      setEffect(currentTemplate.videoConfig?.effect ?? 'shake');
+      const vDur = currentTemplate.videoConfig?.durationSeconds ?? 15;
+      setDuration(vDur);
+      setEffectDuration(currentTemplate.videoConfig?.effectDurationSeconds ?? vDur);
+      const effs = currentTemplate.videoConfig?.effects ?? (currentTemplate.videoConfig?.effect ? [currentTemplate.videoConfig.effect] : ['shake']);
+      setSelectedEffects(effs);
+      setEffect(currentTemplate.videoConfig?.effect ?? effs[0] ?? 'shake');
       setMusicUrl(currentTemplate.videoConfig?.musicUrl ?? '/uploads/audio/breaking_news_beat.mp3');
       setMusicName(currentTemplate.videoConfig?.musicName ?? 'Breaking News Beat');
       setGeneratedVideoUrl(null);
     }
   }, [currentTemplate?.id]);
+
+  // Multi-select toggle for motion effects
+  const handleToggleEffect = (effId: VideoMotionEffect) => {
+    if (effId === 'none') {
+      setSelectedEffects(['none']);
+      setEffect('none');
+      return;
+    }
+    setSelectedEffects((prev) => {
+      const withoutNone = prev.filter((item) => item !== 'none');
+      let updated: VideoMotionEffect[];
+      if (withoutNone.includes(effId)) {
+        updated = withoutNone.filter((item) => item !== effId);
+        if (updated.length === 0) updated = ['none'];
+      } else {
+        updated = [...withoutNone, effId];
+      }
+      setEffect(updated[0] || 'shake');
+      return updated;
+    });
+  };
 
   // Handle Save
   const handleSaveConfig = () => {
@@ -157,7 +188,9 @@ export function ReelStudioTab({
       videoConfig: {
         enabled,
         durationSeconds: duration,
-        effect,
+        effect: selectedEffects[0] || effect || 'shake',
+        effects: selectedEffects,
+        effectDurationSeconds: effectDuration,
         musicUrl,
         musicName,
         targetPlatforms: ['facebook', 'instagram', 'youtube'],
@@ -235,7 +268,10 @@ export function ReelStudioTab({
         body: JSON.stringify({
           imageUrl: imgSource,
           duration,
-          effect,
+          durationSeconds: duration,
+          effect: selectedEffects[0] || effect || 'shake',
+          effects: selectedEffects,
+          effectDurationSeconds: effectDuration,
           musicUrl,
           outputFilename: `preview_${currentTemplate.id}_${Date.now()}`,
         }),
@@ -345,53 +381,165 @@ export function ReelStudioTab({
               </label>
             </div>
 
-            {/* Duration Selector */}
-            <div>
-              <label className="text-xs font-bold text-slate-800 block mb-2 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-slate-500" />
-                <span>Reel Duration (Seconds):</span>
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {[10, 15, 30, 60].map((sec) => (
+            {/* Custom Reel Duration & Animation Active Duration */}
+            <div className="space-y-4 pt-1">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Custom Reel Duration:</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={5}
+                      max={90}
+                      value={duration}
+                      onChange={(e) => {
+                        const val = Math.min(90, Math.max(5, Number(e.target.value) || 15));
+                        setDuration(val);
+                        if (effectDuration > val) setEffectDuration(val);
+                      }}
+                      className="w-14 px-1 py-0.5 rounded-lg border border-indigo-200 bg-indigo-50/50 text-indigo-700 font-mono font-black text-center text-xs"
+                    />
+                    <span className="text-xs font-bold text-slate-500">sec</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 mb-2">
                   <button
-                    key={sec}
                     type="button"
-                    onClick={() => setDuration(sec)}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      duration === sec
-                        ? 'bg-rose-50 border-rose-500 text-rose-700 shadow-2xs'
-                        : 'bg-[#F8F9FD] border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                    onClick={() => {
+                      const next = Math.max(5, duration - 5);
+                      setDuration(next);
+                      if (effectDuration > next) setEffectDuration(next);
+                    }}
+                    className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] cursor-pointer"
                   >
-                    {sec}s {sec === 15 && '⭐ (Best)'}
+                    -5s
                   </button>
-                ))}
+                  <input
+                    type="range"
+                    min={5}
+                    max={90}
+                    step={1}
+                    value={duration}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setDuration(val);
+                      if (effectDuration > val) setEffectDuration(val);
+                    }}
+                    className="flex-1 cursor-pointer accent-indigo-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = Math.min(90, duration + 5);
+                      setDuration(next);
+                    }}
+                    className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] cursor-pointer"
+                  >
+                    +5s
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[5, 10, 15, 30, 45, 60, 75, 90].map((sec) => (
+                    <button
+                      key={sec}
+                      type="button"
+                      onClick={() => {
+                        setDuration(sec);
+                        if (effectDuration > sec) setEffectDuration(sec);
+                      }}
+                      className={`py-1.5 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                        duration === sec
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                          : 'bg-[#F8F9FD] border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {sec}s
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Animation Active Duration */}
+              <div className="pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Animation Active Duration:</span>
+                  </label>
+                  <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 font-mono font-bold text-xs">
+                    {effectDuration}s
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEffectDuration((prev) => Math.max(2, prev - 1))}
+                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                  >
+                    -1s
+                  </button>
+                  <input
+                    type="range"
+                    min={2}
+                    max={duration}
+                    value={Math.min(effectDuration, duration)}
+                    onChange={(e) => setEffectDuration(Number(e.target.value))}
+                    className="flex-1 cursor-pointer accent-rose-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEffectDuration((prev) => Math.min(duration, prev + 1))}
+                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                  >
+                    +1s
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEffectDuration(duration)}
+                    className="px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold cursor-pointer hover:bg-black"
+                  >
+                    Full
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* 2. Motion Effects Selector */}
+          {/* 2. Motion Effects Selector (Multi-Select) */}
           <div className="p-5 rounded-2xl bg-white border border-[#EEF1F6] shadow-xs space-y-3">
-            <div>
-              <label className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-600" />
-                <span>Visual Motion Effect</span>
-              </label>
-              <p className="text-xs text-slate-500">
-                Choose the visual animation applied to the static news image.
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  <span>Visual Motion Animation Styles (Multi-Select)</span>
+                </label>
+                <p className="text-xs text-slate-500">
+                  Select one or multiple motion animations to combine simultaneously.
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 text-[10px] font-bold border border-purple-200">
+                {selectedEffects.filter((e) => e !== 'none').length} Active
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               {MOTION_EFFECTS.map((eff) => {
-                const isSelected = effect === eff.id;
+                const isSelected =
+                  eff.id === 'none'
+                    ? selectedEffects.includes('none')
+                    : selectedEffects.includes(eff.id);
                 return (
                   <div
                     key={eff.id}
-                    onClick={() => setEffect(eff.id)}
+                    onClick={() => handleToggleEffect(eff.id)}
                     className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
                       isSelected
-                        ? 'bg-rose-50/50 border-rose-500 ring-2 ring-rose-400/20 shadow-xs'
+                        ? 'bg-rose-50/60 border-rose-500 ring-2 ring-rose-400/20 shadow-xs'
                         : 'bg-white border-slate-200 hover:bg-[#F8F9FD]'
                     }`}
                   >
@@ -400,13 +548,24 @@ export function ReelStudioTab({
                         <span className="text-base">{eff.icon}</span>
                         <span>{eff.name}</span>
                       </span>
-                      <span
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                          isSelected ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {eff.badge}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                            isSelected ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {eff.badge}
+                        </span>
+                        <span
+                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-rose-600 border-rose-600 text-white'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          {isSelected && <span className="text-[10px] leading-none">✓</span>}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">{eff.description}</p>
                   </div>

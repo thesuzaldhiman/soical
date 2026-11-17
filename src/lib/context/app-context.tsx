@@ -1240,26 +1240,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }),
     ]);
 
-    // 2. Format new incoming pages
+    // 2. Format new incoming pages (supports both Facebook and linked Instagram pages)
     const sanitizedIncoming = sanitizePages(
-      newPages.map((p, idx) => ({
-        ...p,
-        id: p.id && !p.id.startsWith('pg_') ? `pg_fb_${p.pageId || p.id}_${Date.now()}` : (p.id || `pg_fb_${Date.now()}_${idx}`),
-        accountId: newAccountId,
-        platform: 'facebook',
-        metaAppId: p.metaAppId || accountPayload.metaAppId,
-        metaAppName: p.metaAppName || accountPayload.metaAppName,
-        isActive: true,
-      }))
+      newPages.map((p, idx) => {
+        const isIg = p.platform === 'instagram' || p.id?.includes('ig') || p.targetUrl?.includes('instagram');
+        const plat = isIg ? 'instagram' : 'facebook';
+        const defaultPrefix = isIg ? 'pg_ig_' : 'pg_fb_';
+        return {
+          ...p,
+          id: p.id && !p.id.startsWith('pg_') ? `${defaultPrefix}${p.pageId || p.id}_${Date.now()}` : (p.id || `${defaultPrefix}${Date.now()}_${idx}`),
+          accountId: p.accountId || newAccountId,
+          platform: plat,
+          metaAppId: p.metaAppId || accountPayload.metaAppId,
+          metaAppName: p.metaAppName || accountPayload.metaAppName,
+          isActive: true,
+        };
+      })
     );
 
-    // 3. Replace Facebook pages:
-    // Keep pages from other platforms, and Facebook pages belonging to other Meta Apps
-    // Remove all old Facebook pages from this Meta App or legacy untagged Facebook pages
+    // 3. Replace Meta pages:
+    // Keep pages from other platforms, and Facebook/Instagram pages belonging to other Meta Apps
+    // Remove all old Facebook & Instagram pages from this Meta App or legacy untagged pages
     setPages((prev) => {
       const remainingOtherPages = prev.filter((p) => {
-        if (p.platform !== 'facebook') return true;
-        // Keep Facebook pages from other Meta Apps
+        if (p.platform !== 'facebook' && p.platform !== 'instagram') return true;
+        // Keep Meta pages from other Meta Apps
         if (p.metaAppId && accountPayload.metaAppId && p.metaAppId !== accountPayload.metaAppId) {
           return true;
         }

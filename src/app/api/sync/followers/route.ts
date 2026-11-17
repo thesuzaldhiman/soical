@@ -121,6 +121,33 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // 4. INSTAGRAM LIVE SYNC (Meta Graph API)
+        if (pg.platform === 'instagram' && pg.accessToken && pg.pageId) {
+          try {
+            const igRes = await fetch(
+              `https://graph.facebook.com/v19.0/${encodeURIComponent(
+                pg.pageId
+              )}?fields=id,username,name,followers_count,media_count&access_token=${encodeURIComponent(
+                pg.accessToken
+              )}`
+            );
+            const igData = await igRes.json();
+            if (!igData.error && igData.followers_count !== undefined) {
+              const liveFollowers = Number(igData.followers_count || fallbackCount);
+              return {
+                id: pg.id,
+                followersCount: liveFollowers,
+                fanCount: liveFollowers,
+                name: igData.username ? `@${igData.username}` : igData.name,
+                live: true,
+                status: 'synced_live',
+              };
+            }
+          } catch (e) {
+            console.error(`Instagram sync error for ${pg.id}:`, e);
+          }
+        }
+
         // Fallback: Maintain exact current followers count without fake inflation
         return {
           id: pg.id,

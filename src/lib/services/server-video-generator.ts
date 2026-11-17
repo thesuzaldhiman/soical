@@ -178,8 +178,10 @@ export interface GenerateVideoReelOptions {
   imageBase64?: string;
   imageFilePath?: string;
   imageUrl?: string;
-  durationSeconds?: number; // default 15
-  effect?: VideoMotionEffect; // default 'shake'
+  durationSeconds?: number; // total custom duration in seconds (5 to 90)
+  effect?: VideoMotionEffect; // single effect (legacy fallback)
+  effects?: VideoMotionEffect[]; // Multiple selected motion animation styles!
+  effectDurationSeconds?: number; // custom duration for animations to run
   overlays?: VideoOverlayType[]; // Multiple overlays can be selected!
   musicUrl?: string; // e.g. "/uploads/audio/track.mp3" or remote URL
   musicVolume?: number; // 0 to 100 (default 100)
@@ -193,6 +195,7 @@ export interface VideoReelResult {
   duration: number;
   sizeBytes: number;
   effect: VideoMotionEffect;
+  effects?: VideoMotionEffect[];
   error?: string;
 }
 
@@ -269,13 +272,34 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     imageUrl,
     durationSeconds = 15,
     effect = 'shake',
+    effects,
+    effectDurationSeconds,
     overlays = [],
     musicUrl,
     musicVolume = 100,
     outputFilename,
   } = options;
 
-  const duration = Math.min(Math.max(durationSeconds, 5), 60); // Clamp between 5s and 60s
+  // Custom Reel Duration clamped between 5s and 90s
+  const duration = Math.min(Math.max(Number(durationSeconds) || 15, 5), 90);
+
+  // Custom Animation Duration clamped between 2s and total reel duration
+  const animDuration = Math.min(
+    duration,
+    Math.max(2, Number(effectDurationSeconds) || duration)
+  );
+
+  // Determine active effects list (supports multi-selection!)
+  let activeEffects: VideoMotionEffect[] = [];
+  if (Array.isArray(effects) && effects.length > 0) {
+    activeEffects = effects.filter((e) => e !== 'none');
+  } else if (effect && effect !== 'none') {
+    activeEffects = [effect];
+  }
+  if (activeEffects.length === 0) {
+    activeEffects = ['none'];
+  }
+
   const ffmpegBin = await getFfmpegPath();
 
   // Ensure output directories exist
@@ -305,94 +329,95 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   const finalFilePath = path.join(videosDir, finalFilename);
   const publicVideoUrl = `/uploads/videos/${finalFilename}`;
 
-  // 4. Build Motion Video Filter Chain
+  // 4. Build Combined Multi-Motion Video Filter Chain
   // All output targets vertical 1080x1920 at 30 fps
   const fps = 30;
   const totalFrames = duration * fps;
-  let videoFilter = '';
 
-  switch (effect) {
-    case 'shake':
-      // High-impact breaking news camera shake/jitter
-      videoFilter =
-        `scale=1140:2020:force_original_aspect_ratio=increase,` +
-        `crop=1080:1920:'30+15*sin(n*0.75)*if(lt(mod(n,75),28),1,0.08)':'50+15*cos(n*0.85)*if(lt(mod(n,75),28),1,0.08)'`;
-      break;
+  const hasShake = activeEffects.includes('shake');
+  const hasJitter = activeEffects.includes('breaking_jitter');
+  const hasPanLeft = activeEffects.includes('pan_left');
+  const hasPanRight = activeEffects.includes('pan_right');
+  const hasZoomIn = activeEffects.includes('zoom_in');
+  const hasZoomOut = activeEffects.includes('zoom_out');
+  const hasPulse = activeEffects.includes('pulse');
+  const hasGlitter = activeEffects.includes('glitter');
 
-    case 'breaking_jitter':
-      // Urgent breaking news strobe jitter & flashing
-      videoFilter =
-        `scale=1140:2020:force_original_aspect_ratio=increase,` +
-        `crop=1080:1920:'30+18*sin(n*1.2)':'50+18*cos(n*1.4)',` +
-        `eq=brightness='0.08*if(lt(mod(n,45),6),1,0)'`;
-      break;
+  const filterChain: string[] = [];
 
-    case 'zoom_in':
-      // Cinematic slow zoom into the center of the news card
-      videoFilter =
-        `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,` +
-        `zoompan=z='min(zoom+0.0012,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`;
-      break;
-
-    case 'zoom_out':
-      // Cinematic slow zoom out revealing the full card
-      videoFilter =
-        `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,` +
-        `zoompan=z='if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`;
-      break;
-
-    case 'pan_left':
-      // Dynamic pan from right to left
-      videoFilter =
-        `scale=1280:1920:force_original_aspect_ratio=increase,` +
-        `crop=1080:1920:'(1280-1080)*(1-t/${duration})':0`;
-      break;
-
-    case 'pan_right':
-      // Dynamic pan from left to right
-      videoFilter =
-        `scale=1280:1920:force_original_aspect_ratio=increase,` +
-        `crop=1080:1920:'(1280-1080)*(t/${duration})':0`;
-      break;
-
-    case 'glitter':
-      // Shimmering ambient light pulses with subtle zoom (ideal for devotional / celebratory / cultural news)
-      videoFilter =
-        `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,` +
-        `eq=brightness='0.07*sin(2*PI*t*1.4)':saturation='1.0+0.16*cos(2*PI*t*1.4)',` +
-        `zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`;
-      break;
-
-    case 'pulse':
-      // Rhythmic breathing scale pulse
-      videoFilter =
-        `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,` +
-        `zoompan=z='1.04+0.04*sin(2*PI*t*0.8)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`;
-      break;
-
-    case 'none':
-    default:
-      // Clean static hold scaled to 1080x1920
-      videoFilter = `scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2`;
-      break;
+  // Step A: Base Scale & Crop
+  if (hasShake || hasJitter) {
+    filterChain.push('scale=1140:2020:force_original_aspect_ratio=increase');
+    if (hasJitter) {
+      filterChain.push(
+        `crop=1080:1920:'30+18*sin(n*1.2)*if(lt(t,${animDuration}),1,0)':'50+18*cos(n*1.4)*if(lt(t,${animDuration}),1,0)'`
+      );
+      filterChain.push(
+        `eq=brightness='0.08*if(lt(mod(n,45),6)*lt(t,${animDuration}),1,0)'`
+      );
+    } else {
+      filterChain.push(
+        `crop=1080:1920:'30+15*sin(n*0.75)*if(lt(mod(n,75),28)*lt(t,${animDuration}),1,0.05)':'50+15*cos(n*0.85)*if(lt(mod(n,75),28)*lt(t,${animDuration}),1,0.05)'`
+      );
+    }
+  } else if (hasPanLeft) {
+    filterChain.push('scale=1280:1920:force_original_aspect_ratio=increase');
+    filterChain.push(
+      `crop=1080:1920:'(1280-1080)*if(lt(t,${animDuration}),1-t/${animDuration},0)':0`
+    );
+  } else if (hasPanRight) {
+    filterChain.push('scale=1280:1920:force_original_aspect_ratio=increase');
+    filterChain.push(
+      `crop=1080:1920:'(1280-1080)*if(lt(t,${animDuration}),t/${animDuration},1)':0`
+    );
+  } else {
+    filterChain.push(
+      'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2'
+    );
   }
 
-  // 4b. Apply Selectable Visual Overlays
+  // Step B: Zoom / Pan / Breathing Pulse (Spatial Animation)
+  if (hasZoomIn) {
+    filterChain.push(
+      `zoompan=z='if(lt(t,${animDuration}),min(zoom+0.0012,1.15),1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+    );
+  } else if (hasZoomOut) {
+    filterChain.push(
+      `zoompan=z='if(lt(t,${animDuration}),if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012)),1.001)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+    );
+  } else if (hasPulse) {
+    filterChain.push(
+      `zoompan=z='if(lt(t,${animDuration}),1.04+0.04*sin(2*PI*t*0.8),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+    );
+  }
+
+  // Step C: Glitter (Ambient Shimmer Pulses)
+  if (hasGlitter) {
+    filterChain.push(
+      `eq=brightness='0.07*sin(2*PI*t*1.4)':saturation='1.0+0.16*cos(2*PI*t*1.4)':enable='between(t,0,${animDuration})'`
+    );
+  }
+
+  // Step D: Apply Selectable Visual Overlays
   if (Array.isArray(overlays) && overlays.length > 0) {
     for (const ov of overlays) {
       if (ov === 'vignette') {
-        videoFilter += `,vignette=PI/4`;
+        filterChain.push('vignette=PI/4');
       } else if (ov === 'film_grain') {
-        videoFilter += `,noise=alls=12:allf=t+u`;
+        filterChain.push('noise=alls=12:allf=t+u');
       } else if (ov === 'red_alert') {
-        videoFilter += `,drawbox=x=0:y=0:w=iw:h=16:color=red@0.9:t=fill,drawbox=x=0:y=ih-16:w=iw:h=16:color=red@0.9:t=fill`;
+        filterChain.push(
+          'drawbox=x=0:y=0:w=iw:h=16:color=red@0.9:t=fill,drawbox=x=0:y=ih-16:w=iw:h=16:color=red@0.9:t=fill'
+        );
       } else if (ov === 'breaking_banner') {
-        videoFilter += `,drawbox=x=20:y=ih-140:w=iw-40:h=75:color=red@0.88:t=fill`;
+        filterChain.push('drawbox=x=20:y=ih-140:w=iw-40:h=75:color=red@0.88:t=fill');
       } else if (ov === 'particles') {
-        videoFilter += `,eq=brightness='0.04*sin(2*PI*t*1.8)':saturation='1.0+0.12*cos(2*PI*t*1.8)'`;
+        filterChain.push(`eq=brightness='0.04*sin(2*PI*t*1.8)':saturation='1.0+0.12*cos(2*PI*t*1.8)'`);
       }
     }
   }
+
+  const videoFilter = filterChain.join(',');
 
   // 5. Build FFmpeg Arguments
   const args: string[] = ['-y', '-loop', '1', '-i', inputImage];
