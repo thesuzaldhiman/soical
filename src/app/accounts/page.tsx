@@ -56,6 +56,7 @@ function isPageForPlatform(p: SocialPage, targetPlat: Platform | string): boolea
 
 function AccountsContent() {
   const {
+    user,
     accounts,
     pages,
     categories,
@@ -427,7 +428,8 @@ function AccountsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channelHandleOrId: ytChannelInput.trim(),
-          apiKey: ytApiKeyInput.trim() || undefined,
+          apiKey: ytApiKeyInput.trim() || settings?.ytApiKey || undefined,
+          email: user?.email,
         }),
       });
       const data = await res.json();
@@ -1581,17 +1583,35 @@ function AccountsContent() {
                       ▶️ <strong>Google Cloud Console:</strong> Make sure <code>{redirectUriMap.youtube}</code> is added to <em>Authorized redirect URIs</em> in your Google Cloud credentials.
                     </div>
 
-                    {/* Prominent Official OAuth Button */}
-                    <a
-                      href={`/api/auth/youtube?client_id=${encodeURIComponent(
-                        settings?.ytClientId || ''
-                      )}&client_secret=${encodeURIComponent(settings?.ytClientSecret || '')}`}
-                      className="w-full py-3 px-4 rounded-xl bg-[#CC0000] hover:bg-[#B30000] text-white font-bold text-xs flex items-center justify-center gap-2.5 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
-                    >
-                      <SocialIcon platform="youtube" className="w-4 h-4 rounded-xs" />
-                      <span>Log In with Google & Authorize YouTube Channel</span>
-                      <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                    </a>
+                    {/* Prominent Official OAuth Button or Setup Prompt */}
+                    {settings?.ytClientId ? (
+                      <a
+                        href={`/api/auth/youtube?client_id=${encodeURIComponent(
+                          settings.ytClientId
+                        )}&client_secret=${encodeURIComponent(settings?.ytClientSecret || '')}`}
+                        className="w-full py-3 px-4 rounded-xl bg-[#CC0000] hover:bg-[#B30000] text-white font-bold text-xs flex items-center justify-center gap-2.5 shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
+                      >
+                        <SocialIcon platform="youtube" className="w-4 h-4 rounded-xs" />
+                        <span>Log In with Google & Authorize YouTube Channel</span>
+                        <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                      </a>
+                    ) : (
+                      <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-center space-y-2">
+                        <p className="text-xs text-amber-900 font-bold">
+                          Google Client ID is not configured yet in Settings.
+                        </p>
+                        <p className="text-[11px] text-amber-700 leading-relaxed">
+                          Add your Google Client ID & Secret in Settings, or switch to the <strong>Direct Channel Handle / ID</strong> tab above to connect your channel instantly!
+                        </p>
+                        <Link
+                          href="/settings"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs shadow-xs transition-all"
+                        >
+                          <span>Configure in Settings</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </Link>
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
                       <span>Uses YouTube Data API v3 Scopes</span>

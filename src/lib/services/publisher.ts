@@ -621,6 +621,158 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
         }
       }
 
+      // 4. YOUTUBE DISPATCH (Shorts & Video Upload)
+      if (target.platform === 'youtube') {
+        const token = target.accessToken;
+        if (!token) {
+          // If direct handle was used without OAuth access token
+          results.push({
+            pageId: target.id,
+            pageName: target.name,
+            platform: 'youtube',
+            status: 'failed',
+            error: 'No active OAuth access token found for YouTube channel. Please connect via "OAuth Login (Google Cloud)" in Accounts to enable automated publishing.',
+            timestamp,
+          });
+          return;
+        }
+
+        if (postType !== 'video' || !mediaUrl) {
+          results.push({
+            pageId: target.id,
+            pageName: target.name,
+            platform: 'youtube',
+            status: 'failed',
+            error: 'YouTube supports video and Shorts uploads only. Please attach a video file.',
+            timestamp,
+          });
+          return;
+        }
+
+        try {
+          let videoBuffer: Buffer | null = null;
+          let mimeType = 'video/mp4';
+
+          if (mediaUrl.startsWith('data:')) {
+            const match = mediaUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (match && match[1] && match[2]) {
+              mimeType = match[1];
+              videoBuffer = Buffer.from(match[2], 'base64');
+            }
+          } else if (mediaUrl.startsWith('/uploads/')) {
+            const localPath = path.join(process.cwd(), 'public', mediaUrl.replace(/^\//, ''));
+            if (fs.existsSync(localPath)) {
+              videoBuffer = fs.readFileSync(localPath);
+            } else {
+              const { getMediaFromDb } = await import('@/lib/db/mysql');
+              const dbMedia = await getMediaFromDb(mediaUrl);
+              if (dbMedia) {
+                videoBuffer = dbMedia.data;
+                mimeType = dbMedia.mimeType;
+              }
+            }
+          } else if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+            const fetchRes = await fetch(mediaUrl);
+            if (fetchRes.ok) {
+              const arr = await fetchRes.arrayBuffer();
+              videoBuffer = Buffer.from(arr);
+              mimeType = fetchRes.headers.get('content-type') || 'video/mp4';
+            }
+          }
+
+          if (!videoBuffer) {
+            results.push({
+              pageId: target.id,
+              pageName: target.name,
+              platform: 'youtube',
+              status: 'failed',
+              error: 'Failed to retrieve video file for YouTube upload.',
+              timestamp,
+            });
+            return;
+          }
+
+          const ytTitle = (title || message.split('\n')[0] || 'New Video').slice(0, 100);
+          const ytDescription = `${message}\n\n${commentText || ''}`.trim().slice(0, 5000);
+
+          const metadata = {
+            snippet: {
+              title: ytTitle,
+              description: ytDescription,
+              tags: ['Shorts', 'Video', 'News'],
+              categoryId: '25',
+            },
+            status: {
+              privacyStatus: 'public',
+              selfDeclaredMadeForKids: false,
+            },
+          };
+
+          const boundary = `yt_bound_${Date.now()}`;
+          const delimiter = `\r\n--${boundary}\r\n`;
+          const closeDelimiter = `\r\n--${boundary}--`;
+
+          const bodyParts = [
+            Buffer.from(delimiter + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata) + delimiter + `Content-Type: ${mimeType}\r\n\r\n`),
+            videoBuffer,
+            Buffer.from(closeDelimiter),
+          ];
+
+          const multipartBuffer = Buffer.concat(bodyParts);
+
+          const uploadRes = await fetch(
+            'https://www.googleapis.com/upload/youtube/v3/videos?part=snippet,status&uploadType=multipart',
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': `multipart/related; boundary=${boundary}`,
+                'Content-Length': String(multipartBuffer.length),
+              },
+              body: multipartBuffer,
+            }
+          );
+
+          const uploadData = await uploadRes.json();
+
+          if (uploadData.error) {
+            results.push({
+              pageId: target.id,
+              pageName: target.name,
+              platform: 'youtube',
+              status: 'failed',
+              error: uploadData.error.message || 'YouTube Data API upload error',
+              timestamp,
+            });
+            return;
+          }
+
+          const videoId = uploadData.id;
+          const postUrl = `https://youtube.com/shorts/${videoId}`;
+
+          results.push({
+            pageId: target.id,
+            pageName: target.name,
+            platform: 'youtube',
+            status: 'success',
+            externalPostId: videoId,
+            postUrl,
+            timestamp,
+          });
+          return;
+        } catch (ytErr: unknown) {
+          results.push({
+            pageId: target.id,
+            pageName: target.name,
+            platform: 'youtube',
+            status: 'failed',
+            error: ytErr instanceof Error ? ytErr.message : 'Network error uploading to YouTube',
+            timestamp,
+          });
+          return;
+        }
+      }
+
       // 4. Fallback / Simulated for other channels
       results.push({
         pageId: target.id,

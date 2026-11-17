@@ -312,7 +312,8 @@ function SettingsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channelHandleOrId: directYtInput.trim(),
-          apiKey: directYtApiKey.trim() || undefined,
+          apiKey: directYtApiKey.trim() || ytApiKey.trim() || undefined,
+          email: user?.email,
         }),
       });
       const data = await res.json();

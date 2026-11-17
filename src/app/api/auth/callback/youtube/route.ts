@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBaseUrl } from '@/lib/utils/url';
+import { getDbPool } from '@/lib/db/mysql';
+import { SocialAccount, SocialPage } from '@/types';
 
 export async function GET(request: NextRequest) {
   const baseUrl = getBaseUrl(request);
@@ -18,34 +20,93 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/accounts?error=no_auth_code_received', baseUrl));
   }
 
-  let clientId =
+  // 1. Recover credentials from state payload first (immune to cookie issues)
+  const stateRaw = searchParams.get('state');
+  let stateData: any = null;
+  if (stateRaw) {
+    try {
+      stateData = JSON.parse(Buffer.from(stateRaw, 'base64url').toString('utf8'));
+    } catch {
+      try {
+        stateData = JSON.parse(Buffer.from(stateRaw, 'base64').toString('utf8'));
+      } catch {}
+    }
+  }
+
+  let clientId = (
+    stateData?.clientId ||
     process.env.YOUTUBE_CLIENT_ID ||
     process.env.GOOGLE_CLIENT_ID ||
-    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  let clientSecret =
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+  ).trim();
+
+  let clientSecret = (
+    stateData?.clientSecret ||
     process.env.YOUTUBE_CLIENT_SECRET ||
-    process.env.GOOGLE_CLIENT_SECRET;
+    process.env.GOOGLE_CLIENT_SECRET || ''
+  ).trim();
+
+  let loggedInEmail = (stateData?.email || '').toLowerCase().trim();
+
+  // 2. Check cookies as fallback
+  if (!loggedInEmail) {
+    const userCookie =
+      request.cookies.get('sap_user_session')?.value ||
+      request.cookies.get('sap_google_user')?.value;
+    if (userCookie) {
+      try {
+        let decoded = userCookie;
+        try {
+          decoded = decodeURIComponent(userCookie);
+        } catch {}
+        const parsed = JSON.parse(decoded);
+        loggedInEmail = (parsed.email || '').toLowerCase().trim();
+      } catch {}
+    }
+  }
 
   const credsCookie = request.cookies.get('sap_yt_app_creds');
   if (credsCookie?.value) {
     try {
       const parsed = JSON.parse(credsCookie.value);
-      if (parsed.clientId) clientId = parsed.clientId;
-      if (parsed.clientSecret) clientSecret = parsed.clientSecret;
+      if (!clientId && parsed.clientId) clientId = parsed.clientId;
+      if (!clientSecret && parsed.clientSecret) clientSecret = parsed.clientSecret;
     } catch {}
+  }
+
+  // 3. Fallback to MySQL user settings lookup if credentials still missing
+  if ((!clientId || !clientSecret) && loggedInEmail) {
+    try {
+      const pool = getDbPool();
+      if (pool) {
+        const [rows] = await pool.query<any[]>(
+          'SELECT settings FROM app_user_data WHERE email = ? LIMIT 1',
+          [loggedInEmail]
+        );
+        if (rows && rows.length > 0 && rows[0].settings) {
+          const userSettings =
+            typeof rows[0].settings === 'string'
+              ? JSON.parse(rows[0].settings)
+              : rows[0].settings;
+          if (!clientId && userSettings?.ytClientId) clientId = userSettings.ytClientId.trim();
+          if (!clientSecret && userSettings?.ytClientSecret) clientSecret = userSettings.ytClientSecret.trim();
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[YouTube Callback] MySQL settings lookup warning:', dbErr);
+    }
   }
 
   const redirectUri = `${baseUrl}/api/auth/callback/youtube`;
 
   if (!clientId || !clientSecret) {
-    // If no credentials available to exchange token on server, return code
     return NextResponse.redirect(
-      new URL(`/accounts?auth=youtube_code_received&code=${encodeURIComponent(code)}`, baseUrl)
+      new URL('/accounts?error=' + encodeURIComponent('Missing YouTube Client ID or Client Secret. Please configure in Settings first.'), baseUrl)
     );
   }
 
   try {
-    // 1. Exchange authorization code for tokens
+    // 4. Exchange authorization code for tokens
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -72,7 +133,7 @@ export async function GET(request: NextRequest) {
     const accessToken = tokenData.access_token;
     const refreshToken = tokenData.refresh_token || '';
 
-    // 2. Fetch the YouTube Channel details
+    // 5. Fetch YouTube Channel details
     let channelInfo: {
       id: string;
       name: string;
@@ -100,18 +161,44 @@ export async function GET(request: NextRequest) {
           description: item.snippet?.description || '',
           customUrl: item.snippet?.customUrl || '',
           avatarUrl:
-            item.snippet?.thumbnails?.default?.url ||
             item.snippet?.thumbnails?.high?.url ||
+            item.snippet?.thumbnails?.medium?.url ||
+            item.snippet?.thumbnails?.default?.url ||
             '/icons/social/youtube.png',
           subscriberCount: parseInt(item.statistics?.subscriberCount || '0', 10),
           videoCount: parseInt(item.statistics?.videoCount || '0', 10),
         };
+      } else {
+        // Try managedByMe=true for brand channels
+        const managedRes = await fetch(
+          'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&managedByMe=true',
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        const managedData = await managedRes.json();
+        if (managedData.items && managedData.items.length > 0) {
+          const item = managedData.items[0];
+          channelInfo = {
+            id: item.id,
+            name: item.snippet?.title || 'YouTube Channel',
+            description: item.snippet?.description || '',
+            customUrl: item.snippet?.customUrl || '',
+            avatarUrl:
+              item.snippet?.thumbnails?.high?.url ||
+              item.snippet?.thumbnails?.medium?.url ||
+              item.snippet?.thumbnails?.default?.url ||
+              '/icons/social/youtube.png',
+            subscriberCount: parseInt(item.statistics?.subscriberCount || '0', 10),
+            videoCount: parseInt(item.statistics?.videoCount || '0', 10),
+          };
+        }
       }
     } catch (e) {
       console.error('Failed fetching YouTube channel data:', e);
     }
 
-    // 3. Fallback to Google profile if user has no public YouTube channel created yet
+    // 6. Fallback to Google profile if user has no public YouTube channel created yet
     if (!channelInfo) {
       try {
         const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -121,7 +208,7 @@ export async function GET(request: NextRequest) {
         channelInfo = {
           id: `yt_${userData.sub || Date.now()}`,
           name: `${userData.name || 'User'} (YouTube Shorts)`,
-          description: 'Personal YouTube Account',
+          description: 'Personal YouTube Channel Account',
           customUrl: '',
           avatarUrl: userData.picture || '/icons/social/youtube.png',
           subscriberCount: 0,
@@ -140,8 +227,106 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Return Client-Side Auth Bridge HTML (HTTP 200)
-    // Immune to cookie character/size limits
+    // 7. DIRECT AUTHORITATIVE CLOUD PERSISTENCE: Save to MySQL immediately
+    if (loggedInEmail) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          const [rows] = await pool.query<any[]>(
+            'SELECT accounts, pages FROM app_user_data WHERE email = ? LIMIT 1',
+            [loggedInEmail]
+          );
+
+          let currentAccounts: SocialAccount[] = [];
+          let currentPages: SocialPage[] = [];
+
+          if (rows && rows.length > 0) {
+            try {
+              currentAccounts =
+                typeof rows[0].accounts === 'string'
+                  ? JSON.parse(rows[0].accounts)
+                  : rows[0].accounts || [];
+            } catch {}
+            try {
+              currentPages =
+                typeof rows[0].pages === 'string'
+                  ? JSON.parse(rows[0].pages)
+                  : rows[0].pages || [];
+            } catch {}
+          }
+
+          // Build or update Account
+          const newAccountId = `acc_youtube_${Date.now()}`;
+          const existingAccIdx = currentAccounts.findIndex(
+            (a) =>
+              a.platform === 'youtube' &&
+              (a.accountId === channelInfo!.id || a.name?.toLowerCase().includes(channelInfo!.name.toLowerCase()))
+          );
+
+          const ytAccount: SocialAccount = {
+            id: existingAccIdx >= 0 ? currentAccounts[existingAccIdx]!.id : newAccountId,
+            platform: 'youtube',
+            accountId: channelInfo.id,
+            name: `${channelInfo.name} (YouTube Account)`,
+            avatarUrl: channelInfo.avatarUrl || '/icons/social/youtube.png',
+            status: 'active',
+            accessToken,
+            refreshToken: refreshToken || (existingAccIdx >= 0 ? currentAccounts[existingAccIdx]!.refreshToken : ''),
+            tokenExpiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+            lastCheckedAt: new Date().toISOString(),
+          };
+
+          const updatedAccounts =
+            existingAccIdx >= 0
+              ? currentAccounts.map((a, idx) => (idx === existingAccIdx ? ytAccount : a))
+              : [ytAccount, ...currentAccounts];
+
+          // Build or update Page
+          const existingPageIdx = currentPages.findIndex(
+            (p) =>
+              p.platform === 'youtube' &&
+              (p.pageId === channelInfo!.id || p.name?.toLowerCase() === channelInfo!.name.toLowerCase())
+          );
+
+          const targetUrl = channelInfo.customUrl
+            ? `https://youtube.com/${channelInfo.customUrl.startsWith('@') ? channelInfo.customUrl : '@' + channelInfo.customUrl}`
+            : channelInfo.id.startsWith('UC')
+            ? `https://youtube.com/channel/${channelInfo.id}`
+            : `https://youtube.com`;
+
+          const ytPage: SocialPage = {
+            id: existingPageIdx >= 0 ? currentPages[existingPageIdx]!.id : `pg_yt_${Date.now()}`,
+            accountId: ytAccount.id,
+            platform: 'youtube',
+            pageId: channelInfo.id,
+            name: channelInfo.name,
+            avatarUrl: channelInfo.avatarUrl || '/icons/social/youtube.png',
+            fanCount: channelInfo.subscriberCount || 0,
+            isActive: true,
+            accessToken,
+            targetUrl,
+            category: 'YouTube Shorts',
+            permissions: ['youtube.upload', 'youtube.readonly'],
+            lastCheckedAt: new Date().toISOString(),
+          };
+
+          const updatedPages =
+            existingPageIdx >= 0
+              ? currentPages.map((p, idx) => (idx === existingPageIdx ? ytPage : p))
+              : [...currentPages, ytPage];
+
+          await pool.query(
+            'UPDATE app_user_data SET accounts = ?, pages = ?, updated_at = NOW() WHERE email = ?',
+            [JSON.stringify(updatedAccounts), JSON.stringify(updatedPages), loggedInEmail]
+          );
+          console.log(`[YouTube OAuth] Successfully synced channel "${channelInfo.name}" directly to MySQL for ${loggedInEmail}`);
+        }
+      } catch (dbErr) {
+        console.warn('[YouTube OAuth] Background DB sync note:', dbErr);
+      }
+    }
+
+    // 8. Return Client-Side Auth Bridge HTML (HTTP 200)
     const payload = {
       channel: channelInfo,
       accessToken,
