@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
-import { Platform, SocialPage, SocialAccount } from '@/types';
+import { Platform, SocialPage, SocialAccount, MetaAppConfig } from '@/types';
 import { SocialIcon } from '@/components/ui/SocialIcon';
 import {
   Users2,
@@ -46,11 +46,15 @@ function isPageForPlatform(p: SocialPage, targetPlat: Platform | string): boolea
   const plat = targetPlat.toLowerCase();
   const pagePlat = (p.platform || '').toLowerCase();
   if (pagePlat === plat) return true;
-  if (plat === 'facebook' && (pagePlat.includes('fb') || p.id?.includes('fb') || p.targetUrl?.includes('facebook') || (p.category || '').toLowerCase().includes('facebook') || p.fanCount !== undefined)) return true;
+  if (pagePlat === 'instagram' && plat !== 'instagram') return false;
+  if (pagePlat === 'youtube' && plat !== 'youtube') return false;
+  if (pagePlat === 'telegram' && plat !== 'telegram') return false;
+  if (pagePlat === 'wordpress' && plat !== 'wordpress') return false;
+  if (plat === 'instagram' && (pagePlat.includes('ig') || p.id?.includes('ig') || p.targetUrl?.includes('instagram'))) return true;
+  if (plat === 'facebook' && (pagePlat.includes('fb') || p.id?.includes('fb') || p.targetUrl?.includes('facebook') || (p.category || '').toLowerCase().includes('facebook'))) return true;
   if (plat === 'youtube' && (pagePlat.includes('yt') || p.id?.includes('yt') || p.targetUrl?.includes('youtube'))) return true;
   if (plat === 'telegram' && (pagePlat.includes('tg') || p.id?.includes('tg') || p.targetUrl?.includes('t.me') || p.botToken || p.chatId)) return true;
   if (plat === 'wordpress' && (pagePlat.includes('wp') || p.id?.includes('wp') || p.siteUrl)) return true;
-  if (plat === 'instagram' && (pagePlat.includes('ig') || p.id?.includes('ig') || p.targetUrl?.includes('instagram'))) return true;
   return false;
 }
 
@@ -217,12 +221,28 @@ function AccountsContent() {
           parsed.pages
         );
 
-        setConnectSuccess(`Successfully synced ${parsed.pages.length} Facebook Page(s) live via OAuth!`);
+        const igCount = (parsed.instagramPages || []).length;
+        const fbCount = (parsed.facebookPages || []).length;
+        if (igCount > 0) {
+          setConnectSuccess(
+            `Successfully synced ${igCount} Instagram Profile(s) & ${fbCount} Facebook Page(s) live via Meta!`
+          );
+        } else {
+          setConnectSuccess(`Successfully synced ${parsed.pages.length} Facebook Page(s) live via OAuth!`);
+        }
       } catch (e) {
         console.error('Failed importing pending Facebook pages:', e);
       }
     }
   }, [syncFacebookPages]);
+
+  // Check for Instagram success URL param
+  useEffect(() => {
+    const authParam = searchParams.get('auth');
+    if (authParam === 'instagram_success') {
+      setConnectSuccess('Instagram Professional Account connected successfully via Meta Graph API!');
+    }
+  }, [searchParams]);
 
   // Check for pending imported YouTube channel from OAuth callback
   useEffect(() => {
@@ -483,7 +503,95 @@ function AccountsContent() {
     }
   };
 
-  // 4. Generic Connect
+  // 4a. Instagram Direct Connect
+  const handleConnectInstagramDirect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConnectError(null);
+    setConnectSuccess(null);
+    setIsVerifying(true);
+
+    try {
+      const res = await fetch('/api/connect/instagram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: igTokenInput.trim(),
+          igUserId: igIdInput.trim(),
+          handle: igHandleInput.trim(),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        setConnectError(data.error || 'Failed to connect Instagram account.');
+        setIsVerifying(false);
+        return;
+      }
+
+      if (data.page) {
+        addPages([data.page]);
+      }
+      setConnectSuccess(data.message || 'Instagram account connected successfully!');
+      setIgTokenInput('');
+      setIgIdInput('');
+      setIgHandleInput('');
+      setTimeout(() => {
+        setConnectModalOpen(false);
+        setConnectSuccess(null);
+      }, 1500);
+    } catch (err: unknown) {
+      setConnectError(
+        err instanceof Error ? err.message : 'Network error connecting Instagram account.'
+      );
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // 4b. Instagram Sync From Connected Facebook Pages
+  const handleSyncInstagramFromFacebook = async () => {
+    setConnectError(null);
+    setConnectSuccess(null);
+    setIsSyncingIg(true);
+
+    try {
+      const res = await fetch('/api/connect/instagram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sync_from_facebook',
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        setConnectError(data.error || 'No linked Instagram accounts found.');
+        setIsSyncingIg(false);
+        return;
+      }
+
+      if (Array.isArray(data.pages) && data.pages.length > 0) {
+        addPages(data.pages);
+      }
+      setConnectSuccess(
+        data.message || `Successfully synced ${data.count} Instagram account(s)!`
+      );
+      setTimeout(() => {
+        setConnectModalOpen(false);
+        setConnectSuccess(null);
+      }, 1500);
+    } catch (err: unknown) {
+      setConnectError(
+        err instanceof Error ? err.message : 'Network error scanning Facebook pages.'
+      );
+    } finally {
+      setIsSyncingIg(false);
+    }
+  };
+
+  // 4c. Generic Connect
   const handleGenericConnect = (e: React.FormEvent) => {
     e.preventDefault();
     if (!accountNameInput.trim()) return;
@@ -1974,11 +2082,297 @@ function AccountsContent() {
               </form>
             )}
 
-            {/* 5. INSTAGRAM & THREADS (GENERIC) */}
-            {connectPlatformChoice !== 'telegram' &&
-              connectPlatformChoice !== 'facebook' &&
-              connectPlatformChoice !== 'youtube' &&
-              connectPlatformChoice !== 'wordpress' && (
+            {/* 5. INSTAGRAM CONNECTION MODAL */}
+            {connectPlatformChoice === 'instagram' && (
+              <div className="space-y-4">
+                {/* Mode Selector */}
+                <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setIgMode('oauth')}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      igMode === 'oauth'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Meta OAuth
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIgMode('sync_fb')}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      igMode === 'sync_fb'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Sync from FB ({pages.filter((p) => p.platform === 'facebook').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIgMode('direct')}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      igMode === 'direct'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Direct Token / ID
+                  </button>
+                </div>
+
+                {/* MODE 1: Meta OAuth */}
+                {igMode === 'oauth' && (
+                  <div className="space-y-4 text-xs">
+                    {/* Meta App Selection */}
+                    {(() => {
+                      const appsList: MetaAppConfig[] =
+                        settings?.metaApps && Array.isArray(settings.metaApps) && settings.metaApps.length > 0
+                          ? settings.metaApps
+                          : settings?.metaAppId
+                          ? [
+                              {
+                                id: 'meta_app_primary',
+                                name: 'Primary Meta App',
+                                appId: settings.metaAppId,
+                                appSecret: settings.metaAppSecret || '',
+                                isDefault: true,
+                                createdAt: '',
+                              },
+                            ]
+                          : [];
+
+                      if (appsList.length === 0) {
+                        return (
+                          <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-center space-y-3">
+                            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mx-auto text-amber-700">
+                              <AlertCircle className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-xs text-amber-900">
+                                No Meta Developer App Configured
+                              </h4>
+                              <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
+                                Please add your Meta App credentials in Settings to connect your Instagram and Facebook accounts.
+                              </p>
+                            </div>
+                            <Link
+                              href="/settings"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold text-xs shadow-xs transition-all hover:scale-[1.01]"
+                            >
+                              <span>Configure Meta App in Settings</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200/80 text-[11px] text-pink-950 space-y-1.5">
+                            <div className="font-bold flex items-center gap-1.5 text-pink-900">
+                              <Sparkles className="w-3.5 h-3.5 text-pink-600" />
+                              <span>How Instagram Business Connect Works:</span>
+                            </div>
+                            <p className="text-slate-600 leading-relaxed">
+                              Meta Graph API requires an <strong>Instagram Professional (Business or Creator)</strong> account linked to a Facebook Page. When you log in with Meta, any linked Instagram Business profiles will be automatically detected and imported with publishing permissions.
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                              <span>Choose Meta Developer App:</span>
+                              <Link href="/settings" className="text-[11px] font-bold text-pink-600 hover:underline">
+                                Manage Apps &rarr;
+                              </Link>
+                            </label>
+                            <div className="grid grid-cols-1 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                              {appsList.map((app) => (
+                                <a
+                                  key={app.id || app.appId}
+                                  href={`/api/auth/facebook?app_config_id=${encodeURIComponent(
+                                    app.id
+                                  )}&app_id=${encodeURIComponent(
+                                    app.appId.trim()
+                                  )}&app_secret=${encodeURIComponent(
+                                    app.appSecret.trim()
+                                  )}&app_name=${encodeURIComponent(app.name)}&mode=instagram`}
+                                  className="p-3 rounded-xl border border-pink-200/80 hover:border-pink-500 bg-white hover:bg-pink-50/40 flex items-center justify-between gap-3 transition-all group shadow-2xs cursor-pointer"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-bold text-slate-900 group-hover:text-pink-600 transition-colors">
+                                        {app.name}
+                                      </span>
+                                      {app.isDefault && (
+                                        <span className="px-1.5 py-0.2 rounded-full bg-pink-50 text-pink-700 text-[9px] font-bold border border-pink-200">
+                                          Default
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                      App ID: {app.appId}
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold text-[11px] shadow-2xs group-hover:scale-105 transition-all">
+                                    <span>Log In</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </div>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* MODE 2: Sync from Connected Facebook Pages */}
+                {igMode === 'sync_fb' && (
+                  <div className="space-y-3.5 text-xs">
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-[#E2E8F0] space-y-2">
+                      <div className="font-bold text-slate-900">
+                        Connected Facebook Pages ({pages.filter((p) => p.platform === 'facebook').length}):
+                      </div>
+                      <p className="text-[11px] text-slate-600">
+                        If your Instagram Professional account is linked to one of your connected Facebook Pages in Meta, you can import it instantly with 1-click without logging in again.
+                      </p>
+
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1">
+                        {pages
+                          .filter((p) => p.platform === 'facebook')
+                          .map((p) => (
+                            <div
+                              key={p.id}
+                              className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E2E8F0]"
+                            >
+                              <div className="flex items-center gap-2">
+                                <img
+                                  src={p.avatarUrl || '/icons/social/facebook.png'}
+                                  alt=""
+                                  className="w-5 h-5 rounded-full object-cover"
+                                />
+                                <span className="font-semibold text-slate-800 text-[11px]">
+                                  {p.name}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                ID: {p.pageId}
+                              </span>
+                            </div>
+                          ))}
+                        {pages.filter((p) => p.platform === 'facebook').length === 0 && (
+                          <div className="text-center py-3 text-slate-500 text-[11px]">
+                            No Facebook Pages connected yet. Use the <strong>Meta OAuth</strong> tab above to connect your account.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSyncInstagramFromFacebook}
+                      disabled={
+                        isSyncingIg || pages.filter((p) => p.platform === 'facebook').length === 0
+                      }
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-60 cursor-pointer"
+                    >
+                      {isSyncingIg ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Scanning Facebook Pages for Instagram...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Scan &amp; Import Linked Instagram Accounts</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* MODE 3: Direct Token / ID Connect */}
+                {igMode === 'direct' && (
+                  <form onSubmit={handleConnectInstagramDirect} className="space-y-3 text-xs">
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        Instagram Username / Handle (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={igHandleInput}
+                        onChange={(e) => setIgHandleInput(e.target.value)}
+                        placeholder="e.g. khabarmonkey or @khabarmonkey"
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        Instagram Business User ID or Facebook Page ID
+                      </label>
+                      <input
+                        type="text"
+                        value={igIdInput}
+                        onChange={(e) => setIgIdInput(e.target.value)}
+                        placeholder="e.g. 17841400000000000 or Facebook Page ID"
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 font-medium font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        Meta Page Access Token <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={igTokenInput}
+                        onChange={(e) => setIgTokenInput(e.target.value)}
+                        placeholder="EAABw..."
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-slate-900 bg-[#F8F9FA] focus:bg-white focus:outline-none focus:border-slate-500 font-medium font-mono"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Requires <code>instagram_basic</code> and <code>instagram_content_publish</code> permissions.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E2E8F0]">
+                      <button
+                        type="button"
+                        onClick={() => setConnectModalOpen(false)}
+                        className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-600 hover:bg-[#F8F9FA] cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isVerifying}
+                        className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-all disabled:opacity-60 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {isVerifying ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Verifying Instagram Profile...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Verify &amp; Connect Instagram</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* 6. THREADS (GENERIC) */}
+            {connectPlatformChoice === 'threads' && (
               <form onSubmit={handleGenericConnect} className="space-y-4">
                 <div className="p-3.5 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] text-xs text-slate-800 space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold">

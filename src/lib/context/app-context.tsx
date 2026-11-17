@@ -317,21 +317,21 @@ const sanitizePages = (rawPages: any[]): SocialPage[] => {
       const idStr = String(p.id || '').toLowerCase();
       const targetStr = String(p.targetUrl || '').toLowerCase();
       const catStr = String(p.category || '').toLowerCase();
-      if (
-        idStr.includes('fb') ||
-        targetStr.includes('facebook') ||
-        catStr.includes('facebook') ||
-        p.fanCount !== undefined
-      ) {
-        platform = 'facebook';
+      if (idStr.includes('ig') || targetStr.includes('instagram') || catStr.includes('instagram')) {
+        platform = 'instagram';
       } else if (idStr.includes('yt') || targetStr.includes('youtube')) {
         platform = 'youtube';
       } else if (idStr.includes('tg') || targetStr.includes('t.me') || p.botToken || p.chatId) {
         platform = 'telegram';
       } else if (idStr.includes('wp') || p.siteUrl) {
         platform = 'wordpress';
-      } else if (idStr.includes('ig') || targetStr.includes('instagram')) {
-        platform = 'instagram';
+      } else if (
+        idStr.includes('fb') ||
+        targetStr.includes('facebook') ||
+        catStr.includes('facebook') ||
+        p.fanCount !== undefined
+      ) {
+        platform = 'facebook';
       } else {
         platform = 'facebook';
       }

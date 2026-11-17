@@ -49,11 +49,15 @@ function isPageForPlatform(p: SocialPage, targetPlat: string): boolean {
   const plat = targetPlat.toLowerCase();
   const pagePlat = (p.platform || '').toLowerCase();
   if (pagePlat === plat) return true;
-  if (plat === 'facebook' && (pagePlat.includes('fb') || p.id?.includes('fb') || p.targetUrl?.includes('facebook') || (p.category || '').toLowerCase().includes('facebook') || p.fanCount !== undefined)) return true;
+  if (pagePlat === 'instagram' && plat !== 'instagram') return false;
+  if (pagePlat === 'youtube' && plat !== 'youtube') return false;
+  if (pagePlat === 'telegram' && plat !== 'telegram') return false;
+  if (pagePlat === 'wordpress' && plat !== 'wordpress') return false;
+  if (plat === 'instagram' && (pagePlat.includes('ig') || p.id?.includes('ig') || p.targetUrl?.includes('instagram'))) return true;
+  if (plat === 'facebook' && (pagePlat.includes('fb') || p.id?.includes('fb') || p.targetUrl?.includes('facebook') || (p.category || '').toLowerCase().includes('facebook'))) return true;
   if (plat === 'youtube' && (pagePlat.includes('yt') || p.id?.includes('yt') || p.targetUrl?.includes('youtube'))) return true;
   if (plat === 'telegram' && (pagePlat.includes('tg') || p.id?.includes('tg') || p.targetUrl?.includes('t.me') || p.botToken || p.chatId)) return true;
   if (plat === 'wordpress' && (pagePlat.includes('wp') || p.id?.includes('wp') || p.siteUrl)) return true;
-  if (plat === 'instagram' && (pagePlat.includes('ig') || p.id?.includes('ig') || p.targetUrl?.includes('instagram'))) return true;
   return false;
 }
 

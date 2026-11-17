@@ -333,6 +333,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   // All output targets vertical 1080x1920 at 30 fps
   const fps = 30;
   const totalFrames = duration * fps;
+  const animFrames = Math.max(1, Math.round(animDuration * fps));
 
   const hasShake = activeEffects.includes('shake');
   const hasJitter = activeEffects.includes('breaking_jitter');
@@ -350,25 +351,25 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     filterChain.push('scale=1140:2020:force_original_aspect_ratio=increase');
     if (hasJitter) {
       filterChain.push(
-        `crop=1080:1920:'30+18*sin(n*1.2)*if(lt(t,${animDuration}),1,0)':'50+18*cos(n*1.4)*if(lt(t,${animDuration}),1,0)'`
+        `crop=1080:1920:'30+18*sin(n*1.2)*if(lt(n,${animFrames}),1,0)':'50+18*cos(n*1.4)*if(lt(n,${animFrames}),1,0)'`
       );
       filterChain.push(
-        `eq=brightness='0.08*if(lt(mod(n,45),6)*lt(t,${animDuration}),1,0)'`
+        `eq=brightness='0.08*if(lt(mod(n,45),6)*lt(n,${animFrames}),1,0)'`
       );
     } else {
       filterChain.push(
-        `crop=1080:1920:'30+15*sin(n*0.75)*if(lt(mod(n,75),28)*lt(t,${animDuration}),1,0.05)':'50+15*cos(n*0.85)*if(lt(mod(n,75),28)*lt(t,${animDuration}),1,0.05)'`
+        `crop=1080:1920:'30+15*sin(n*0.75)*if(lt(mod(n,75),28)*lt(n,${animFrames}),1,0.05)':'50+15*cos(n*0.85)*if(lt(mod(n,75),28)*lt(n,${animFrames}),1,0.05)'`
       );
     }
   } else if (hasPanLeft) {
     filterChain.push('scale=1280:1920:force_original_aspect_ratio=increase');
     filterChain.push(
-      `crop=1080:1920:'(1280-1080)*if(lt(t,${animDuration}),1-t/${animDuration},0)':0`
+      `crop=1080:1920:'(1280-1080)*if(lt(n,${animFrames}),1-n/${animFrames},0)':0`
     );
   } else if (hasPanRight) {
     filterChain.push('scale=1280:1920:force_original_aspect_ratio=increase');
     filterChain.push(
-      `crop=1080:1920:'(1280-1080)*if(lt(t,${animDuration}),t/${animDuration},1)':0`
+      `crop=1080:1920:'(1280-1080)*if(lt(n,${animFrames}),n/${animFrames},1)':0`
     );
   } else {
     filterChain.push(
@@ -379,15 +380,15 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   // Step B: Zoom / Pan / Breathing Pulse (Spatial Animation)
   if (hasZoomIn) {
     filterChain.push(
-      `zoompan=z='if(lt(t,${animDuration}),min(zoom+0.0012,1.15),1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+      `zoompan=z='if(lt(on,${animFrames}),min(zoom+0.0012,1.15),1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
     );
   } else if (hasZoomOut) {
     filterChain.push(
-      `zoompan=z='if(lt(t,${animDuration}),if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012)),1.001)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+      `zoompan=z='if(lt(on,${animFrames}),if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012)),1.001)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
     );
   } else if (hasPulse) {
     filterChain.push(
-      `zoompan=z='if(lt(t,${animDuration}),1.04+0.04*sin(2*PI*t*0.8),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+      `zoompan=z='if(lt(on,${animFrames}),1.04+0.04*sin(2*PI*(on/${fps})*0.8),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
     );
   }
 
