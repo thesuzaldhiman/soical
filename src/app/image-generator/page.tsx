@@ -37,6 +37,10 @@ import {
   ZoomOut,
   Info,
   SlidersHorizontal,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Minus,
 } from 'lucide-react';
 
 // ── Preset Social Media Dimensions ──
@@ -196,6 +200,9 @@ function SocialImageGeneratorContent() {
   const [layerMode, setLayerMode] = useState<'overlay' | 'background'>(
     activeTemplate.layerMode || 'overlay'
   );
+  const [backgroundColor, setBackgroundColor] = useState<string>(
+    activeTemplate.backgroundColor || '#0B0F19'
+  );
 
   // Boxes (Independently tracked per template)
   type FBoxType = NonNullable<SigTemplate['featuredImageBox']>;
@@ -228,6 +235,7 @@ function SocialImageGeneratorContent() {
   // Custom Uploaded Fonts State
   const [customFonts, setCustomFonts] = useState<Array<{ name: string; url: string }>>([]);
   const fontFileInputRef = useRef<HTMLInputElement | null>(null);
+  const editorFrameInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load custom fonts from localStorage on mount
   useEffect(() => {
@@ -290,6 +298,7 @@ function SocialImageGeneratorContent() {
       setCanvasHeight(targetTmpl.canvasHeight);
       setTemplateImageUrl(targetTmpl.templateImageUrl || '');
       setLayerMode(targetTmpl.layerMode || 'overlay');
+      setBackgroundColor(targetTmpl.backgroundColor || '#0B0F19');
 
       const isPort = (targetTmpl.canvasHeight || 1350) > (targetTmpl.canvasWidth || 1080);
       setFBox(
@@ -343,6 +352,7 @@ function SocialImageGeneratorContent() {
         canvasHeight,
         templateImageUrl,
         layerMode,
+        backgroundColor,
         featuredImageBox: fBox,
         titleBox: tBox,
       };
@@ -359,7 +369,7 @@ function SocialImageGeneratorContent() {
     } finally {
       setIsGenerating(false);
     }
-  }, [activeTemplate, templateName, canvasWidth, canvasHeight, templateImageUrl, layerMode, fBox, tBox, genHeadline, genHighlight, genPhotoUrl]);
+  }, [activeTemplate, templateName, canvasWidth, canvasHeight, templateImageUrl, layerMode, backgroundColor, fBox, tBox, genHeadline, genHighlight, genPhotoUrl]);
 
   useEffect(() => {
     if (activeTab === 'generator' || isPreviewMode) {
@@ -377,6 +387,7 @@ function SocialImageGeneratorContent() {
       canvasHeight,
       templateImageUrl,
       layerMode,
+      backgroundColor,
       featuredImageBox: { ...fBox },
       titleBox: { ...tBox },
       videoConfig: activeTemplate.videoConfig,
@@ -401,6 +412,7 @@ function SocialImageGeneratorContent() {
       canvasHeight,
       templateImageUrl,
       layerMode,
+      backgroundColor,
       featuredImageBox: { ...fBox },
       titleBox: { ...tBox },
     };
@@ -693,6 +705,169 @@ function SocialImageGeneratorContent() {
   const handleMouseUpCanvas = () => {
     if (dragState) {
       setDragState(null);
+    }
+  };
+
+  // ── Keyboard Arrow Keys Nudge Controls (1px nudge, Shift = 10px) ──
+  useEffect(() => {
+    if (activeTab !== 'editor' || isPreviewMode) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        let dx = 0;
+        let dy = 0;
+        if (e.key === 'ArrowUp') dy = -step;
+        if (e.key === 'ArrowDown') dy = step;
+        if (e.key === 'ArrowLeft') dx = -step;
+        if (e.key === 'ArrowRight') dx = step;
+
+        if (activeBox === 'featured') {
+          setFBox((prev) => ({
+            ...prev,
+            x: Math.max(0, Math.min(canvasWidth - prev.width, prev.x + dx)),
+            y: Math.max(0, Math.min(canvasHeight - prev.height, prev.y + dy)),
+          }));
+        } else {
+          setTBox((prev) => ({
+            ...prev,
+            x: Math.max(0, Math.min(canvasWidth - prev.width, prev.x + dx)),
+            y: Math.max(0, Math.min(canvasHeight - prev.height, prev.y + dy)),
+          }));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, isPreviewMode, activeBox, canvasWidth, canvasHeight]);
+
+  // 1-Click Card Layout Presets
+  const applyFullCardPreset = (preset: 'topPhoto' | 'topHeadline' | 'fullBleed') => {
+    if (preset === 'topPhoto') {
+      // Photo on top (y: 0 to 60%), Headline on bottom (y: 62% to 98%)
+      setFBox({
+        x: 0,
+        y: 0,
+        width: canvasWidth,
+        height: Math.round(canvasHeight * 0.60),
+        borderRadius: 0,
+      });
+      setTBox((prev) => ({
+        ...prev,
+        x: Math.round(canvasWidth * 0.08),
+        y: Math.round(canvasHeight * 0.62),
+        width: Math.round(canvasWidth * 0.84),
+        height: Math.round(canvasHeight * 0.35),
+        alignment: 'center',
+      }));
+    } else if (preset === 'topHeadline') {
+      // Headline on top (y: 5% to 35%), Photo cutout in center/bottom (y: 38% to 95%)
+      setTBox((prev) => ({
+        ...prev,
+        x: Math.round(canvasWidth * 0.08),
+        y: Math.round(canvasHeight * 0.05),
+        width: Math.round(canvasWidth * 0.84),
+        height: Math.round(canvasHeight * 0.30),
+        alignment: 'center',
+      }));
+      setFBox({
+        x: Math.round(canvasWidth * 0.04),
+        y: Math.round(canvasHeight * 0.38),
+        width: Math.round(canvasWidth * 0.92),
+        height: Math.round(canvasHeight * 0.58),
+        borderRadius: 16,
+      });
+    } else if (preset === 'fullBleed') {
+      // Full canvas photo with bottom text overlay
+      setFBox({
+        x: 0,
+        y: 0,
+        width: canvasWidth,
+        height: canvasHeight,
+        borderRadius: 0,
+      });
+      setTBox((prev) => ({
+        ...prev,
+        x: Math.round(canvasWidth * 0.08),
+        y: Math.round(canvasHeight * 0.68),
+        width: Math.round(canvasWidth * 0.84),
+        height: Math.round(canvasHeight * 0.28),
+        alignment: 'left',
+      }));
+    }
+  };
+
+  // Align active box (Horizontal center, Vertical center, Full width, Snap top/bottom)
+  const alignActiveBox = (action: 'centerX' | 'centerY' | 'fullWidth' | 'snapTop' | 'snapBottom') => {
+    if (activeBox === 'featured') {
+      setFBox((prev) => {
+        let { x, y, width, height } = prev;
+        if (action === 'centerX') x = Math.round((canvasWidth - width) / 2);
+        if (action === 'centerY') y = Math.round((canvasHeight - height) / 2);
+        if (action === 'fullWidth') {
+          x = 0;
+          width = canvasWidth;
+        }
+        if (action === 'snapTop') y = 0;
+        if (action === 'snapBottom') y = canvasHeight - height;
+        return { ...prev, x: Math.max(0, x), y: Math.max(0, y), width, height };
+      });
+    } else {
+      setTBox((prev) => {
+        let { x, y, width, height } = prev;
+        if (action === 'centerX') x = Math.round((canvasWidth - width) / 2);
+        if (action === 'centerY') y = Math.round((canvasHeight - height) / 2);
+        if (action === 'fullWidth') {
+          x = Math.round(canvasWidth * 0.05);
+          width = Math.round(canvasWidth * 0.90);
+        }
+        if (action === 'snapTop') y = 40;
+        if (action === 'snapBottom') y = canvasHeight - height - 40;
+        return { ...prev, x: Math.max(0, x), y: Math.max(0, y), width, height };
+      });
+    }
+  };
+
+  // Numeric stepper delta adjustment for X, Y, Width, Height
+  const adjustActiveBoxCoordinate = (prop: 'x' | 'y' | 'width' | 'height', delta: number) => {
+    if (activeBox === 'featured') {
+      setFBox((prev) => {
+        const nextVal = Math.max(0, (prev[prop] || 0) + delta);
+        if (prop === 'width') {
+          return { ...prev, width: Math.min(canvasWidth - prev.x, Math.max(40, nextVal)) };
+        }
+        if (prop === 'height') {
+          return { ...prev, height: Math.min(canvasHeight - prev.y, Math.max(40, nextVal)) };
+        }
+        if (prop === 'x') {
+          return { ...prev, x: Math.min(canvasWidth - prev.width, nextVal) };
+        }
+        if (prop === 'y') {
+          return { ...prev, y: Math.min(canvasHeight - prev.height, nextVal) };
+        }
+        return prev;
+      });
+    } else {
+      setTBox((prev) => {
+        const nextVal = Math.max(0, (prev[prop] || 0) + delta);
+        if (prop === 'width') {
+          return { ...prev, width: Math.min(canvasWidth - prev.x, Math.max(40, nextVal)) };
+        }
+        if (prop === 'height') {
+          return { ...prev, height: Math.min(canvasHeight - prev.y, Math.max(40, nextVal)) };
+        }
+        if (prop === 'x') {
+          return { ...prev, x: Math.min(canvasWidth - prev.width, nextVal) };
+        }
+        if (prop === 'y') {
+          return { ...prev, y: Math.min(canvasHeight - prev.height, nextVal) };
+        }
+        return prev;
+      });
     }
   };
 
@@ -1045,6 +1220,27 @@ function SocialImageGeneratorContent() {
             </div>
 
             <div className="flex items-center gap-2 self-end lg:self-auto flex-wrap">
+              {/* Direct PNG Frame Uploader */}
+              <button
+                type="button"
+                onClick={() => editorFrameInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                title="Upload or replace the transparent PNG frame overlay for this template"
+              >
+                <Upload className="w-3.5 h-3.5 text-[#FF007A]" />
+                <span>Upload PNG Frame</span>
+              </button>
+              <input
+                ref={editorFrameInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleTemplateFileUpload(file, false);
+                }}
+              />
+
               <button
                 type="button"
                 onClick={() => setIsPreviewMode(!isPreviewMode)}
@@ -1081,211 +1277,322 @@ function SocialImageGeneratorContent() {
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* ── Left Column: Interactive Visual Canvas Container ── */}
-            <div
-              ref={visualEditorContainerRef}
-              className="lg:col-span-8 bg-slate-950/95 rounded-2xl border border-slate-800 p-5 flex flex-col items-center justify-center min-h-[500px] overflow-hidden relative"
-              onMouseMove={handleMouseMoveCanvas}
-              onMouseUp={handleMouseUpCanvas}
-              onMouseLeave={handleMouseUpCanvas}
-            >
-              {isPreviewMode ? (
-                /* Live Preview Canvas Render */
-                <div className="flex flex-col items-center space-y-2">
-                  <canvas
-                    ref={previewCanvasRef}
-                    style={{ width: `${displayWidth}px`, height: `${displayHeight}px` }}
-                    className="rounded-lg shadow-2xl border border-slate-700 max-w-full"
-                  />
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    Real-time composite with sample photo &amp; Hindi headline
+            <div className="lg:col-span-8 flex flex-col space-y-3">
+              {/* Studio Quick Action Toolbar */}
+              <div className="bg-white rounded-2xl border border-[#EEF1F6] p-3 flex flex-wrap items-center justify-between gap-2 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] text-xs">
+                {/* 1-Click Card Layout Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                    <Layout className="w-3.5 h-3.5 text-[#FF007A]" />
+                    <span>Card Presets:</span>
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => applyFullCardPreset('topPhoto')}
+                    className="px-2.5 py-1 rounded-lg bg-pink-50 hover:bg-pink-100 text-[#FF007A] text-[11px] font-bold border border-pink-200 cursor-pointer transition-colors"
+                    title="Photo at Top 60%, Headline text at bottom color block"
+                  >
+                    📸 Top Photo + Bottom Text
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyFullCardPreset('topHeadline')}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold border border-indigo-200 cursor-pointer transition-colors"
+                    title="Headline at Top, Arch / Cutout Photo in center"
+                  >
+                    📝 Top Headline + Center Photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyFullCardPreset('fullBleed')}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold border border-slate-200 cursor-pointer transition-colors"
+                    title="Full canvas background photo with text overlay"
+                  >
+                    🖼️ Full Bleed Photo
+                  </button>
                 </div>
-              ) : (
-                /* Interactive Box Positioning with REAL Layer Stack */
-                <div
-                  style={{
-                    width: `${displayWidth}px`,
-                    height: `${displayHeight}px`,
-                  }}
-                  className="relative rounded-lg shadow-2xl overflow-hidden border border-slate-700 select-none bg-slate-900"
-                >
-                  {/* LAYER 1 (Bottom): Featured Photo Preview */}
+
+                {/* Alignment Actions for Active Box */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[10px] font-bold text-slate-400">Align:</span>
+                  <button
+                    type="button"
+                    onClick={() => alignActiveBox('centerX')}
+                    className="px-2 py-1 rounded bg-[#F8F9FD] hover:bg-slate-100 text-[10px] font-bold text-slate-700 border border-[#EEF1F6] cursor-pointer"
+                    title="Center active box horizontally"
+                  >
+                    Center X
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignActiveBox('centerY')}
+                    className="px-2 py-1 rounded bg-[#F8F9FD] hover:bg-slate-100 text-[10px] font-bold text-slate-700 border border-[#EEF1F6] cursor-pointer"
+                    title="Center active box vertically"
+                  >
+                    Center Y
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignActiveBox('fullWidth')}
+                    className="px-2 py-1 rounded bg-[#F8F9FD] hover:bg-slate-100 text-[10px] font-bold text-slate-700 border border-[#EEF1F6] cursor-pointer"
+                    title="Expand active box to full width"
+                  >
+                    Full Width
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignActiveBox('snapTop')}
+                    className="px-2 py-1 rounded bg-[#F8F9FD] hover:bg-slate-100 text-[10px] font-bold text-slate-700 border border-[#EEF1F6] cursor-pointer"
+                    title="Snap active box to top"
+                  >
+                    Snap Top
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignActiveBox('snapBottom')}
+                    className="px-2 py-1 rounded bg-[#F8F9FD] hover:bg-slate-100 text-[10px] font-bold text-slate-700 border border-[#EEF1F6] cursor-pointer"
+                    title="Snap active box to bottom"
+                  >
+                    Snap Bottom
+                  </button>
+                </div>
+              </div>
+
+              {/* Studio Canvas Area */}
+              <div
+                ref={visualEditorContainerRef}
+                className="bg-slate-950/95 rounded-2xl border border-slate-800 p-5 flex flex-col items-center justify-center min-h-[500px] overflow-hidden relative"
+                onMouseMove={handleMouseMoveCanvas}
+                onMouseUp={handleMouseUpCanvas}
+                onMouseLeave={handleMouseUpCanvas}
+              >
+                {isPreviewMode ? (
+                  /* Live Preview Canvas Render */
+                  <div className="flex flex-col items-center space-y-2">
+                    <canvas
+                      ref={previewCanvasRef}
+                      style={{ width: `${displayWidth}px`, height: `${displayHeight}px` }}
+                      className="rounded-lg shadow-2xl border border-slate-700 max-w-full"
+                    />
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Real-time composite with sample photo &amp; Hindi headline
+                    </span>
+                  </div>
+                ) : (
+                  /* Interactive Box Positioning with REAL Layer Stack */
                   <div
                     style={{
-                      position: 'absolute',
-                      left: `${Math.round(fBox.x * displayScale)}px`,
-                      top: `${Math.round(fBox.y * displayScale)}px`,
-                      width: `${Math.round(fBox.width * displayScale)}px`,
-                      height: `${Math.round(fBox.height * displayScale)}px`,
-                      borderRadius: `${Math.round((fBox.borderRadius || 0) * displayScale)}px`,
-                      backgroundImage: `url(${genPhotoUrl})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      zIndex: layerMode === 'overlay' ? 1 : 2,
+                      width: `${displayWidth}px`,
+                      height: `${displayHeight}px`,
+                      backgroundColor: backgroundColor && backgroundColor !== 'transparent' ? backgroundColor : '#0B0F19',
+                      backgroundImage: `
+                        linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%),
+                        linear-gradient(-45deg, rgba(255,255,255,0.05) 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.05) 75%),
+                        linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.05) 75%)
+                      `,
+                      backgroundSize: '20px 20px',
+                      backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
                     }}
-                    className="overflow-hidden"
-                  />
+                    className="relative rounded-lg shadow-2xl overflow-hidden border border-slate-700 select-none"
+                  >
+                    {/* Floating HUD Coordinate Badge */}
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-slate-950/85 backdrop-blur-md border border-slate-700/80 px-3 py-1 rounded-full text-[10px] font-mono text-slate-200 shadow-lg pointer-events-none">
+                      <span className={`font-bold flex items-center gap-1 ${activeBox === 'featured' ? 'text-cyan-400' : 'text-amber-400'}`}>
+                        {activeBox === 'featured' ? '📸 Photo Cutout' : '📝 Headline Box'}
+                      </span>
+                      <span className="text-slate-600">•</span>
+                      <span>X: <strong className="text-white">{activeBox === 'featured' ? fBox.x : tBox.x}</strong></span>
+                      <span>Y: <strong className="text-white">{activeBox === 'featured' ? fBox.y : tBox.y}</strong></span>
+                      <span className="text-slate-600">•</span>
+                      <span>W: <strong className="text-white">{activeBox === 'featured' ? fBox.width : tBox.width}</strong></span>
+                      <span>H: <strong className="text-white">{activeBox === 'featured' ? fBox.height : tBox.height}</strong></span>
+                    </div>
 
-                  {/* LAYER 2: PNG Template Frame Overlay */}
-                  {templateImageUrl && (
+                    {/* LAYER 1 (Bottom): Featured Photo Preview */}
                     <div
                       style={{
                         position: 'absolute',
-                        inset: 0,
-                        backgroundImage: `url(${templateImageUrl})`,
+                        left: `${Math.round(fBox.x * displayScale)}px`,
+                        top: `${Math.round(fBox.y * displayScale)}px`,
+                        width: `${Math.round(fBox.width * displayScale)}px`,
+                        height: `${Math.round(fBox.height * displayScale)}px`,
+                        borderRadius: `${Math.round((fBox.borderRadius || 0) * displayScale)}px`,
+                        backgroundImage: `url(${genPhotoUrl})`,
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
-                        zIndex: layerMode === 'overlay' ? 2 : 1,
-                        pointerEvents: 'none',
+                        zIndex: layerMode === 'overlay' ? 1 : 2,
                       }}
+                      className="overflow-hidden"
                     />
-                  )}
 
-                  {/* LAYER 3: Sample Live Headline Text */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: `${Math.round(tBox.x * displayScale)}px`,
-                      top: `${Math.round(tBox.y * displayScale)}px`,
-                      width: `${Math.round(tBox.width * displayScale)}px`,
-                      height: `${Math.round(tBox.height * displayScale)}px`,
-                      zIndex: 3,
-                      pointerEvents: 'none',
-                      color: tBox.textColor || '#FFFFFF',
-                      fontSize: `${Math.round((tBox.fontSize || 44) * displayScale)}px`,
-                      lineHeight: tBox.lineHeight || 1.35,
-                      fontFamily: `"${tBox.fontFamily || 'Noto Sans Devanagari'}", "Poppins", sans-serif`,
-                      textAlign: tBox.alignment || 'left',
-                      textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-                    }}
-                    className="p-1 font-bold line-clamp-3"
-                  >
-                    {genHeadline}
-                  </div>
+                    {/* LAYER 2: PNG Template Frame Overlay */}
+                    {templateImageUrl && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          backgroundImage: `url(${templateImageUrl})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          zIndex: layerMode === 'overlay' ? 2 : 1,
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    )}
 
-                  {/* LAYER 4: Interactive Selection Boundary for Featured Image */}
-                  <div
-                    onMouseDown={(e) => handleMouseDownOnBox(e, 'featured')}
-                    style={{
-                      left: `${Math.round(fBox.x * displayScale)}px`,
-                      top: `${Math.round(fBox.y * displayScale)}px`,
-                      width: `${Math.round(fBox.width * displayScale)}px`,
-                      height: `${Math.round(fBox.height * displayScale)}px`,
-                      borderRadius: `${Math.round((fBox.borderRadius || 0) * displayScale)}px`,
-                      zIndex: 10,
-                    }}
-                    className={`absolute border-2 transition-colors flex flex-col items-center justify-center cursor-move select-none ${
-                      activeBox === 'featured'
-                        ? 'border-cyan-400 bg-cyan-500/15 ring-2 ring-cyan-400/50'
-                        : 'border-cyan-300/50 hover:border-cyan-400'
-                    }`}
-                  >
-                    <div className="bg-cyan-950/90 text-cyan-300 text-[10px] font-bold px-2 py-0.5 rounded shadow pointer-events-none flex items-center gap-1">
-                      <ImageIcon className="w-3 h-3" />
-                      <span>📸 Photo Cutout Area</span>
+                    {/* LAYER 3: Sample Live Headline Text */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: `${Math.round(tBox.x * displayScale)}px`,
+                        top: `${Math.round(tBox.y * displayScale)}px`,
+                        width: `${Math.round(tBox.width * displayScale)}px`,
+                        height: `${Math.round(tBox.height * displayScale)}px`,
+                        zIndex: 3,
+                        pointerEvents: 'none',
+                        color: tBox.textColor || '#FFFFFF',
+                        fontSize: `${Math.round((tBox.fontSize || 44) * displayScale)}px`,
+                        lineHeight: tBox.lineHeight || 1.35,
+                        fontFamily: `"${tBox.fontFamily || 'Noto Sans Devanagari'}", "Poppins", sans-serif`,
+                        textAlign: tBox.alignment || 'left',
+                        textShadow: '0 2px 4px rgba(0,0,0,0.8)',
+                      }}
+                      className="p-1 font-bold line-clamp-3"
+                    >
+                      {genHeadline}
                     </div>
 
-                    {/* Resize Handles */}
-                    {['nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'].map((h) => (
-                      <div
-                        key={h}
-                        onMouseDown={(e) => handleMouseDownOnBox(e, 'featured', true, h)}
-                        className={`absolute w-3 h-3 bg-cyan-400 border border-black rounded-full z-20 ${
-                          h === 'nw'
-                            ? '-top-1.5 -left-1.5 cursor-nwse-resize'
-                            : h === 'ne'
-                            ? '-top-1.5 -right-1.5 cursor-nesw-resize'
-                            : h === 'se'
-                            ? '-bottom-1.5 -right-1.5 cursor-nwse-resize'
-                            : h === 'sw'
-                            ? '-bottom-1.5 -left-1.5 cursor-nesw-resize'
-                            : h === 'n'
-                            ? '-top-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
-                            : h === 's'
-                            ? '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
-                            : h === 'e'
-                            ? 'top-1/2 -right-1.5 -translate-y-1/2 cursor-ew-resize'
-                            : 'top-1/2 -left-1.5 -translate-y-1/2 cursor-ew-resize'
-                        }`}
-                      />
-                    ))}
-                  </div>
+                    {/* LAYER 4: Interactive Selection Boundary for Featured Image */}
+                    <div
+                      onMouseDown={(e) => handleMouseDownOnBox(e, 'featured')}
+                      style={{
+                        left: `${Math.round(fBox.x * displayScale)}px`,
+                        top: `${Math.round(fBox.y * displayScale)}px`,
+                        width: `${Math.round(fBox.width * displayScale)}px`,
+                        height: `${Math.round(fBox.height * displayScale)}px`,
+                        borderRadius: `${Math.round((fBox.borderRadius || 0) * displayScale)}px`,
+                        zIndex: 10,
+                      }}
+                      className={`absolute border-2 transition-colors flex flex-col items-center justify-center cursor-move select-none ${
+                        activeBox === 'featured'
+                          ? 'border-cyan-400 bg-cyan-500/15 ring-2 ring-cyan-400/50'
+                          : 'border-cyan-300/50 hover:border-cyan-400'
+                      }`}
+                    >
+                      <div className="bg-cyan-950/90 text-cyan-300 text-[10px] font-bold px-2 py-0.5 rounded shadow pointer-events-none flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" />
+                        <span>📸 Photo Cutout Area</span>
+                      </div>
 
-                  {/* LAYER 5: Interactive Selection Boundary for Title Box */}
-                  <div
-                    onMouseDown={(e) => handleMouseDownOnBox(e, 'title')}
-                    style={{
-                      left: `${Math.round(tBox.x * displayScale)}px`,
-                      top: `${Math.round(tBox.y * displayScale)}px`,
-                      width: `${Math.round(tBox.width * displayScale)}px`,
-                      height: `${Math.round(tBox.height * displayScale)}px`,
-                      zIndex: 11,
-                    }}
-                    className={`absolute border-2 transition-colors flex flex-col items-center justify-center cursor-move select-none ${
-                      activeBox === 'title'
-                        ? 'border-amber-400 bg-amber-500/15 ring-2 ring-amber-400/50'
-                        : 'border-amber-300/50 hover:border-amber-400'
-                    }`}
-                  >
-                    <div className="bg-amber-950/90 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded shadow pointer-events-none flex items-center gap-1">
-                      <Type className="w-3 h-3" />
-                      <span>📝 Headline Text Box</span>
+                      {/* Resize Handles */}
+                      {['nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'].map((h) => (
+                        <div
+                          key={h}
+                          onMouseDown={(e) => handleMouseDownOnBox(e, 'featured', true, h)}
+                          className={`absolute w-3 h-3 bg-cyan-400 border border-black rounded-full z-20 ${
+                            h === 'nw'
+                              ? '-top-1.5 -left-1.5 cursor-nwse-resize'
+                              : h === 'ne'
+                              ? '-top-1.5 -right-1.5 cursor-nesw-resize'
+                              : h === 'se'
+                              ? '-bottom-1.5 -right-1.5 cursor-nwse-resize'
+                              : h === 'sw'
+                              ? '-bottom-1.5 -left-1.5 cursor-nesw-resize'
+                              : h === 'n'
+                              ? '-top-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
+                              : h === 's'
+                              ? '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
+                              : h === 'e'
+                              ? 'top-1/2 -right-1.5 -translate-y-1/2 cursor-ew-resize'
+                              : 'top-1/2 -left-1.5 -translate-y-1/2 cursor-ew-resize'
+                          }`}
+                        />
+                      ))}
                     </div>
 
-                    {/* Resize Handles */}
-                    {['nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'].map((h) => (
-                      <div
-                        key={h}
-                        onMouseDown={(e) => handleMouseDownOnBox(e, 'title', true, h)}
-                        className={`absolute w-3 h-3 bg-amber-400 border border-black rounded-full z-20 ${
-                          h === 'nw'
-                            ? '-top-1.5 -left-1.5 cursor-nwse-resize'
-                            : h === 'ne'
-                            ? '-top-1.5 -right-1.5 cursor-nesw-resize'
-                            : h === 'se'
-                            ? '-bottom-1.5 -right-1.5 cursor-nwse-resize'
-                            : h === 'sw'
-                            ? '-bottom-1.5 -left-1.5 cursor-nesw-resize'
-                            : h === 'n'
-                            ? '-top-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
-                            : h === 's'
-                            ? '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
-                            : h === 'e'
-                            ? 'top-1/2 -right-1.5 -translate-y-1/2 cursor-ew-resize'
-                            : 'top-1/2 -left-1.5 -translate-y-1/2 cursor-ew-resize'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
+                    {/* LAYER 5: Interactive Selection Boundary for Title Box */}
+                    <div
+                      onMouseDown={(e) => handleMouseDownOnBox(e, 'title')}
+                      style={{
+                        left: `${Math.round(tBox.x * displayScale)}px`,
+                        top: `${Math.round(tBox.y * displayScale)}px`,
+                        width: `${Math.round(tBox.width * displayScale)}px`,
+                        height: `${Math.round(tBox.height * displayScale)}px`,
+                        zIndex: 11,
+                      }}
+                      className={`absolute border-2 transition-colors flex flex-col items-center justify-center cursor-move select-none ${
+                        activeBox === 'title'
+                          ? 'border-amber-400 bg-amber-500/15 ring-2 ring-amber-400/50'
+                          : 'border-amber-300/50 hover:border-amber-400'
+                      }`}
+                    >
+                      <div className="bg-amber-950/90 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded shadow pointer-events-none flex items-center gap-1">
+                        <Type className="w-3 h-3" />
+                        <span>📝 Headline Text Box</span>
+                      </div>
 
-              {/* Canvas Footer Controls */}
-              <div className="mt-4 flex flex-wrap items-center justify-between w-full max-w-lg px-2 text-[11px] text-slate-400 font-medium gap-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                  <span>Cyan: Photo Cutout</span>
-                  <span className="w-2 h-2 rounded-full bg-amber-400 ml-2" />
-                  <span>Amber: Headline Text</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDisplayScale((s) => Math.max(0.15, s - 0.05))}
-                    className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
-                    title="Zoom Out"
-                  >
-                    <ZoomOut className="w-3 h-3" />
-                  </button>
-                  <span className="font-mono">{Math.round(displayScale * 100)}%</span>
-                  <button
-                    type="button"
-                    onClick={() => setDisplayScale((s) => Math.min(1.2, s + 0.05))}
-                    className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
-                    title="Zoom In"
-                  >
-                    <ZoomIn className="w-3 h-3" />
-                  </button>
+                      {/* Resize Handles */}
+                      {['nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'].map((h) => (
+                        <div
+                          key={h}
+                          onMouseDown={(e) => handleMouseDownOnBox(e, 'title', true, h)}
+                          className={`absolute w-3 h-3 bg-amber-400 border border-black rounded-full z-20 ${
+                            h === 'nw'
+                              ? '-top-1.5 -left-1.5 cursor-nwse-resize'
+                              : h === 'ne'
+                              ? '-top-1.5 -right-1.5 cursor-nesw-resize'
+                              : h === 'se'
+                              ? '-bottom-1.5 -right-1.5 cursor-nwse-resize'
+                              : h === 'sw'
+                              ? '-bottom-1.5 -left-1.5 cursor-nesw-resize'
+                              : h === 'n'
+                              ? '-top-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
+                              : h === 's'
+                              ? '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-ns-resize'
+                              : h === 'e'
+                              ? 'top-1/2 -right-1.5 -translate-y-1/2 cursor-ew-resize'
+                              : 'top-1/2 -left-1.5 -translate-y-1/2 cursor-ew-resize'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Canvas Footer Controls */}
+                <div className="mt-4 flex flex-wrap items-center justify-between w-full max-w-lg px-2 text-[11px] text-slate-400 font-medium gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <span>Cyan: Photo Cutout</span>
+                    <span className="w-2 h-2 rounded-full bg-amber-400 ml-2" />
+                    <span>Amber: Headline Text</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="hidden sm:flex items-center gap-1 text-[10px] text-slate-500 font-mono">
+                      <kbd className="px-1 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">↑↓←→</kbd>
+                      <span>1px (Shift=10px)</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setDisplayScale((s) => Math.max(0.15, s - 0.05))}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="w-3 h-3" />
+                      </button>
+                      <span className="font-mono text-xs text-slate-300 w-10 text-center">{Math.round(displayScale * 100)}%</span>
+                      <button
+                        type="button"
+                        onClick={() => setDisplayScale((s) => Math.min(1.2, s + 0.05))}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1385,69 +1692,254 @@ function SocialImageGeneratorContent() {
                 </div>
               </div>
 
-              {/* Coordinates Inputs (X, Y, W, H) */}
+              {/* Coordinates Inputs (X, Y, W, H) with Precision Steppers */}
               <div className="space-y-2 pt-2 border-t border-[#EEF1F6]">
-                <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1">
-                  <Move className="w-3.5 h-3.5 text-slate-400" />
-                  <span>
-                    {activeBox === 'featured' ? 'Photo Cutout' : 'Headline Box'} Position &amp; Size
-                  </span>
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1">
+                    <Move className="w-3.5 h-3.5 text-slate-400" />
+                    <span>
+                      {activeBox === 'featured' ? 'Photo Cutout' : 'Headline Box'} Position &amp; Size
+                    </span>
+                  </h4>
+                  <span className="text-[10px] text-slate-400 font-mono">px</span>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 font-mono">
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">X (px)</label>
-                    <input
-                      type="number"
-                      value={activeBox === 'featured' ? fBox.x : tBox.x}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        if (activeBox === 'featured') setFBox((p) => ({ ...p, x: val }));
-                        else setTBox((p) => ({ ...p, x: val }));
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold"
-                    />
+                  {/* X */}
+                  <div className="bg-[#F8F9FD] p-2 rounded-xl border border-[#EEF1F6]">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] text-slate-500 font-bold">X (Left)</label>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('x', -10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="-10px"
+                        >-10</button>
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('x', 10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="+10px"
+                        >+10</button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('x', -1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="-1px"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <input
+                        type="number"
+                        value={activeBox === 'featured' ? fBox.x : tBox.x}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (activeBox === 'featured') setFBox((p) => ({ ...p, x: val }));
+                          else setTBox((p) => ({ ...p, x: val }));
+                        }}
+                        className="w-full text-center py-1 rounded bg-white border border-[#EEF1F6] text-xs font-bold text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('x', 1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="+1px"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">Y (px)</label>
-                    <input
-                      type="number"
-                      value={activeBox === 'featured' ? fBox.y : tBox.y}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        if (activeBox === 'featured') setFBox((p) => ({ ...p, y: val }));
-                        else setTBox((p) => ({ ...p, y: val }));
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold"
-                    />
+                  {/* Y */}
+                  <div className="bg-[#F8F9FD] p-2 rounded-xl border border-[#EEF1F6]">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] text-slate-500 font-bold">Y (Top)</label>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('y', -10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="-10px"
+                        >-10</button>
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('y', 10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="+10px"
+                        >+10</button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('y', -1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="-1px"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <input
+                        type="number"
+                        value={activeBox === 'featured' ? fBox.y : tBox.y}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (activeBox === 'featured') setFBox((p) => ({ ...p, y: val }));
+                          else setTBox((p) => ({ ...p, y: val }));
+                        }}
+                        className="w-full text-center py-1 rounded bg-white border border-[#EEF1F6] text-xs font-bold text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('y', 1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="+1px"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">Width (px)</label>
-                    <input
-                      type="number"
-                      value={activeBox === 'featured' ? fBox.width : tBox.width}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        if (activeBox === 'featured') setFBox((p) => ({ ...p, width: val }));
-                        else setTBox((p) => ({ ...p, width: val }));
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold"
-                    />
+                  {/* Width */}
+                  <div className="bg-[#F8F9FD] p-2 rounded-xl border border-[#EEF1F6]">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] text-slate-500 font-bold">Width (W)</label>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('width', -10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="-10px"
+                        >-10</button>
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('width', 10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="+10px"
+                        >+10</button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('width', -1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="-1px"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <input
+                        type="number"
+                        value={activeBox === 'featured' ? fBox.width : tBox.width}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (activeBox === 'featured') setFBox((p) => ({ ...p, width: val }));
+                          else setTBox((p) => ({ ...p, width: val }));
+                        }}
+                        className="w-full text-center py-1 rounded bg-white border border-[#EEF1F6] text-xs font-bold text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('width', 1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="+1px"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">Height (px)</label>
-                    <input
-                      type="number"
-                      value={activeBox === 'featured' ? fBox.height : tBox.height}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        if (activeBox === 'featured') setFBox((p) => ({ ...p, height: val }));
-                        else setTBox((p) => ({ ...p, height: val }));
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold"
-                    />
+                  {/* Height */}
+                  <div className="bg-[#F8F9FD] p-2 rounded-xl border border-[#EEF1F6]">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] text-slate-500 font-bold">Height (H)</label>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('height', -10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="-10px"
+                        >-10</button>
+                        <button
+                          type="button"
+                          onClick={() => adjustActiveBoxCoordinate('height', 10)}
+                          className="px-1 py-0.5 rounded bg-white hover:bg-slate-200 text-[9px] font-bold border border-slate-200 text-slate-600 cursor-pointer"
+                          title="+10px"
+                        >+10</button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('height', -1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="-1px"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <input
+                        type="number"
+                        value={activeBox === 'featured' ? fBox.height : tBox.height}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (activeBox === 'featured') setFBox((p) => ({ ...p, height: val }));
+                          else setTBox((p) => ({ ...p, height: val }));
+                        }}
+                        className="w-full text-center py-1 rounded bg-white border border-[#EEF1F6] text-xs font-bold text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjustActiveBoxCoordinate('height', 1)}
+                        className="p-1 rounded bg-white hover:bg-slate-200 border border-slate-200 text-slate-600 cursor-pointer"
+                        title="+1px"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Canvas Base Color (Under transparent PNG regions) */}
+              <div className="space-y-1.5 pt-2 border-t border-[#EEF1F6]">
+                <label className="text-[11px] font-extrabold text-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <Palette className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Canvas Base Color (Under Cutouts):</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-slate-500">{backgroundColor}</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={backgroundColor === 'transparent' ? '#0B0F19' : backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    className="w-8 h-8 rounded border border-slate-200 cursor-pointer p-0 shrink-0"
+                  />
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {[
+                      { label: 'Navy Dark', val: '#0B0F19' },
+                      { label: 'White', val: '#FFFFFF' },
+                      { label: 'Deep Blue', val: '#1E3A8A' },
+                      { label: 'Crimson', val: '#991B1B' },
+                      { label: 'Slate', val: '#1E293B' },
+                    ].map((c) => (
+                      <button
+                        key={c.val}
+                        type="button"
+                        onClick={() => setBackgroundColor(c.val)}
+                        className={`px-2 py-1 rounded text-[10px] font-bold border cursor-pointer transition-all ${
+                          backgroundColor === c.val
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1492,6 +1984,34 @@ function SocialImageGeneratorContent() {
                         if (f) handleFontFileUpload(f);
                       }}
                     />
+                  </div>
+
+                  {/* Hindi Font Quick Chips */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 block">Popular Hindi News Fonts:</span>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {[
+                        'Noto Sans Devanagari',
+                        'Rozha One',
+                        'Mukta',
+                        'Hind',
+                        'Yatra One',
+                        'Poppins',
+                      ].map((fn) => (
+                        <button
+                          key={fn}
+                          type="button"
+                          onClick={() => setTBox((p) => ({ ...p, fontFamily: fn }))}
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                            tBox.fontFamily === fn
+                              ? 'bg-[#FF007A] text-white border-[#FF007A]'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {fn}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Font Family Dropdown with Hindi & English Groups */}
@@ -1599,22 +2119,49 @@ function SocialImageGeneratorContent() {
                     </div>
                   </div>
 
-                  {/* Alignment */}
+                  {/* Text Alignment */}
                   <div>
-                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">
+                    <label className="text-[10px] text-slate-400 font-bold block mb-1">
                       Text Alignment
                     </label>
-                    <select
-                      value={tBox.alignment || 'left'}
-                      onChange={(e) =>
-                        setTBox((p) => ({ ...p, alignment: e.target.value as any }))
-                      }
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold"
-                    >
-                      <option value="left">Left Align</option>
-                      <option value="center">Center Align</option>
-                      <option value="right">Right Align</option>
-                    </select>
+                    <div className="grid grid-cols-3 gap-1 p-1 bg-[#F8F9FD] rounded-xl border border-[#EEF1F6]">
+                      <button
+                        type="button"
+                        onClick={() => setTBox((p) => ({ ...p, alignment: 'left' }))}
+                        className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          tBox.alignment === 'left' || !tBox.alignment
+                            ? 'bg-slate-900 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-black'
+                        }`}
+                      >
+                        <AlignLeft className="w-3.5 h-3.5" />
+                        <span>Left</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTBox((p) => ({ ...p, alignment: 'center' }))}
+                        className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          tBox.alignment === 'center'
+                            ? 'bg-slate-900 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-black'
+                        }`}
+                      >
+                        <AlignCenter className="w-3.5 h-3.5" />
+                        <span>Center</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTBox((p) => ({ ...p, alignment: 'right' }))}
+                        className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          tBox.alignment === 'right'
+                            ? 'bg-slate-900 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-black'
+                        }`}
+                      >
+                        <AlignRight className="w-3.5 h-3.5" />
+                        <span>Right</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

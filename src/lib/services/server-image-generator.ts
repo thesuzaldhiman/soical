@@ -524,13 +524,26 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     left: 0,
   });
 
-  // Base canvas background
+  // Base canvas background (respects template.backgroundColor if specified)
+  let bgR = 11;
+  let bgG = 15;
+  let bgB = 25;
+  if (template?.backgroundColor && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(template.backgroundColor)) {
+    let hex = template.backgroundColor.replace('#', '');
+    if (hex.length === 3) {
+      hex = hex.split('').map((c) => c + c).join('');
+    }
+    bgR = parseInt(hex.substring(0, 2), 16);
+    bgG = parseInt(hex.substring(2, 4), 16);
+    bgB = parseInt(hex.substring(4, 6), 16);
+  }
+
   const baseCanvas = await sharp({
     create: {
       width,
       height,
       channels: 4,
-      background: { r: 11, g: 15, b: 25, alpha: 1 },
+      background: { r: bgR, g: bgG, b: bgB, alpha: 1 },
     },
   })
     .png()

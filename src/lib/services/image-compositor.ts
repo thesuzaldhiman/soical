@@ -30,7 +30,7 @@ export async function renderTemplateToCanvas(
   const isOverlayMode = template.layerMode !== 'background';
 
   // 1. Draw base fallback background
-  drawFallbackBackground(ctx, width, height);
+  drawFallbackBackground(ctx, width, height, template.backgroundColor);
 
   const fBox = template.featuredImageBox || {
     x: 0,
@@ -125,7 +125,12 @@ export async function renderTemplateToCanvas(
   return canvas.toDataURL('image/png');
 }
 
-function drawFallbackBackground(ctx: CanvasRenderingContext2D, width: number, height: number) {
+function drawFallbackBackground(ctx: CanvasRenderingContext2D, width: number, height: number, customBg?: string) {
+  if (customBg && customBg !== 'transparent') {
+    ctx.fillStyle = customBg;
+    ctx.fillRect(0, 0, width, height);
+    return;
+  }
   const grad = ctx.createLinearGradient(0, 0, 0, height);
   grad.addColorStop(0, '#0B0F19');
   grad.addColorStop(0.65, '#111827');

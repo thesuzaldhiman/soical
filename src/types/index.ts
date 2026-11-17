@@ -240,6 +240,7 @@ export interface SigTemplate {
   canvasWidth: number;
   canvasHeight: number;
   templateImageUrl: string;
+  backgroundColor?: string; // Hex background color under transparent PNG areas (e.g. #0b0f19, #1e3a8a, or custom)
   layerMode?: 'overlay' | 'background'; // 'overlay' = photo behind transparent PNG frame (default); 'background' = template behind photo
   customFontUrl?: string;
   videoConfig?: SigTemplateVideoConfig;
