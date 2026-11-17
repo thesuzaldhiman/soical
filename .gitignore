@@ -49,3 +49,7 @@ public/uploads/videos/*
 !public/uploads/videos/.gitkeep
 public/uploads/tmp/*
 !public/uploads/tmp/.gitkeep
+
+# native binaries (downloaded/extracted per platform at build/runtime)
+/bin/
+/public/bin/

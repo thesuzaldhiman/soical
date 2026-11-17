@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
+import zlib from 'zlib';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { VideoMotionEffect, VideoOverlayType } from '@/types';
@@ -7,36 +9,166 @@ import { saveMediaToDb, getMediaFromDb } from '@/lib/db/mysql';
 
 const execFileAsync = promisify(execFile);
 
-// Resolve ffmpeg path safely (supports bundled bin, ffmpeg-static, and system PATH)
-function getFfmpegPath(): string {
-  // 1. Check local project bin/ directory (e.g. scripts/ensure-ffmpeg.js download)
-  const localBin = path.join(process.cwd(), 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-  if (fs.existsSync(localBin)) {
+let cachedFfmpegPath: string | null = null;
+
+function pipeDownload(
+  stream: import('http').IncomingMessage,
+  dest: string,
+  resolve: (val: boolean) => void
+) {
+  try {
+    const gunzip = zlib.createGunzip();
+    const fileStream = fs.createWriteStream(dest);
+
+    stream.pipe(gunzip).pipe(fileStream);
+
+    fileStream.on('finish', () => {
+      fileStream.close(() => {
+        try {
+          fs.chmodSync(dest, 0o755);
+        } catch {}
+        console.log(`[server-video-generator] Downloaded & prepared ffmpeg binary at: ${dest}`);
+        resolve(true);
+      });
+    });
+
+    gunzip.on('error', (err) => {
+      console.warn('[server-video-generator] Gunzip error:', err.message);
+      resolve(false);
+    });
+
+    fileStream.on('error', (err) => {
+      console.warn('[server-video-generator] FileStream error:', err.message);
+      resolve(false);
+    });
+  } catch (err) {
+    console.warn('[server-video-generator] Pipe error:', err);
+    resolve(false);
+  }
+}
+
+async function downloadFfmpegTo(dest: string): Promise<boolean> {
+  const platform = process.platform;
+  const arch = process.arch;
+  const tag = 'b6.1.1';
+  const url = `https://github.com/eugeneware/ffmpeg-static/releases/download/${tag}/ffmpeg-${platform}-${arch}.gz`;
+
+  return new Promise((resolve) => {
     try {
-      fs.chmodSync(localBin, 0o755);
-    } catch {
-      // ignore chmod error
+      const dir = path.dirname(dest);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      const req = https.get(url, (res) => {
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          https.get(res.headers.location, (redirectRes) => {
+            if (redirectRes.statusCode !== 200) {
+              console.warn(`[server-video-generator] Redirect failed: ${redirectRes.statusCode}`);
+              return resolve(false);
+            }
+            pipeDownload(redirectRes, dest, resolve);
+          }).on('error', (err) => {
+            console.warn('[server-video-generator] Redirect error:', err.message);
+            resolve(false);
+          });
+          return;
+        }
+
+        if (res.statusCode !== 200) {
+          console.warn(`[server-video-generator] Download failed with status: ${res.statusCode}`);
+          return resolve(false);
+        }
+
+        pipeDownload(res, dest, resolve);
+      });
+
+      req.on('error', (err) => {
+        console.warn('[server-video-generator] Download request error:', err.message);
+        resolve(false);
+      });
+      req.setTimeout(30000, () => {
+        req.destroy();
+        resolve(false);
+      });
+    } catch (e) {
+      console.warn('[server-video-generator] downloadFfmpegTo error:', e);
+      resolve(false);
     }
-    return localBin;
+  });
+}
+
+// Resolve ffmpeg path safely (supports bundled bin, public/bin, ffmpeg-static, system PATH, and on-demand fallback)
+async function getFfmpegPath(): Promise<string> {
+  if (cachedFfmpegPath && fs.existsSync(cachedFfmpegPath)) {
+    return cachedFfmpegPath;
   }
 
-  // 2. Check ffmpeg-static
+  const binaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+
+  // 1. Explicit environment variable
+  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
+    cachedFfmpegPath = process.env.FFMPEG_PATH;
+    return cachedFfmpegPath;
+  }
+
+  // 2. Candidate paths in filesystem
+  const candidatePaths = [
+    path.join(process.cwd(), 'bin', binaryName),
+    path.join(process.cwd(), 'public', 'bin', binaryName),
+    path.join(process.cwd(), '..', 'public_html', 'bin', binaryName),
+    path.join(process.cwd(), 'public', 'uploads', 'bin', binaryName),
+    path.join('/tmp', binaryName),
+    path.join(__dirname, '..', '..', '..', 'bin', binaryName),
+    path.join(__dirname, '..', '..', '..', 'public', 'bin', binaryName),
+  ];
+
+  for (const p of candidatePaths) {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).size > 1000000) {
+        try { fs.chmodSync(p, 0o755); } catch {}
+        cachedFfmpegPath = p;
+        console.log(`[server-video-generator] Using ffmpeg from: ${p}`);
+        return p;
+      }
+    } catch {}
+  }
+
+  // 3. ffmpeg-static require
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ffmpegStatic = require('ffmpeg-static');
-    if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
+    if (ffmpegStatic && fs.existsSync(ffmpegStatic) && fs.statSync(ffmpegStatic).size > 1000000) {
+      try { fs.chmodSync(ffmpegStatic, 0o755); } catch {}
+      cachedFfmpegPath = ffmpegStatic;
+      console.log(`[server-video-generator] Using ffmpeg from ffmpeg-static: ${ffmpegStatic}`);
       return ffmpegStatic;
     }
   } catch (e) {
-    console.warn('[server-video-generator] Could not require ffmpeg-static:', e);
+    console.warn('[server-video-generator] ffmpeg-static require failed:', e);
   }
 
-  // 3. Common Unix/Linux locations
+  // 4. Common Linux / Unix system binaries
   const commonLinuxPaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg'];
   for (const p of commonLinuxPaths) {
     if (fs.existsSync(p)) {
+      cachedFfmpegPath = p;
       return p;
     }
+  }
+
+  // 5. Auto-download on demand to /tmp or public/uploads/bin
+  console.log('[server-video-generator] No local ffmpeg found. Attempting dynamic download fallback...');
+  const tmpDest = path.join('/tmp', binaryName);
+  const downloadedToTmp = await downloadFfmpegTo(tmpDest);
+  if (downloadedToTmp && fs.existsSync(tmpDest)) {
+    cachedFfmpegPath = tmpDest;
+    return tmpDest;
+  }
+
+  const appBinDest = path.join(process.cwd(), 'public', 'uploads', 'bin', binaryName);
+  const downloadedToApp = await downloadFfmpegTo(appBinDest);
+  if (downloadedToApp && fs.existsSync(appBinDest)) {
+    cachedFfmpegPath = appBinDest;
+    return appBinDest;
   }
 
   return 'ffmpeg';
@@ -144,7 +276,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   } = options;
 
   const duration = Math.min(Math.max(durationSeconds, 5), 60); // Clamp between 5s and 60s
-  const ffmpegBin = getFfmpegPath();
+  const ffmpegBin = await getFfmpegPath();
 
   // Ensure output directories exist
   const videosDir = path.join(process.cwd(), 'public', 'uploads', 'videos');
@@ -318,7 +450,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     finalFilePath
   );
 
-  console.log(`[server-video-generator] Spawning ffmpeg: effect=${effect}, duration=${duration}s, hasMusic=${!!inputMusic}`);
+  console.log(`[server-video-generator] Spawning ffmpeg from '${ffmpegBin}': effect=${effect}, duration=${duration}s, hasMusic=${!!inputMusic}`);
 
   try {
     await execFileAsync(ffmpegBin, args, { timeout: 60000 });
