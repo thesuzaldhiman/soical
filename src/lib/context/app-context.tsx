@@ -24,6 +24,8 @@ import {
   UserSubscription,
   WordPressCategory,
   MetaAppConfig,
+  YouTubeSyncRule,
+  YouTubeSyncLog,
 } from '@/types';
 import {
   INITIAL_USER,
@@ -182,6 +184,15 @@ interface AppContextType {
   syncMonetizationAll: () => void;
   isQueueProcessing: boolean;
   processScheduledQueueNow: () => Promise<{ checked: number; dispatched: number }>;
+
+  // YouTube Channel to Social Repurposer
+  youtubeRules: YouTubeSyncRule[];
+  youtubeLogs: YouTubeSyncLog[];
+  saveYouTubeRule: (rule: YouTubeSyncRule) => Promise<boolean>;
+  deleteYouTubeRule: (id: string) => Promise<boolean>;
+  toggleYouTubeRule: (id: string) => Promise<boolean>;
+  triggerYouTubeSync: (ruleId: string) => Promise<any>;
+  refreshYouTubeRules: () => Promise<void>;
 }
 
 const globalForContext = globalThis as unknown as { __appContext?: React.Context<AppContextType | null> };
@@ -301,6 +312,13 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   syncMonetizationAll: noop,
   isQueueProcessing: false,
   processScheduledQueueNow: async () => ({ checked: 0, dispatched: 0 }),
+  youtubeRules: [],
+  youtubeLogs: [],
+  saveYouTubeRule: async () => false,
+  deleteYouTubeRule: async () => false,
+  toggleYouTubeRule: async () => false,
+  triggerYouTubeSync: async () => null,
+  refreshYouTubeRules: async () => {},
 };
 
 const getStorageKeyForEmail = (email?: string) => {
@@ -398,6 +416,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [postPerformances, setPostPerformances] = useState<PostPerformanceMetric[]>(INITIAL_POST_PERFORMANCES);
   const [postComments, setPostComments] = useState<PostComment[]>(INITIAL_POST_COMMENTS);
   const [automations, setAutomations] = useState<AutomationFeed[]>(INITIAL_AUTOMATIONS);
+  const [youtubeRules, setYoutubeRules] = useState<YouTubeSyncRule[]>([]);
+  const [youtubeLogs, setYoutubeLogs] = useState<YouTubeSyncLog[]>([]);
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -2647,6 +2667,106 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // ── YouTube Channel to Social Auto-Repurposer Functions ──
+  const refreshYouTubeRules = useCallback(async () => {
+    try {
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      const res = await fetch(`/api/youtube-sync/rules?email=${encodeURIComponent(cleanEmail)}`);
+      const data = await res.json();
+      if (data.success) {
+        if (Array.isArray(data.rules)) setYoutubeRules(data.rules);
+        if (Array.isArray(data.logs)) setYoutubeLogs(data.logs);
+      }
+    } catch (e) {
+      console.warn('[refreshYouTubeRules] Fetch error:', e);
+    }
+  }, [user?.email]);
+
+  const saveYouTubeRule = async (rule: YouTubeSyncRule): Promise<boolean> => {
+    try {
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      const res = await fetch('/api/youtube-sync/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, rule }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.rules)) {
+        setYoutubeRules(data.rules);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const deleteYouTubeRule = async (id: string): Promise<boolean> => {
+    try {
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      const res = await fetch(
+        `/api/youtube-sync/rules?email=${encodeURIComponent(cleanEmail)}&id=${encodeURIComponent(id)}`,
+        { method: 'DELETE' }
+      );
+      const data = await res.json();
+      if (data.success && Array.isArray(data.rules)) {
+        setYoutubeRules(data.rules);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const toggleYouTubeRule = async (id: string): Promise<boolean> => {
+    const target = youtubeRules.find((r) => r.id === id);
+    if (!target) return false;
+    return saveYouTubeRule({ ...target, isActive: !target.isActive });
+  };
+
+  const triggerYouTubeSync = async (ruleId: string): Promise<any> => {
+    try {
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      const res = await fetch('/api/youtube-sync/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, ruleId }),
+      });
+      const data = await res.json();
+      await refreshYouTubeRules();
+      return data;
+    } catch (e) {
+      console.error('[triggerYouTubeSync] Error:', e);
+      return null;
+    }
+  };
+
+  // Initial fetch of YouTube rules
+  useEffect(() => {
+    refreshYouTubeRules();
+  }, [refreshYouTubeRules]);
+
   // Real & Live Utilities
   const loginWithGoogle = () => {
     alert('Google login is currently disabled. Please sign in with your email and password.');
@@ -3706,6 +3826,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         syncMonetizationAll,
         isQueueProcessing,
         processScheduledQueueNow,
+        youtubeRules,
+        youtubeLogs,
+        saveYouTubeRule,
+        deleteYouTubeRule,
+        toggleYouTubeRule,
+        triggerYouTubeSync,
+        refreshYouTubeRules,
       }}
     >
       {children}

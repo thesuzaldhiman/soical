@@ -202,6 +202,20 @@ export async function initDbTables(): Promise<boolean> {
         console.warn(`[MySQL] Note on adding logs column:`, e);
       }
 
+      // Safe column migration for youtube_rules & youtube_logs in app_user_data
+      try {
+        const [yrCols] = await connection.query<any[]>(`SHOW COLUMNS FROM app_user_data LIKE 'youtube_rules'`);
+        if (!yrCols || yrCols.length === 0) {
+          await connection.query(`ALTER TABLE app_user_data ADD COLUMN youtube_rules LONGTEXT NULL`);
+        }
+        const [ylCols] = await connection.query<any[]>(`SHOW COLUMNS FROM app_user_data LIKE 'youtube_logs'`);
+        if (!ylCols || ylCols.length === 0) {
+          await connection.query(`ALTER TABLE app_user_data ADD COLUMN youtube_logs LONGTEXT NULL`);
+        }
+      } catch (e) {
+        console.warn(`[MySQL] Note on adding youtube_rules/logs column:`, e);
+      }
+
       // Safe table creation for wp_plugins catalog
       await connection.query(`
         CREATE TABLE IF NOT EXISTS wp_plugins (

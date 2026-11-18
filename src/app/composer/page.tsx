@@ -242,6 +242,18 @@ function ComposerContent() {
   const [isScheduleMode, setIsScheduleMode] = useState(false);
   const [scheduledDateTime, setScheduledDateTime] = useState('');
 
+  // Multi-Page Staggered Interval in Composer
+  const [composerIntervalEnabled, setComposerIntervalEnabled] = useState(false);
+  const [composerIntervalMinSec, setComposerIntervalMinSec] = useState(60);
+  const [composerIntervalMaxSec, setComposerIntervalMaxSec] = useState(180);
+
+  const INTERVAL_PRESETS = [
+    { label: 'Fast (30s – 1m)', min: 30, max: 60 },
+    { label: 'Recommended (1m – 3m)', min: 60, max: 180 },
+    { label: 'Safe (3m – 5m)', min: 180, max: 300 },
+    { label: 'Conservative (5m – 15m)', min: 300, max: 900 },
+  ];
+
   // Right Sidebar Filters & Preview
   const [pageSearch, setPageSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState<Platform | 'all'>('all');
@@ -484,8 +496,8 @@ function ComposerContent() {
 
     const activeMediaUrl = postType === 'image' || postType === 'video' ? mediaUrl.trim() : '';
     const activeLinkUrl = postType === 'link' ? linkUrl.trim() : '';
-    const intervalMin = settings?.pageIntervalMinSeconds ?? 0;
-    const intervalMax = settings?.pageIntervalMaxSeconds ?? 0;
+    const intervalMin = composerIntervalEnabled ? composerIntervalMinSec : (settings?.pageIntervalMinSeconds ?? 0);
+    const intervalMax = composerIntervalEnabled ? composerIntervalMaxSec : (settings?.pageIntervalMaxSeconds ?? 0);
 
     if (mode !== 'draft') {
       if (!message.trim() && !activeMediaUrl && !activeLinkUrl) {
@@ -542,6 +554,56 @@ function ComposerContent() {
     }
 
     if (mode === 'schedule') {
+      const targetPages = pages.filter((p) => selectedPageIds.includes(p.id));
+
+      if (targetPages.length > 1 && composerIntervalEnabled && composerIntervalMaxSec > 0) {
+        // Multi-page staggered schedule
+        const baseTimeMs = new Date(scheduledDateTime).getTime();
+        let cumulativeDelaySec = 0;
+
+        for (let i = 0; i < targetPages.length; i++) {
+          const pg = targetPages[i];
+          if (i > 0) {
+            const randDelay =
+              Math.floor(
+                Math.random() * (Math.max(composerIntervalMinSec, composerIntervalMaxSec) - composerIntervalMinSec + 1)
+              ) + composerIntervalMinSec;
+            cumulativeDelaySec += randDelay;
+          }
+          const itemScheduledAt = new Date(baseTimeMs + cumulativeDelaySec * 1000).toISOString();
+
+          const scheduledItem = createPost({
+            postType,
+            message,
+            mediaUrl: activeMediaUrl || undefined,
+            linkUrl: activeLinkUrl || undefined,
+            commentText: firstComment.trim() || undefined,
+            intervalMinSeconds: composerIntervalMinSec,
+            intervalMaxSeconds: composerIntervalMaxSec,
+            pageIds: [pg.id],
+            status: 'scheduled',
+            scheduledAt: itemScheduledAt,
+          });
+
+          try {
+            await fetch('/api/posts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: user?.email, post: scheduledItem }),
+            });
+          } catch {}
+        }
+
+        setIsSubmitting(false);
+        setStatusBanner({
+          type: 'success',
+          text: `Scheduled across ${targetPages.length} pages starting at ${new Date(scheduledDateTime).toLocaleTimeString()} with staggered ${composerIntervalMinSec}s–${composerIntervalMaxSec}s random intervals!`,
+        });
+        setTimeout(() => router.push('/library?status=scheduled'), 1200);
+        return;
+      }
+
+      // Standard single post schedule
       const newScheduled = createPost({
         postType,
         message,
@@ -571,8 +633,126 @@ function ComposerContent() {
     }
 
     // Immediate live publish
-    setPublishingMessage(`Broadcasting to ${selectedPageIds.length} destination(s)...`);
     const targetPages = pages.filter((p) => selectedPageIds.includes(p.id));
+
+    // MULTI-PAGE STAGGERED PUBLISH:
+    // If multiple pages are selected and staggered interval is enabled:
+    // Page 0 publishes immediately to FB. Pages 1..N-1 get scheduled with cumulative random delays.
+    if (targetPages.length > 1 && composerIntervalEnabled && composerIntervalMaxSec > 0) {
+      setPublishingMessage(`Publishing live to 1st page (${targetPages[0].name}) and queuing remaining ${targetPages.length - 1} pages...`);
+      const firstPage = targetPages[0];
+      const acc0 = accounts.find((a) => a.id === firstPage.accountId);
+
+      try {
+        const res = await fetch('/api/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            postType,
+            message,
+            mediaUrl: activeMediaUrl || undefined,
+            linkUrl: activeLinkUrl || undefined,
+            commentText: firstComment.trim() || undefined,
+            isAiGenerated,
+            targets: [
+              {
+                id: firstPage.id,
+                platform: firstPage.platform,
+                name: firstPage.name,
+                pageId: firstPage.pageId,
+                botToken: firstPage.botToken || acc0?.botToken,
+                chatId: firstPage.chatId || firstPage.pageId,
+                accessToken: firstPage.accessToken || acc0?.accessToken,
+                metaAppId: firstPage.metaAppId || acc0?.metaAppId,
+                metaAppName: resolveMetaAppName(firstPage.metaAppId || acc0?.metaAppId, firstPage.metaAppName || acc0?.metaAppName),
+              },
+            ],
+          }),
+        });
+
+        const data = await res.json();
+
+        const publishedPost = createPost({
+          postType,
+          message,
+          mediaUrl: activeMediaUrl || undefined,
+          linkUrl: activeLinkUrl || undefined,
+          commentText: firstComment.trim() || undefined,
+          intervalMinSeconds: composerIntervalMinSec,
+          intervalMaxSeconds: composerIntervalMaxSec,
+          pageIds: [firstPage.id],
+          status: data.overallStatus || 'published',
+          results: data.results,
+        });
+
+        try {
+          await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user?.email, post: publishedPost }),
+          });
+        } catch {}
+
+        // Schedule remaining pages with cumulative random delays
+        let cumulativeDelaySec = 0;
+        for (let i = 1; i < targetPages.length; i++) {
+          const nextPg = targetPages[i];
+          const randDelay =
+            Math.floor(
+              Math.random() * (Math.max(composerIntervalMinSec, composerIntervalMaxSec) - composerIntervalMinSec + 1)
+            ) + composerIntervalMinSec;
+          cumulativeDelaySec += randDelay;
+          const scheduledTime = new Date(Date.now() + cumulativeDelaySec * 1000).toISOString();
+
+          const staggeredPost = createPost({
+            postType,
+            message,
+            mediaUrl: activeMediaUrl || undefined,
+            linkUrl: activeLinkUrl || undefined,
+            commentText: firstComment.trim() || undefined,
+            intervalMinSeconds: composerIntervalMinSec,
+            intervalMaxSeconds: composerIntervalMaxSec,
+            pageIds: [nextPg.id],
+            status: 'scheduled',
+            scheduledAt: scheduledTime,
+          });
+
+          try {
+            await fetch('/api/posts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: user?.email, post: staggeredPost }),
+            });
+          } catch {}
+        }
+
+        setIsSubmitting(false);
+        setPublishingMessage(null);
+
+        setStatusBanner({
+          type: 'success',
+          text: `Page 1 (${firstPage.name}) published live! ${targetPages.length - 1} remaining pages scheduled with staggered random interval (${composerIntervalMinSec}s – ${composerIntervalMaxSec}s).`,
+          postUrl: data.results?.find((r: { postUrl?: string }) => r.postUrl)?.postUrl,
+        });
+
+        setTimeout(() => {
+          router.push('/dashboard');
+        }, 2000);
+        return;
+      } catch (err: unknown) {
+        console.error('Multi-page publish error:', err);
+        setIsSubmitting(false);
+        setPublishingMessage(null);
+        setStatusBanner({
+          type: 'error',
+          text: err instanceof Error ? err.message : 'Failed to publish to destination pages.',
+        });
+        return;
+      }
+    }
+
+    // Standard synchronous broadcast to all destinations
+    setPublishingMessage(`Broadcasting to ${selectedPageIds.length} destination(s)...`);
 
     try {
       const res = await fetch('/api/publish', {
@@ -1230,6 +1410,121 @@ function ComposerContent() {
                 </div>
               )}
             </div>
+
+            {/* Multi-Page Staggered Delay Option (Anti-Ban / Anti-Spam Range) */}
+            {selectedPageIds.length > 1 && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3.5 animate-fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-blue-600 shadow-2xs shrink-0">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900">
+                          Multi-Page Staggered Delay (Anti-Ban Protection)
+                        </span>
+                        <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                          {selectedPageIds.length} Destinations
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Post to multiple pages with random delay between them instead of all at once.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer self-start sm:self-auto">
+                    <input
+                      type="checkbox"
+                      checked={composerIntervalEnabled}
+                      onChange={(e) => setComposerIntervalEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                    />
+                    <span className="text-xs font-bold text-slate-700 select-none">
+                      Enable Stagger Interval
+                    </span>
+                  </label>
+                </div>
+
+                {composerIntervalEnabled && (
+                  <div className="pt-2 border-t border-slate-200/80 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-600">Presets:</span>
+                      {INTERVAL_PRESETS.map((p) => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => {
+                            setComposerIntervalMinSec(p.min);
+                            setComposerIntervalMaxSec(p.max);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-colors ${
+                            composerIntervalMinSec === p.min && composerIntervalMaxSec === p.max
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:border-slate-400'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-700">Min Delay:</span>
+                        <select
+                          value={composerIntervalMinSec}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setComposerIntervalMinSec(val);
+                            if (val > composerIntervalMaxSec) setComposerIntervalMaxSec(val);
+                          }}
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none"
+                        >
+                          <option value={15}>15 sec</option>
+                          <option value={30}>30 sec</option>
+                          <option value={60}>1 min</option>
+                          <option value={120}>2 min</option>
+                          <option value={180}>3 min</option>
+                          <option value={300}>5 min</option>
+                          <option value={600}>10 min</option>
+                          <option value={900}>15 min</option>
+                        </select>
+                      </div>
+
+                      <span className="text-slate-400 font-bold">–</span>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-700">Max Delay:</span>
+                        <select
+                          value={composerIntervalMaxSec}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setComposerIntervalMaxSec(val);
+                            if (val < composerIntervalMinSec) setComposerIntervalMinSec(val);
+                          }}
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none"
+                        >
+                          <option value={30}>30 sec</option>
+                          <option value={60}>1 min</option>
+                          <option value={120}>2 min</option>
+                          <option value={180}>3 min</option>
+                          <option value={300}>5 min</option>
+                          <option value={600}>10 min</option>
+                          <option value={900}>15 min</option>
+                          <option value={1800}>30 min</option>
+                        </select>
+                      </div>
+
+                      <div className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                        ✓ 1st page posts immediately; remaining {selectedPageIds.length - 1} pages randomly staggered ({composerIntervalMinSec}s–{composerIntervalMaxSec}s).
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 5. Footer Action Buttons */}

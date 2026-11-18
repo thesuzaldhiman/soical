@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dispatchToTargets, PublishTarget } from '@/lib/services/publisher';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES } from '@/lib/state/mock-data';
-import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate } from '@/types';
+import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate, AppSettings } from '@/types';
 import { generateServerCardImage } from '@/lib/services/server-image-generator';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
 import { sanitizePostMedia } from '@/lib/utils/media-storage';
@@ -19,6 +19,68 @@ function parseJsonSafe(val: any, fallback: any) {
   } catch {
     return fallback;
   }
+}
+
+function formatAutomationCaption({
+  title,
+  subtitle,
+  excerpt,
+  permalink,
+  captionStyle = 'title_char_limit',
+  charLimit = 80,
+  seeMoreText = '... See more',
+  linkPlacement = 'first_comment',
+  commentTemplate = '👉 पूरी खबर यहाँ पढ़ें: {link}',
+}: {
+  title: string;
+  subtitle?: string;
+  excerpt?: string;
+  permalink?: string;
+  captionStyle?: 'title_char_limit' | 'news_points' | 'full_title';
+  charLimit?: number;
+  seeMoreText?: string;
+  linkPlacement?: 'first_comment' | 'in_caption' | 'none';
+  commentTemplate?: string;
+}): { caption: string; commentText: string } {
+  let baseText = '';
+
+  if (captionStyle === 'title_char_limit') {
+    const limit = Math.max(20, charLimit || 80);
+    const suffix = seeMoreText || '... See more';
+    if (title.length > limit) {
+      const truncated = title.substring(0, limit);
+      const lastSpace = truncated.lastIndexOf(' ');
+      const cleanCut = lastSpace > limit * 0.6 ? truncated.substring(0, lastSpace) : truncated;
+      baseText = `${cleanCut.trim()}${suffix}`;
+    } else {
+      baseText = title;
+    }
+  } else if (captionStyle === 'news_points') {
+    baseText = title;
+    if (subtitle) {
+      baseText += `\n📌 ${subtitle}`;
+    }
+    if (excerpt) {
+      baseText += `\n\n${excerpt}`;
+    }
+  } else {
+    // 'full_title'
+    baseText = title;
+  }
+
+  let finalCaption = baseText.trim();
+  let commentText = '';
+
+  if (permalink) {
+    if (linkPlacement === 'first_comment') {
+      const template = commentTemplate || '👉 पूरी खबर यहाँ पढ़ें: {link}';
+      commentText = template.replace(/\{link\}/g, permalink);
+    } else if (linkPlacement === 'in_caption') {
+      finalCaption += `\n\n👉 पूरी खबर यहाँ पढ़ें: ${permalink}`;
+    }
+  }
+
+  return { caption: finalCaption, commentText };
 }
 
 function getLocalPosts(): Post[] {
@@ -41,7 +103,7 @@ function saveLocalPosts(posts: Post[]) {
   }
 }
 
-async function persistPosts(newPosts: Post[], email: string = 'me.sumitji@gmail.com') {
+async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail.com') {
   const sanitizedNewPosts = newPosts.map((p) => sanitizePostMedia(p));
   const localCurrent = getLocalPosts();
   saveLocalPosts([...sanitizedNewPosts, ...localCurrent]);
@@ -103,8 +165,9 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
   automations: AutomationFeed[];
   posts: Post[];
   sigTemplates: SigTemplate[];
+  settings?: AppSettings;
 }> {
-  const fallbackEmail = (explicitEmail || 'me.sumitji@gmail.com').toLowerCase().trim();
+  const fallbackEmail = (explicitEmail || 'suzaldhiman@gmail.com').toLowerCase().trim();
   const pool = getDbPool();
   if (!pool) {
     return {
@@ -114,6 +177,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
       automations: [] as AutomationFeed[],
       posts: getLocalPosts(),
       sigTemplates: INITIAL_SIG_TEMPLATES,
+      settings: {} as AppSettings,
     };
   }
 
@@ -124,7 +188,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
     // 1. If explicit email passed, use it directly
     if (explicitEmail) {
       const [rows] = await pool.query<any[]>(
-        'SELECT email, pages, categories, posts, automations, sig_templates FROM app_user_data WHERE email = ? LIMIT 1',
+        'SELECT email, pages, categories, posts, automations, sig_templates, settings FROM app_user_data WHERE email = ? LIMIT 1',
         [fallbackEmail]
       );
       if (rows && rows.length > 0) {
@@ -135,13 +199,14 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
           automations: parseJsonSafe(rows[0].automations, []),
           posts: parseJsonSafe(rows[0].posts, getLocalPosts()),
           sigTemplates: parseJsonSafe(rows[0].sig_templates, INITIAL_SIG_TEMPLATES),
+          settings: parseJsonSafe(rows[0].settings, {}),
         };
       }
     }
 
     // 2. Query all tenant users to find the owner of this site
     const [allUsers] = await pool.query<any[]>(
-      'SELECT email, pages, categories, posts, automations, accounts, sig_templates FROM app_user_data'
+      'SELECT email, pages, categories, posts, automations, accounts, sig_templates, settings FROM app_user_data'
     );
 
     if (allUsers && allUsers.length > 0) {
@@ -160,6 +225,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
+              settings: parseJsonSafe(u.settings, {}),
             };
           }
 
@@ -176,6 +242,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
+              settings: parseJsonSafe(u.settings, {}),
             };
           }
 
@@ -192,6 +259,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
+              settings: parseJsonSafe(u.settings, {}),
             };
           }
         }
@@ -212,6 +280,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
         automations: parseJsonSafe(activeUser.automations, []),
         posts: parseJsonSafe(activeUser.posts, getLocalPosts()),
         sigTemplates: parseJsonSafe(activeUser.sig_templates, INITIAL_SIG_TEMPLATES),
+        settings: parseJsonSafe(activeUser.settings, {}),
       };
     }
   } catch (err) {
@@ -225,6 +294,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
     automations: [] as AutomationFeed[],
     posts: getLocalPosts(),
     sigTemplates: INITIAL_SIG_TEMPLATES,
+    settings: {} as AppSettings,
   };
 }
 
@@ -522,6 +592,7 @@ export async function POST(request: NextRequest) {
     let matchedRuleName = '';
     let isDraftMode = false;
     let selectedSigTemplateId: string | undefined = undefined;
+    let matchingRule: AutomationFeed | undefined = undefined;
 
     // A. Explicit targets passed directly in payload
     if (Array.isArray(payload.targets) && payload.targets.length > 0) {
@@ -532,7 +603,7 @@ export async function POST(request: NextRequest) {
 
     // B. Check Website to FB Automation Rules
     if (targetPages.length === 0 && allAutomations.length > 0) {
-      const matchingRule = allAutomations.find((rule) => {
+      matchingRule = allAutomations.find((rule) => {
         if (rule.isActive === false) return false;
         if (rule.type !== 'website_to_fb' && rule.type !== 'wordpress') return false;
 
@@ -573,7 +644,8 @@ export async function POST(request: NextRequest) {
           const rulePageIds = new Set(matchingRule.targetPageIds);
           targetPages = allPages.filter((p) => rulePageIds.has(p.id) || rulePageIds.has(p.pageId));
         } else if (matchingRule.targetCategoryId) {
-          const catGroup = allCategories.find((c) => c.id === matchingRule.targetCategoryId);
+          const targetCatId = matchingRule.targetCategoryId;
+          const catGroup = allCategories.find((c) => c.id === targetCatId);
           if (catGroup && catGroup.pageIds) {
             const catPageIds = new Set(catGroup.pageIds);
             targetPages = allPages.filter((p) => catPageIds.has(p.id) || catPageIds.has(p.pageId));
@@ -642,8 +714,42 @@ export async function POST(request: NextRequest) {
       ? payload.social_titles.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0)
       : [];
 
+    const userSettings: Partial<AppSettings> = userState.settings || {};
+    const effectiveCaptionStyle =
+      matchingRule?.captionStyle ||
+      userSettings.automationCaptionStyle ||
+      'title_char_limit';
+    const effectiveCharLimit =
+      matchingRule?.titleCharLimit ||
+      userSettings.automationTitleCharLimit ||
+      80;
+    const effectiveSeeMoreText =
+      matchingRule?.seeMoreText ||
+      userSettings.automationSeeMoreText ||
+      '... See more';
+    const effectiveLinkPlacement =
+      matchingRule?.linkPlacement ||
+      userSettings.automationLinkPlacement ||
+      (addFirstComment ? 'first_comment' : 'in_caption');
+    const effectiveCommentTemplate =
+      matchingRule?.commentTemplate ||
+      userSettings.automationCommentTemplate ||
+      '👉 पूरी खबर यहाँ पढ़ें: {link}';
+
+    const intervalMinSeconds =
+      matchingRule?.pageIntervalMinSeconds ??
+      userSettings.automationPageIntervalMinSeconds ??
+      userSettings.pageIntervalMinSeconds ??
+      0;
+    const intervalMaxSeconds =
+      matchingRule?.pageIntervalMaxSeconds ??
+      userSettings.automationPageIntervalMaxSeconds ??
+      userSettings.pageIntervalMaxSeconds ??
+      0;
+
     const dispatchResults: any[] = [];
-    const commentText = addFirstComment && permalink ? `👉 पूरी खबर यहाँ पढ़ें: ${permalink}` : '';
+    const newScheduledPosts: Post[] = [];
+    let cumulativeDelayMs = 0;
     let firstGeneratedCardUrl: string | undefined = undefined;
 
     // Loop through each target page and dispatch according to selected format
@@ -687,14 +793,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      let message = assignedTitle;
-      if (assignedSubtitle) {
-        message += `\n📌 ${assignedSubtitle}`;
-      }
-      if (excerpt) {
-        message += `\n\n${excerpt}`;
-      }
-      message = message.trim();
+      // Format caption and comment according to automation rules
+      const formatted = formatAutomationCaption({
+        title: assignedTitle,
+        subtitle: assignedSubtitle,
+        excerpt,
+        permalink,
+        captionStyle: effectiveCaptionStyle,
+        charLimit: effectiveCharLimit,
+        seeMoreText: effectiveSeeMoreText,
+        linkPlacement: effectiveLinkPlacement,
+        commentTemplate: effectiveCommentTemplate,
+      });
+
+      const message = formatted.caption;
+      const commentText = formatted.commentText;
 
       let postTypeToSend: 'image' | 'link' | 'text' | 'video' = 'image';
       let mediaToSend: string = '';
@@ -705,15 +818,15 @@ export async function POST(request: NextRequest) {
         linkToSend = permalink;
       } else if (dispatchFormat === 'text_only') {
         postTypeToSend = 'text';
-        linkToSend = addFirstComment ? '' : permalink;
+        linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
       } else if (dispatchFormat === 'featured_image') {
         postTypeToSend = imageUrl ? 'image' : 'text';
         mediaToSend = imageUrl;
-        linkToSend = permalink;
+        linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
       } else if (dispatchFormat === 'ai_reel') {
         // AI Video Reel (9:16 Video with motion effects and background music)
         postTypeToSend = 'video';
-        linkToSend = permalink;
+        linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
 
         try {
           const cardBase64 = await generateServerCardImage({
@@ -749,7 +862,7 @@ export async function POST(request: NextRequest) {
       } else {
         // dispatchFormat === 'ai_image' (Canvas branded card with bold headline overlay)
         postTypeToSend = 'image';
-        linkToSend = permalink;
+        linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
 
         try {
           const cardBase64 = await generateServerCardImage({
@@ -830,7 +943,68 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Otherwise, dispatch live to Facebook
+      // MULTI-PAGE STAGGERED INTERVAL:
+      // If i > 0 and intervalMaxSeconds > 0, schedule this page in MySQL queue rather than immediate synchronous dispatch
+      if (i > 0 && intervalMaxSeconds > 0) {
+        const randDelaySec =
+          Math.floor(
+            Math.random() * (Math.max(intervalMinSeconds, intervalMaxSeconds) - intervalMinSeconds + 1)
+          ) + intervalMinSeconds;
+        cumulativeDelayMs += randDelaySec * 1000;
+        const scheduledAtIso = new Date(Date.now() + cumulativeDelayMs).toISOString();
+
+        const staggerPost: Post = {
+          id: `post_wp_stagger_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+          workspaceId: 'ws_default',
+          postType: postTypeToSend,
+          title: assignedTitle,
+          message,
+          mediaUrl: mediaToSend,
+          thumbnailUrl: mediaToSend || imageUrl || undefined,
+          featuredImageUrl: imageUrl || undefined,
+          isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
+          sigTemplateId: selectedSigTemplateId || templateToUse?.id,
+          linkUrl: linkToSend || undefined,
+          commentText: commentText || undefined,
+          pageIds: [page.id],
+          status: 'scheduled',
+          scheduledAt: scheduledAtIso,
+          intervalMinSeconds,
+          intervalMaxSeconds,
+          results: [
+            {
+              pageId: page.id,
+              platform: page.platform as any,
+              pageName: page.name,
+              status: 'scheduled',
+              titleUsed: assignedTitle,
+              subtitleUsed: assignedSubtitle,
+              mediaUrl: mediaToSend,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        newScheduledPosts.push(staggerPost);
+        dispatchResults.push({
+          pageId: page.id,
+          pageName: page.name,
+          platform: page.platform,
+          titleUsed: assignedTitle,
+          subtitleUsed: assignedSubtitle,
+          mediaUrl: mediaToSend,
+          titleIndex: i + 1,
+          status: 'scheduled',
+          scheduledAt: scheduledAtIso,
+          staggerDelaySeconds: Math.round(cumulativeDelayMs / 1000),
+          isUniqueVariation: true,
+        });
+        continue;
+      }
+
+      // Otherwise, dispatch live to Facebook (Page 0 or simultaneous mode)
       const targetItem: PublishTarget = {
         id: page.id,
         platform: page.platform,
@@ -891,26 +1065,42 @@ export async function POST(request: NextRequest) {
       ? 'draft'
       : dispatchResults.some((r) => r.status === 'success')
       ? 'published'
+      : dispatchResults.some((r) => r.status === 'scheduled')
+      ? 'published'
       : 'failed';
+
+    const firstPageFormatted = formatAutomationCaption({
+      title: mainTitle,
+      subtitle: payload.subtitle,
+      excerpt,
+      permalink,
+      captionStyle: effectiveCaptionStyle,
+      charLimit: effectiveCharLimit,
+      seeMoreText: effectiveSeeMoreText,
+      linkPlacement: effectiveLinkPlacement,
+      commentTemplate: effectiveCommentTemplate,
+    });
 
     const newPostRecord: Post = {
       id: `post_wp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       workspaceId: 'ws_default',
       postType: dispatchFormat === 'link_card' ? 'link' : dispatchFormat === 'text_only' ? 'text' : dispatchFormat === 'ai_reel' ? 'video' : 'image',
       title: mainTitle,
-      message: `${mainTitle}\n\n${excerpt}`.trim(),
+      message: firstPageFormatted.caption,
       mediaUrl: finalMedia,
       thumbnailUrl: finalMedia || imageUrl || undefined,
       featuredImageUrl: imageUrl || undefined,
       isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
       sigTemplateId: selectedSigTemplateId || templateToUse?.id,
-      linkUrl: permalink || undefined,
-      commentText: commentText || undefined,
-      pageIds: targetPages.map((p) => p.id),
+      linkUrl: (effectiveLinkPlacement === 'first_comment' ? undefined : permalink) || undefined,
+      commentText: firstPageFormatted.commentText || undefined,
+      pageIds: intervalMaxSeconds > 0 && targetPages.length > 1
+        ? [targetPages[0].id]
+        : targetPages.map((p) => p.id),
       status: postStatusValue,
       scheduledAt: new Date().toISOString(),
       publishedAt: isDraftMode ? undefined : new Date().toISOString(),
-      results: dispatchResults.map((r) => ({
+      results: dispatchResults.filter((r) => r.status !== 'scheduled').map((r) => ({
         pageId: r.pageId,
         platform: (r.platform || 'facebook') as any,
         pageName: r.pageName,
@@ -927,7 +1117,7 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    await persistPosts([newPostRecord], resolvedEmail);
+    await persistPosts([newPostRecord, ...newScheduledPosts], resolvedEmail);
 
     return NextResponse.json({
       success: true,
@@ -941,7 +1131,7 @@ export async function POST(request: NextRequest) {
       mainTitle,
       totalVariations: Math.max(1, incomingVariations.length, rawSocialTitles.length),
       assignedPagesCount: targetPages.length,
-      firstCommentEnabled: !!commentText,
+      firstCommentEnabled: !!firstPageFormatted.commentText,
       dispatchedCount: dispatchResults.filter((r) => r.status === 'success').length,
       results: dispatchResults,
       queuedAt: new Date().toISOString(),

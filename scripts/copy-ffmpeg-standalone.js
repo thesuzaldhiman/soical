@@ -47,6 +47,25 @@ if (fs.existsSync(standaloneDir)) {
       console.warn(`[copy-ffmpeg-standalone] Could not copy to ${dest}:`, e.message);
     }
   });
+  // Also copy yt-dlp if present
+  const ytdlpSrc = path.join(__dirname, '..', 'bin', 'yt-dlp');
+  if (fs.existsSync(ytdlpSrc) && fs.statSync(ytdlpSrc).size > 1000000) {
+    const ytdlpTargets = [
+      path.join(standaloneDir, 'bin', 'yt-dlp'),
+      path.join(standaloneDir, 'public', 'bin', 'yt-dlp'),
+    ];
+    ytdlpTargets.forEach((dest) => {
+      try {
+        const dir = path.dirname(dest);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.copyFileSync(ytdlpSrc, dest);
+        fs.chmodSync(dest, 0o755);
+        console.log(`[copy-ffmpeg-standalone] Injected yt-dlp into standalone: ${dest}`);
+      } catch (e) {
+        console.warn(`[copy-ffmpeg-standalone] Could not copy yt-dlp to ${dest}:`, e.message);
+      }
+    });
+  }
 } else {
   console.log('[copy-ffmpeg-standalone] .next/standalone does not exist, skipping standalone injection.');
 }

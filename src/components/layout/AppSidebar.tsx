@@ -14,6 +14,7 @@ import {
   Trash2,
   Rss,
   Globe,
+  Video,
   Palette,
   Film,
   BarChart3,
@@ -98,6 +99,12 @@ export function AppSidebar() {
       title: 'AUTOMATION & TOOLS',
       items: [
         { href: '/automations', label: 'Website → FB', icon: Globe },
+        {
+          href: '/youtube-sync',
+          label: 'YouTube → FB',
+          icon: Video,
+          badge: { text: 'New', variant: 'pink' },
+        },
         { href: '/image-generator', label: 'Image Generator', icon: Palette },
         {
           href: '/reel-studio',

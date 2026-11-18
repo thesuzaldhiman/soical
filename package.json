@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/ensure-ffmpeg.js && next build --webpack && node scripts/copy-ffmpeg-standalone.js",
+    "build": "node scripts/ensure-ffmpeg.js && node scripts/ensure-yt-dlp.js && next build --webpack && node scripts/copy-ffmpeg-standalone.js",
     "start": "next start",
     "lint": "eslint"
   },

@@ -165,7 +165,7 @@ export interface PostResult {
   pageId: string;
   platform: Platform;
   pageName: string;
-  status: 'success' | 'failed' | 'draft';
+  status: 'success' | 'failed' | 'draft' | 'scheduled';
   titleUsed?: string;
   subtitleUsed?: string;
   mediaUrl?: string;
@@ -187,7 +187,7 @@ export interface LogEntry {
   pageId: string;
   pageName: string;
   platform: Platform | string;
-  status: 'success' | 'failed' | 'draft';
+  status: 'success' | 'failed' | 'draft' | 'scheduled';
   externalPostId?: string;
   postUrl?: string;
   commentId?: string;
@@ -378,6 +378,9 @@ export interface PageAnalyticsSnapshot {
   lastSyncedAt: string;
 }
 
+export type AutomationCaptionStyle = 'title_char_limit' | 'news_points' | 'full_title';
+export type AutomationLinkPlacement = 'first_comment' | 'in_caption' | 'none';
+
 export interface AutomationFeed {
   id: string;
   name: string;
@@ -399,6 +402,13 @@ export interface AutomationFeed {
   sigTemplateId?: string;
   linkInComment?: boolean; // Put link in 1st comment to boost Facebook reach
   customCaption?: string;
+  captionStyle?: AutomationCaptionStyle;
+  titleCharLimit?: number;
+  seeMoreText?: string;
+  linkPlacement?: AutomationLinkPlacement;
+  commentTemplate?: string;
+  pageIntervalMinSeconds?: number;
+  pageIntervalMaxSeconds?: number;
   postStatus?: 'published' | 'draft';
   processedGuids?: string[]; // Deduplication history
   lastDispatchedTitle?: string;
@@ -420,9 +430,70 @@ export interface AppSettings {
   autoRetryIntervalMin?: number;
   pageIntervalMinSeconds?: number;
   pageIntervalMaxSeconds?: number;
+  automationPageIntervalMinSeconds?: number;
+  automationPageIntervalMaxSeconds?: number;
+  automationCaptionStyle?: AutomationCaptionStyle;
+  automationTitleCharLimit?: number;
+  automationSeeMoreText?: string;
+  automationLinkPlacement?: AutomationLinkPlacement;
+  automationCommentTemplate?: string;
   telegramBotToken: string;
   openaiApiKey: string;
   sensitiveWords: string[];
   cronSecretKey: string;
   webhookSecret: string;
+}
+
+// ── YouTube Channel to Social Auto-Repurposer ──
+export type YouTubeContentFilter = 'all' | 'shorts_only' | 'videos_only';
+export type YouTubePublishMode = 'auto_publish' | 'save_as_draft';
+
+export interface YouTubeSyncRule {
+  id: string;
+  name: string;
+  channelUrl: string;
+  channelId: string;
+  channelTitle: string;
+  channelHandle?: string;
+  channelAvatar?: string;
+  isActive: boolean;
+  filterType: YouTubeContentFilter;
+  targetPageIds: string[];
+  maxVideosPerCheck: number;
+  captionTemplate?: string;
+  includeDescription: boolean;
+  customHashtags?: string;
+  linkInComment?: boolean;
+  publishMode: YouTubePublishMode;
+  processedVideoIds: string[];
+  lastCheckedAt?: string;
+  lastProcessedAt?: string;
+  totalSyncedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface YouTubeSyncLog {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  videoId: string;
+  videoTitle: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  durationSeconds?: number;
+  isShort: boolean;
+  status: 'downloading' | 'publishing' | 'published' | 'draft_saved' | 'failed';
+  publishedTargets?: Array<{
+    pageId: string;
+    pageName: string;
+    platform: string;
+    status: 'success' | 'failed';
+    postUrl?: string;
+    error?: string;
+  }>;
+  downloadedFilePath?: string;
+  fileSizeBytes?: number;
+  error?: string;
+  createdAt: string;
 }

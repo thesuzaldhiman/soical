@@ -6,7 +6,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { DEFAULT_SENSITIVE_WORDS, sanitizeText, findSensitiveWords } from '@/lib/utils/sensitive-words';
 import { SocialIcon } from '@/components/ui/SocialIcon';
-import { SocialPage, MetaAppConfig } from '@/types';
+import { SocialPage, MetaAppConfig, AutomationLinkPlacement } from '@/types';
 import {
   Settings as SettingsIcon,
   User as UserIcon,
@@ -36,6 +36,10 @@ import {
   Star,
   Eye,
   EyeOff,
+  Sparkles,
+  MessageSquare,
+  Link2,
+  FileText,
 } from 'lucide-react';
 
 const PAGE_INTERVAL_OPTIONS = [
@@ -128,9 +132,30 @@ function SettingsContent() {
   const [autoRetryMax, setAutoRetryMax] = useState(settings?.autoRetryMax ?? 3);
   const [autoRetryIntervalMin, setAutoRetryIntervalMin] = useState(settings?.autoRetryIntervalMin ?? 15);
 
-  // Page Interval (Random Range in seconds)
-  const [pageIntervalMinSeconds, setPageIntervalMinSeconds] = useState(settings?.pageIntervalMinSeconds ?? 0);
-  const [pageIntervalMaxSeconds, setPageIntervalMaxSeconds] = useState(settings?.pageIntervalMaxSeconds ?? 0);
+  // Page Interval (Random Range in seconds for Website to Social Automations)
+  const [pageIntervalMinSeconds, setPageIntervalMinSeconds] = useState(
+    settings?.automationPageIntervalMinSeconds ?? settings?.pageIntervalMinSeconds ?? 0
+  );
+  const [pageIntervalMaxSeconds, setPageIntervalMaxSeconds] = useState(
+    settings?.automationPageIntervalMaxSeconds ?? settings?.pageIntervalMaxSeconds ?? 0
+  );
+
+  // Automation Caption & Link Formatting (Website to FB)
+  const [automationCaptionStyle, setAutomationCaptionStyle] = useState<'title_char_limit' | 'news_points' | 'full_title'>(
+    settings?.automationCaptionStyle || 'title_char_limit'
+  );
+  const [automationTitleCharLimit, setAutomationTitleCharLimit] = useState<number>(
+    settings?.automationTitleCharLimit ?? 80
+  );
+  const [automationSeeMoreText, setAutomationSeeMoreText] = useState<string>(
+    settings?.automationSeeMoreText || '... See more'
+  );
+  const [automationLinkPlacement, setAutomationLinkPlacement] = useState<AutomationLinkPlacement>(
+    settings?.automationLinkPlacement || 'first_comment'
+  );
+  const [automationCommentTemplate, setAutomationCommentTemplate] = useState<string>(
+    settings?.automationCommentTemplate || '👉 पूरी खबर यहाँ पढ़ें: {link}'
+  );
 
   // Sensitive Words
   const [sensitiveWordsRaw, setSensitiveWordsRaw] = useState(
@@ -188,8 +213,15 @@ function SettingsContent() {
       if (settings.autoRetryEnabled !== undefined) setAutoRetryEnabled(settings.autoRetryEnabled);
       if (settings.autoRetryMax !== undefined) setAutoRetryMax(settings.autoRetryMax);
       if (settings.autoRetryIntervalMin !== undefined) setAutoRetryIntervalMin(settings.autoRetryIntervalMin);
-      if (settings.pageIntervalMinSeconds !== undefined) setPageIntervalMinSeconds(settings.pageIntervalMinSeconds);
-      if (settings.pageIntervalMaxSeconds !== undefined) setPageIntervalMaxSeconds(settings.pageIntervalMaxSeconds);
+      const activeMin = settings.automationPageIntervalMinSeconds ?? settings.pageIntervalMinSeconds;
+      const activeMax = settings.automationPageIntervalMaxSeconds ?? settings.pageIntervalMaxSeconds;
+      if (activeMin !== undefined) setPageIntervalMinSeconds(activeMin);
+      if (activeMax !== undefined) setPageIntervalMaxSeconds(activeMax);
+      if (settings.automationCaptionStyle !== undefined) setAutomationCaptionStyle(settings.automationCaptionStyle);
+      if (settings.automationTitleCharLimit !== undefined) setAutomationTitleCharLimit(settings.automationTitleCharLimit);
+      if (settings.automationSeeMoreText !== undefined) setAutomationSeeMoreText(settings.automationSeeMoreText);
+      if (settings.automationLinkPlacement !== undefined) setAutomationLinkPlacement(settings.automationLinkPlacement);
+      if (settings.automationCommentTemplate !== undefined) setAutomationCommentTemplate(settings.automationCommentTemplate);
       if (settings.sensitiveWords && settings.sensitiveWords.length > 0) {
         setSensitiveWordsRaw(settings.sensitiveWords.join(', '));
       }
@@ -627,6 +659,13 @@ function SettingsContent() {
       autoRetryIntervalMin: Number(autoRetryIntervalMin) || 15,
       pageIntervalMinSeconds: Number(pageIntervalMinSeconds) || 0,
       pageIntervalMaxSeconds: Math.max(Number(pageIntervalMinSeconds) || 0, Number(pageIntervalMaxSeconds) || 0),
+      automationPageIntervalMinSeconds: Number(pageIntervalMinSeconds) || 0,
+      automationPageIntervalMaxSeconds: Math.max(Number(pageIntervalMinSeconds) || 0, Number(pageIntervalMaxSeconds) || 0),
+      automationCaptionStyle,
+      automationTitleCharLimit: Number(automationTitleCharLimit) || 80,
+      automationSeeMoreText: automationSeeMoreText.trim() || '... See more',
+      automationLinkPlacement,
+      automationCommentTemplate: automationCommentTemplate.trim() || '👉 पूरी खबर यहाँ पढ़ें: {link}',
       sensitiveWords: wordsArray.length > 0 ? wordsArray : DEFAULT_SENSITIVE_WORDS,
       cronSecretKey: cronSecret.trim(),
     });
@@ -1428,61 +1467,369 @@ function SettingsContent() {
               </button>
             </div>
 
-            {/* Interval Between Pages (Random Range) */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-4">
-              <div className="flex items-start gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-700 shrink-0 mt-0.5">
-                  <Clock className="w-4 h-4" />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-bold text-slate-900">
-                    Interval Between Pages (Random Range)
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    0–0 = simultaneous broadcast to all pages. With a range set, each page uses a different random delay inside the window (natural delivery, avoids bot patterns).
-                  </p>
+            {/* Website to Facebook Automation Rules Section */}
+            <div className="pt-4 border-t border-[#E2E8F0] space-y-5">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <h4 className="text-xs font-black tracking-wide text-slate-900 uppercase">
+                  Website-to-Facebook Automation Rules (WordPress Ingestion)
+                </h4>
+              </div>
+
+              {/* Informative Scope Banner */}
+              <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-3">
+                <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-amber-900/90 leading-relaxed font-medium">
+                  <span className="font-bold">Automations Only:</span> Yeh rules sirf Website / WordPress Webhook aur RSS Feeds se aane wali automatic posts par lagu hote hain. Composer se manual post karte samay aap wahi per-post interval customize kar sakte hain.
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-600">Min</span>
-                  <select
-                    value={pageIntervalMinSeconds}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setPageIntervalMinSeconds(val);
-                      if (val > pageIntervalMaxSeconds) setPageIntervalMaxSeconds(val);
-                    }}
-                    className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
-                  >
-                    {PAGE_INTERVAL_OPTIONS.map((opt) => (
-                      <option key={`min-${opt.seconds}`} value={opt.seconds}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+              {/* 1. Interval Between Pages (Random Range for Automations) */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-4">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-700 shrink-0 mt-0.5 shadow-2xs">
+                    <Clock className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold text-slate-900">
+                      Multi-Page Random Stagger Interval (Website Automations)
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Jab WordPress se new post aayegi aur multiple Facebook Pages target honge, toh <b>Page 1 turant post hoga</b>, aur baaki pages <b>Min se Max ke beech random delay</b> lekar automatic queue me schedule ho jayenge. Isse Facebook bot detection se bacha rehta hai.
+                    </p>
+                  </div>
                 </div>
 
-                <span className="text-slate-400 font-bold">–</span>
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-600">Min Delay:</span>
+                    <select
+                      value={pageIntervalMinSeconds}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setPageIntervalMinSeconds(val);
+                        if (val > pageIntervalMaxSeconds) setPageIntervalMaxSeconds(val);
+                      }}
+                      className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
+                    >
+                      {PAGE_INTERVAL_OPTIONS.map((opt) => (
+                        <option key={`min-${opt.seconds}`} value={opt.seconds}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-600">Max</span>
-                  <select
-                    value={pageIntervalMaxSeconds}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setPageIntervalMaxSeconds(val);
-                      if (val < pageIntervalMinSeconds) setPageIntervalMinSeconds(val);
-                    }}
-                    className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
+                  <span className="text-slate-400 font-bold">–</span>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-600">Max Delay:</span>
+                    <select
+                      value={pageIntervalMaxSeconds}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setPageIntervalMaxSeconds(val);
+                        if (val < pageIntervalMinSeconds) setPageIntervalMinSeconds(val);
+                      }}
+                      className="px-3 py-2 rounded-xl border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-500"
+                    >
+                      {PAGE_INTERVAL_OPTIONS.map((opt) => (
+                        <option key={`max-${opt.seconds}`} value={opt.seconds}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="text-[11px] text-slate-500 font-medium ml-1">
+                    {pageIntervalMinSeconds === 0 && pageIntervalMaxSeconds === 0 ? (
+                      <span className="text-amber-600 font-semibold">⚡ Simultaneous broadcast (All pages at once)</span>
+                    ) : (
+                      <span className="text-emerald-700 font-semibold">
+                        ✓ Staggered: 1st page instant, then random {pageIntervalMinSeconds}s–{pageIntervalMaxSeconds}s between each next page
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Caption Formatting & Link Placement Style */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#E2E8F0] space-y-4">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-slate-700 shrink-0 mt-0.5 shadow-2xs">
+                    <FileText className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold text-slate-900">
+                      Caption & Link Formatting Style (FB Reach Booster)
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Facebook algorithm external links ko caption me daalne par organic reach kam kar deta hai. Click-through badhane ke liye character limit + &quot;... See more&quot; aur link comment me daalne ka option choose karein.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Caption Style Radio Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div
+                    onClick={() => setAutomationCaptionStyle('title_char_limit')}
+                    className={`cursor-pointer p-3.5 rounded-xl border text-left transition-all ${
+                      automationCaptionStyle === 'title_char_limit'
+                        ? 'border-indigo-600 bg-indigo-50/50 shadow-2xs'
+                        : 'border-[#E2E8F0] bg-white hover:border-slate-300'
+                    }`}
                   >
-                    {PAGE_INTERVAL_OPTIONS.map((opt) => (
-                      <option key={`max-${opt.seconds}`} value={opt.seconds}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900">Char Limit + &quot;... See more&quot;</span>
+                      <input
+                        type="radio"
+                        name="captionStyle"
+                        checked={automationCaptionStyle === 'title_char_limit'}
+                        onChange={() => setAutomationCaptionStyle('title_char_limit')}
+                        className="text-indigo-600"
+                      />
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 leading-snug">
+                      Title ko chune hue characters par cut karke &quot;... See more&quot; lagata hai. User click badhta hai.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setAutomationCaptionStyle('news_points')}
+                    className={`cursor-pointer p-3.5 rounded-xl border text-left transition-all ${
+                      automationCaptionStyle === 'news_points'
+                        ? 'border-indigo-600 bg-indigo-50/50 shadow-2xs'
+                        : 'border-[#E2E8F0] bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900">News Points / Highlights</span>
+                      <input
+                        type="radio"
+                        name="captionStyle"
+                        checked={automationCaptionStyle === 'news_points'}
+                        onChange={() => setAutomationCaptionStyle('news_points')}
+                        className="text-indigo-600"
+                      />
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 leading-snug">
+                      Title + 📌 Subtitle bullet + Post Excerpt points. News formats ke liye best.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setAutomationCaptionStyle('full_title')}
+                    className={`cursor-pointer p-3.5 rounded-xl border text-left transition-all ${
+                      automationCaptionStyle === 'full_title'
+                        ? 'border-indigo-600 bg-indigo-50/50 shadow-2xs'
+                        : 'border-[#E2E8F0] bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-900">Full Title Only</span>
+                      <input
+                        type="radio"
+                        name="captionStyle"
+                        checked={automationCaptionStyle === 'full_title'}
+                        onChange={() => setAutomationCaptionStyle('full_title')}
+                        className="text-indigo-600"
+                      />
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 leading-snug">
+                      Pura title bina kisi character cutoff ke direct post karta hai.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Sub-options for Character Limit Style */}
+                {automationCaptionStyle === 'title_char_limit' && (
+                  <div className="p-3.5 rounded-xl bg-white border border-[#E2E8F0] grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Character Limit (Words Cutoff)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={20}
+                          max={300}
+                          value={automationTitleCharLimit}
+                          onChange={(e) => setAutomationTitleCharLimit(Math.max(20, Number(e.target.value) || 80))}
+                          className="w-28 px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-slate-800"
+                        />
+                        <span className="text-[11px] text-slate-500">characters (Recommended: 70 - 90)</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Suffix Text (&quot;See more&quot; Label)
+                      </label>
+                      <input
+                        type="text"
+                        value={automationSeeMoreText}
+                        onChange={(e) => setAutomationSeeMoreText(e.target.value)}
+                        placeholder="... See more"
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Link Placement Selection */}
+                <div className="p-3.5 rounded-xl bg-white border border-[#E2E8F0] space-y-3">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Link Placement (External Article URL)
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setAutomationLinkPlacement('first_comment')}
+                      className={`px-3 py-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between ${
+                        automationLinkPlacement === 'first_comment'
+                          ? 'border-emerald-600 bg-emerald-50/60 text-emerald-900'
+                          : 'border-[#E2E8F0] bg-white text-slate-700 hover:bg-[#F8F9FA]'
+                      }`}
+                    >
+                      <span>💬 1st Comment (Anti-Reach Penalty)</span>
+                      {automationLinkPlacement === 'first_comment' && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAutomationLinkPlacement('in_caption')}
+                      className={`px-3 py-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between ${
+                        automationLinkPlacement === 'in_caption'
+                          ? 'border-blue-600 bg-blue-50/60 text-blue-900'
+                          : 'border-[#E2E8F0] bg-white text-slate-700 hover:bg-[#F8F9FA]'
+                      }`}
+                    >
+                      <span>📝 Inside Caption (Bottom)</span>
+                      {automationLinkPlacement === 'in_caption' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAutomationLinkPlacement('none')}
+                      className={`px-3 py-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between ${
+                        automationLinkPlacement === 'none'
+                          ? 'border-slate-800 bg-slate-100 text-slate-900'
+                          : 'border-[#E2E8F0] bg-white text-slate-700 hover:bg-[#F8F9FA]'
+                      }`}
+                    >
+                      <span>🚫 No Link</span>
+                      {automationLinkPlacement === 'none' && <Check className="w-3.5 h-3.5 text-slate-800" />}
+                    </button>
+                  </div>
+
+                  {automationLinkPlacement === 'first_comment' && (
+                    <div className="pt-2">
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                        First Comment Template (Use <code className="text-emerald-700 font-mono">&#123;link&#125;</code> for article URL)
+                      </label>
+                      <input
+                        type="text"
+                        value={automationCommentTemplate}
+                        onChange={(e) => setAutomationCommentTemplate(e.target.value)}
+                        placeholder="👉 पूरी खबर यहाँ पढ़ें: {link}"
+                        className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-medium text-slate-800"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Live Interactive Facebook Post & Comment Preview */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                      Live Simulation Preview (How It Posts on Facebook)
+                    </span>
+                    <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-bold">
+                      Facebook Feed Mockup
+                    </span>
+                  </div>
+
+                  {/* Facebook Mock Card */}
+                  <div className="rounded-2xl border border-slate-200 bg-[#F0F2F5] p-3.5 space-y-3 max-w-lg mx-auto">
+                    {/* FB Header */}
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0">
+                        K
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">Khabar Monkey News</div>
+                        <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                          Just now · <span>🌐</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* FB Caption Render */}
+                    <div className="text-xs text-slate-800 font-normal leading-relaxed whitespace-pre-line bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                      {(() => {
+                        const sampleTitle =
+                          'बड़ा फैसला: सरकार ने कर्मचारियों के DA में की 4% की बढ़ोतरी, जानिए किस महीने से मिलेगा पूरा एरियर और फायदा';
+                        const sampleSubtitle = 'केंद्रीय कर्मचारियों और पेंशनभोगियों को मिला बड़ा तोहफा';
+                        const sampleExcerpt = 'Cabinet Decision: वित्त मंत्रालय ने महंगाई भत्ते (Dearness Allowance) में 4 फीसदी की भारी बढ़ोतरी को मंजूरी दी।';
+                        const sampleLink = 'https://game.khabarmonkey.com/news/da-hike-2024';
+
+                        let previewCaption = '';
+                        if (automationCaptionStyle === 'title_char_limit') {
+                          const limit = Math.max(20, automationTitleCharLimit || 80);
+                          const suffix = automationSeeMoreText || '... See more';
+                          if (sampleTitle.length > limit) {
+                            const tr = sampleTitle.substring(0, limit);
+                            const lastSp = tr.lastIndexOf(' ');
+                            const clean = lastSp > limit * 0.6 ? tr.substring(0, lastSp) : tr;
+                            previewCaption = `${clean.trim()}${suffix}`;
+                          } else {
+                            previewCaption = sampleTitle;
+                          }
+                        } else if (automationCaptionStyle === 'news_points') {
+                          previewCaption = `${sampleTitle}\n📌 ${sampleSubtitle}\n\n${sampleExcerpt}`;
+                        } else {
+                          previewCaption = sampleTitle;
+                        }
+
+                        if (automationLinkPlacement === 'in_caption') {
+                          previewCaption += `\n\n👉 पूरी खबर यहाँ पढ़ें: ${sampleLink}`;
+                        }
+
+                        return previewCaption;
+                      })()}
+                    </div>
+
+                    {/* Simulated Attached Branded Card / Media */}
+                    <div className="h-32 rounded-xl bg-gradient-to-br from-slate-800 via-slate-900 to-black text-white flex flex-col items-center justify-center p-3 text-center border border-slate-700/50 shadow-inner">
+                      <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-1">
+                        [Branded AI Image Card with Bold Headline & Logo]
+                      </span>
+                      <span className="text-xs font-extrabold line-clamp-2">
+                        बड़ा फैसला: सरकार ने कर्मचारियों के DA में की 4% की बढ़ोतरी
+                      </span>
+                    </div>
+
+                    {/* Simulated 1st Comment Box */}
+                    {automationLinkPlacement === 'first_comment' && (
+                      <div className="mt-2 pt-2 border-t border-slate-200">
+                        <div className="text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3 text-emerald-600" />
+                          <span>1st Comment (Posted automatically by Page):</span>
+                        </div>
+                        <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-2.5 flex items-start gap-2">
+                          <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">
+                            K
+                          </div>
+                          <div className="text-[11px] text-emerald-950 leading-tight">
+                            <span className="font-bold text-slate-900 block">Khabar Monkey News</span>
+                            <span className="font-medium">
+                              {automationCommentTemplate.replace('{link}', 'https://game.khabarmonkey.com/news/da-hike-2024')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
