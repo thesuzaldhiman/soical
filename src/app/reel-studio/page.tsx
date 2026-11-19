@@ -268,6 +268,537 @@ const PRESET_MUSIC_TRACKS = [
   },
 ];
 
+// ── Real-time Interactive Particle System Component for Live Overlays ──
+function ReelParticleOverlay({
+  width,
+  height,
+  selectedOverlays,
+  overlayIntensity = 50,
+}: {
+  width: number;
+  height: number;
+  selectedOverlays: VideoOverlayType[];
+  overlayIntensity: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animId: number;
+    const intensity = Math.max(0.1, Math.min(1.0, overlayIntensity / 100));
+
+    const hasSnow = selectedOverlays.includes('particle_snow');
+    const hasDust = selectedOverlays.includes('floating_dust') || selectedOverlays.includes('particles');
+    const hasGlitter = selectedOverlays.includes('glitter_sparkle');
+    const hasBokeh = selectedOverlays.includes('bokeh_lights');
+    const hasEmbers = selectedOverlays.includes('fire_embers');
+
+    if (!hasSnow && !hasDust && !hasGlitter && !hasBokeh && !hasEmbers) {
+      ctx.clearRect(0, 0, width, height);
+      return;
+    }
+
+    interface PItem {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      size: number;
+      alpha: number;
+      alphaSpeed: number;
+      type: 'snow' | 'dust' | 'glitter' | 'bokeh' | 'ember';
+      color: string;
+      phase: number;
+    }
+
+    const particles: PItem[] = [];
+
+    if (hasSnow) {
+      const count = Math.round(35 * intensity);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.6,
+          vy: 0.6 + Math.random() * 1.2,
+          size: 1.5 + Math.random() * 2.5,
+          alpha: 0.4 + Math.random() * 0.5,
+          alphaSpeed: 0.005,
+          type: 'snow',
+          color: '#FFFFFF',
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+
+    if (hasDust) {
+      const count = Math.round(30 * intensity);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: -0.2 - Math.random() * 0.4,
+          size: 1 + Math.random() * 1.8,
+          alpha: 0.2 + Math.random() * 0.45,
+          alphaSpeed: 0.008,
+          type: 'dust',
+          color: Math.random() > 0.5 ? '#FBBF24' : '#E2E8F0',
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+
+    if (hasGlitter) {
+      const count = Math.round(20 * intensity);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.2,
+          vy: (Math.random() - 0.5) * 0.2,
+          size: 2 + Math.random() * 3.5,
+          alpha: Math.random(),
+          alphaSpeed: 0.02 + Math.random() * 0.03,
+          type: 'glitter',
+          color: '#FACC15',
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+
+    if (hasBokeh) {
+      const count = Math.round(10 * intensity);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.25,
+          vy: -0.3 - Math.random() * 0.5,
+          size: 12 + Math.random() * 22,
+          alpha: 0.08 + Math.random() * 0.14,
+          alphaSpeed: 0.003,
+          type: 'bokeh',
+          color: Math.random() > 0.5 ? 'rgba(251, 191, 36, ' : 'rgba(236, 72, 153, ',
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+
+    if (hasEmbers) {
+      const count = Math.round(25 * intensity);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: -0.8 - Math.random() * 1.2,
+          size: 1.5 + Math.random() * 2.5,
+          alpha: 0.5 + Math.random() * 0.5,
+          alphaSpeed: 0.015,
+          type: 'ember',
+          color: Math.random() > 0.4 ? '#F97316' : '#EF4444',
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+
+    let frame = 0;
+    const render = () => {
+      frame++;
+      ctx.clearRect(0, 0, width, height);
+
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < -20) p.x = width + 20;
+        if (p.x > width + 20) p.x = -20;
+        if (p.y < -30) p.y = height + 20;
+        if (p.y > height + 30) p.y = -20;
+
+        if (p.type === 'snow') {
+          p.x += Math.sin((frame + p.phase * 50) * 0.03) * 0.4;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha * intensity})`;
+          ctx.fill();
+        } else if (p.type === 'dust') {
+          p.x += Math.sin((frame + p.phase * 30) * 0.02) * 0.3;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fillStyle =
+            p.color === '#FBBF24'
+              ? `rgba(251, 191, 36, ${p.alpha * intensity})`
+              : `rgba(226, 232, 240, ${p.alpha * intensity})`;
+          ctx.fill();
+        } else if (p.type === 'glitter') {
+          p.alpha += p.alphaSpeed;
+          if (p.alpha > 1 || p.alpha < 0.1) p.alphaSpeed = -p.alphaSpeed;
+          const currentA = Math.max(0.1, Math.min(1, p.alpha)) * intensity;
+          const s = p.size;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.fillStyle = `rgba(254, 240, 138, ${currentA})`;
+          ctx.beginPath();
+          ctx.moveTo(0, -s);
+          ctx.quadraticCurveTo(0, 0, s, 0);
+          ctx.quadraticCurveTo(0, 0, 0, s);
+          ctx.quadraticCurveTo(0, 0, -s, 0);
+          ctx.quadraticCurveTo(0, 0, 0, -s);
+          ctx.fill();
+          ctx.restore();
+        } else if (p.type === 'bokeh') {
+          p.alpha += Math.sin(frame * 0.02 + p.phase) * 0.003;
+          const currentA = Math.max(0.04, Math.min(0.25, p.alpha)) * intensity;
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+          grad.addColorStop(0, `${p.color}${currentA})`);
+          grad.addColorStop(1, `${p.color}0)`);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+        } else if (p.type === 'ember') {
+          p.x += Math.sin((frame + p.phase * 40) * 0.05) * 0.5;
+          p.alpha -= p.alphaSpeed;
+          if (p.alpha <= 0.1) {
+            p.alpha = 0.8;
+            p.y = height + 10;
+            p.x = Math.random() * width;
+          }
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fillStyle =
+            p.color === '#F97316'
+              ? `rgba(249, 115, 22, ${p.alpha * intensity})`
+              : `rgba(239, 68, 68, ${p.alpha * intensity})`;
+          ctx.shadowColor = '#F97316';
+          ctx.shadowBlur = 4;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      animId = requestAnimationFrame(render);
+    };
+
+    animId = requestAnimationFrame(render);
+
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [width, height, selectedOverlays, overlayIntensity]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="absolute inset-0 w-full h-full pointer-events-none z-15"
+    />
+  );
+}
+
+// ── Real-time Live UI Preview with Phone Frame Mockup ──
+function ReelLiveMockupPreview({
+  canvasWidth,
+  canvasHeight,
+  templateImageUrl,
+  layerMode = 'overlay',
+  backgroundColor = '#0B0F19',
+  fBox,
+  tBox,
+  headline,
+  highlight,
+  photoUrl,
+  selectedEffects,
+  motionIntensity = 20,
+  selectedOverlays,
+  overlayIntensity = 50,
+  isLiveMotionPlaying,
+  onToggleMotion,
+  onGoToGenerator,
+}: {
+  canvasWidth: number;
+  canvasHeight: number;
+  templateImageUrl?: string;
+  layerMode?: 'overlay' | 'background';
+  backgroundColor?: string;
+  fBox: { x: number; y: number; width: number; height: number; borderRadius?: number };
+  tBox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize?: number;
+    textColor?: string;
+    highlightColor?: string;
+    alignment?: 'left' | 'center' | 'right';
+  };
+  headline: string;
+  highlight?: string;
+  photoUrl?: string;
+  selectedEffects: VideoMotionEffect[];
+  motionIntensity: number;
+  selectedOverlays: VideoOverlayType[];
+  overlayIntensity: number;
+  isLiveMotionPlaying: boolean;
+  onToggleMotion?: () => void;
+  onGoToGenerator?: () => void;
+}) {
+  const maxW = 280;
+  const maxH = 500;
+  const scale = Math.min(maxW / canvasWidth, maxH / canvasHeight);
+  const dispW = Math.round(canvasWidth * scale);
+  const dispH = Math.round(canvasHeight * scale);
+
+  const activeEffect = selectedEffects.find((e) => e !== 'none') || 'subtle_float';
+
+  let animName = 'none';
+  let animDuration = '4s';
+  let animTiming = 'ease-in-out';
+
+  if (isLiveMotionPlaying) {
+    if (activeEffect === 'subtle_float') {
+      animName = 'liveSubtleFloat';
+      animDuration = '4.5s';
+    } else if (activeEffect === 'micro_jitter') {
+      animName = 'liveMicroJitter';
+      animDuration = '0.35s';
+      animTiming = 'steps(2)';
+    } else if (activeEffect === 'smooth_sway') {
+      animName = 'liveSmoothSway';
+      animDuration = '4s';
+    } else if (activeEffect === 'vertical_drift') {
+      animName = 'liveVerticalDrift';
+      animDuration = '4.5s';
+    } else if (activeEffect === 'pulse_shake' || activeEffect === 'pulse') {
+      animName = 'livePulseShake';
+      animDuration = '2s';
+    } else if (activeEffect === 'zoom_in') {
+      animName = 'liveZoomIn';
+      animDuration = '12s';
+      animTiming = 'ease-out';
+    } else if (activeEffect === 'zoom_out') {
+      animName = 'liveZoomOut';
+      animDuration = '12s';
+      animTiming = 'ease-out';
+    } else if (activeEffect === 'shake' || activeEffect === 'breaking_jitter') {
+      animName = 'liveShake';
+      animDuration = activeEffect === 'breaking_jitter' ? '0.9s' : '1.6s';
+    }
+  }
+
+  const cleanHeadline = headline || 'सुक्खू सरकार का बड़ा फैसला : हिमकेयर बंद, अब मिलेगा ₹10 लाख तक फ्री इलाज!';
+  const cleanHighlight = highlight?.trim() || '';
+  const hasHighlight = cleanHighlight && cleanHeadline.includes(cleanHighlight);
+
+  return (
+    <div className="bg-slate-950/95 rounded-3xl border border-slate-800 p-5 shadow-2xl flex flex-col items-center space-y-4">
+      {/* Top Header Controls */}
+      <div className="flex items-center justify-between w-full text-xs">
+        <div className="flex items-center gap-2">
+          <span className="flex h-2.5 w-2.5 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span className="font-extrabold text-white text-[11px] tracking-wide uppercase">
+            Live Preview
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-[10px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+            {canvasWidth}×{canvasHeight}
+          </span>
+          <button
+            type="button"
+            onClick={onToggleMotion}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+              isLiveMotionPlaying
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+            title="Toggle live camera motion in preview"
+          >
+            {isLiveMotionPlaying ? '⏸️ Motion On' : '▶️ Motion Off'}
+          </button>
+        </div>
+      </div>
+
+      {/* Phone Frame Mockup */}
+      <div
+        style={{ width: dispW + 16, minHeight: dispH + 16 }}
+        className="rounded-[32px] p-2 bg-gradient-to-b from-slate-800 to-slate-900 border-2 border-slate-700/80 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)] flex flex-col items-center justify-center relative select-none"
+      >
+        {/* Device Top Speaker Notch */}
+        <div className="w-16 h-3 bg-black rounded-full mb-1 border border-slate-800 flex items-center justify-center">
+          <div className="w-2 h-2 rounded-full bg-slate-900 mr-2" />
+          <div className="w-6 h-1 rounded-full bg-slate-800" />
+        </div>
+
+        {/* Scaled Preview Screen */}
+        <div
+          style={{
+            width: dispW,
+            height: dispH,
+            backgroundColor: backgroundColor || '#0B0F19',
+          }}
+          className="relative rounded-[22px] overflow-hidden border border-slate-800/80 shadow-inner group"
+        >
+          {/* Animated Wrapper for Live Camera Motion */}
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              position: 'relative',
+              animation: animName !== 'none' ? `${animName} ${animDuration} ${animTiming} infinite` : 'none',
+              transformOrigin: 'center center',
+            }}
+          >
+            {/* LAYER 1: Photo (Z=1 if overlay, Z=2 if background) */}
+            {photoUrl && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${Math.round(fBox.x * scale)}px`,
+                  top: `${Math.round(fBox.y * scale)}px`,
+                  width: `${Math.round(fBox.width * scale)}px`,
+                  height: `${Math.round(fBox.height * scale)}px`,
+                  borderRadius: `${Math.round((fBox.borderRadius || 0) * scale)}px`,
+                  backgroundImage: `url(${photoUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  zIndex: layerMode === 'overlay' ? 1 : 2,
+                }}
+                className="overflow-hidden"
+              />
+            )}
+
+            {/* LAYER 2: Template PNG Frame (Z=2 if overlay, Z=1 if background) */}
+            {templateImageUrl && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  backgroundImage: `url(${templateImageUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  zIndex: layerMode === 'overlay' ? 2 : 1,
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
+
+            {/* LAYER 3: Headline Text */}
+            <div
+              style={{
+                position: 'absolute',
+                left: `${Math.round(tBox.x * scale)}px`,
+                top: `${Math.round(tBox.y * scale)}px`,
+                width: `${Math.round(tBox.width * scale)}px`,
+                height: `${Math.round(tBox.height * scale)}px`,
+                zIndex: 3,
+                pointerEvents: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  tBox.alignment === 'center'
+                    ? 'center'
+                    : tBox.alignment === 'right'
+                    ? 'flex-end'
+                    : 'flex-start',
+                textAlign: (tBox.alignment || 'center') as any,
+              }}
+            >
+              <p
+                style={{
+                  fontSize: `${Math.max(10, Math.round((tBox.fontSize || 56) * scale))}px`,
+                  lineHeight: 1.3,
+                  color: tBox.textColor || '#FFFFFF',
+                  fontFamily: 'Noto Sans Devanagari, sans-serif',
+                  fontWeight: 800,
+                  textShadow: '0 2px 8px rgba(0,0,0,0.95)',
+                }}
+                className="leading-tight select-none"
+              >
+                {hasHighlight ? (
+                  <>
+                    {cleanHeadline.split(cleanHighlight).map((chunk, idx, arr) => (
+                      <React.Fragment key={idx}>
+                        {chunk}
+                        {idx < arr.length - 1 && (
+                          <span style={{ color: tBox.highlightColor || '#FACC15' }}>
+                            {cleanHighlight}
+                          </span>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </>
+                ) : (
+                  cleanHeadline
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* LAYER 4: Real-time Live Particle Overlays */}
+          <ReelParticleOverlay
+            width={dispW}
+            height={dispH}
+            selectedOverlays={selectedOverlays}
+            overlayIntensity={overlayIntensity}
+          />
+
+          {/* Vignette Overlay (if selected) */}
+          {selectedOverlays.includes('vignette') && (
+            <div
+              className="absolute inset-0 pointer-events-none z-16"
+              style={{
+                background: 'radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.65) 100%)',
+              }}
+            />
+          )}
+
+          {/* Film Grain (if selected) */}
+          {selectedOverlays.includes('film_grain') && (
+            <div
+              className="absolute inset-0 pointer-events-none opacity-20 z-16 mix-blend-overlay"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Summary Footer & Quick Action */}
+      <div className="w-full space-y-2 text-center">
+        <div className="flex items-center justify-between text-[11px] text-slate-400 px-1 font-mono">
+          <span>Motion: {activeEffect.replace('_', ' ')} ({motionIntensity}%)</span>
+          <span>Overlays: {selectedOverlays.length} ({overlayIntensity}%)</span>
+        </div>
+
+        {onGoToGenerator && (
+          <button
+            type="button"
+            onClick={onGoToGenerator}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:opacity-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all"
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span>Generate &amp; Play MP4 Video</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ReelStudioPage() {
   const router = useRouter();
   const { sigTemplates, saveSigTemplate, deleteSigTemplate } = useApp();

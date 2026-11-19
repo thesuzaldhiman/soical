@@ -31,6 +31,8 @@ export interface DispatchOptions {
   commentText?: string;
   contentHtml?: string;
   isAiGenerated?: boolean;
+  intervalMinSeconds?: number;
+  intervalMaxSeconds?: number;
   targets: PublishTarget[];
 }
 
