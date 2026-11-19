@@ -223,6 +223,7 @@ function SocialImageGeneratorContent() {
       highlightColor: '#FBBF24',
       fontFamily: 'Noto Sans Devanagari',
       alignment: 'left',
+      verticalAlignment: 'center',
     }
   );
 
@@ -310,7 +311,10 @@ function SocialImageGeneratorContent() {
       );
       setTBox(
         targetTmpl.titleBox
-          ? { ...targetTmpl.titleBox }
+          ? {
+              ...targetTmpl.titleBox,
+              verticalAlignment: targetTmpl.titleBox.verticalAlignment || 'center',
+            }
           : isPort
           ? {
               x: 60,
@@ -322,7 +326,8 @@ function SocialImageGeneratorContent() {
               textColor: '#FFFFFF',
               highlightColor: '#FBBF24',
               fontFamily: 'Noto Sans Devanagari',
-              alignment: 'left',
+              alignment: 'center',
+              verticalAlignment: 'center',
             }
           : {
               x: 40,
@@ -335,6 +340,7 @@ function SocialImageGeneratorContent() {
               highlightColor: '#FBBF24',
               fontFamily: 'Noto Sans Devanagari',
               alignment: 'left',
+              verticalAlignment: 'center',
             }
       );
     }
@@ -509,6 +515,7 @@ function SocialImageGeneratorContent() {
             highlightColor: '#FBBF24',
             fontFamily: 'Noto Sans Devanagari',
             alignment: 'left',
+            verticalAlignment: 'center',
           }
         : {
             x: 40,
@@ -521,6 +528,7 @@ function SocialImageGeneratorContent() {
             highlightColor: '#FBBF24',
             fontFamily: 'Noto Sans Devanagari',
             alignment: 'left',
+            verticalAlignment: 'center',
           },
       isDefault: newTmplIsDefault,
     };
@@ -763,6 +771,7 @@ function SocialImageGeneratorContent() {
         width: Math.round(canvasWidth * 0.84),
         height: Math.round(canvasHeight * 0.35),
         alignment: 'center',
+        verticalAlignment: 'center',
       }));
     } else if (preset === 'topHeadline') {
       // Headline on top (y: 5% to 35%), Photo cutout in center/bottom (y: 38% to 95%)
@@ -773,6 +782,7 @@ function SocialImageGeneratorContent() {
         width: Math.round(canvasWidth * 0.84),
         height: Math.round(canvasHeight * 0.30),
         alignment: 'center',
+        verticalAlignment: 'center',
       }));
       setFBox({
         x: Math.round(canvasWidth * 0.04),
@@ -797,6 +807,7 @@ function SocialImageGeneratorContent() {
         width: Math.round(canvasWidth * 0.84),
         height: Math.round(canvasHeight * 0.28),
         alignment: 'left',
+        verticalAlignment: 'center',
       }));
     }
   };
@@ -1451,16 +1462,35 @@ function SocialImageGeneratorContent() {
                         height: `${Math.round(tBox.height * displayScale)}px`,
                         zIndex: 3,
                         pointerEvents: 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent:
+                          tBox.verticalAlignment === 'top'
+                            ? 'flex-start'
+                            : tBox.verticalAlignment === 'bottom'
+                            ? 'flex-end'
+                            : 'center',
+                        alignItems:
+                          tBox.alignment === 'left'
+                            ? 'flex-start'
+                            : tBox.alignment === 'right'
+                            ? 'flex-end'
+                            : 'center',
+                        textAlign: tBox.alignment || 'left',
                         color: tBox.textColor || '#FFFFFF',
                         fontSize: `${Math.round((tBox.fontSize || 44) * displayScale)}px`,
                         lineHeight: tBox.lineHeight || 1.35,
                         fontFamily: `"${tBox.fontFamily || 'Noto Sans Devanagari'}", "Poppins", sans-serif`,
-                        textAlign: tBox.alignment || 'left',
                         textShadow: '0 2px 4px rgba(0,0,0,0.8)',
+                        padding: `${Math.round(6 * displayScale)}px`,
+                        boxSizing: 'border-box',
+                        overflow: 'hidden',
                       }}
-                      className="p-1 font-bold line-clamp-3"
+                      className="font-bold"
                     >
-                      {genHeadline}
+                      <div className="w-full line-clamp-3">
+                        {genHeadline}
+                      </div>
                     </div>
 
                     {/* LAYER 4: Interactive Selection Boundary for Featured Image */}
@@ -2119,48 +2149,132 @@ function SocialImageGeneratorContent() {
                     </div>
                   </div>
 
-                  {/* Text Alignment */}
-                  <div>
-                    <label className="text-[10px] text-slate-400 font-bold block mb-1">
-                      Text Alignment
-                    </label>
-                    <div className="grid grid-cols-3 gap-1 p-1 bg-[#F8F9FD] rounded-xl border border-[#EEF1F6]">
+                  {/* Text Alignment Controls (Horizontal & Vertical Center) */}
+                  <div className="space-y-3 pt-1">
+                    {/* Header with Quick 1-Click Center Both Action */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black text-slate-800 flex items-center gap-1.5">
+                        <AlignCenter className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Text Alignment (Text Position)</span>
+                      </span>
                       <button
                         type="button"
-                        onClick={() => setTBox((p) => ({ ...p, alignment: 'left' }))}
-                        className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          tBox.alignment === 'left' || !tBox.alignment
-                            ? 'bg-slate-900 text-white shadow-2xs'
-                            : 'text-slate-600 hover:text-black'
+                        onClick={() =>
+                          setTBox((p) => ({
+                            ...p,
+                            alignment: 'center',
+                            verticalAlignment: 'center',
+                          }))
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wide flex items-center gap-1 transition-all cursor-pointer ${
+                          tBox.alignment === 'center' && (tBox.verticalAlignment === 'center' || !tBox.verticalAlignment)
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
                         }`}
+                        title="Set both Horizontal and Vertical alignment to Center"
                       >
-                        <AlignLeft className="w-3.5 h-3.5" />
-                        <span>Left</span>
+                        <span>🎯 Center Both (H + V)</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setTBox((p) => ({ ...p, alignment: 'center' }))}
-                        className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          tBox.alignment === 'center'
-                            ? 'bg-slate-900 text-white shadow-2xs'
-                            : 'text-slate-600 hover:text-black'
-                        }`}
-                      >
-                        <AlignCenter className="w-3.5 h-3.5" />
-                        <span>Center</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTBox((p) => ({ ...p, alignment: 'right' }))}
-                        className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          tBox.alignment === 'right'
-                            ? 'bg-slate-900 text-white shadow-2xs'
-                            : 'text-slate-600 hover:text-black'
-                        }`}
-                      >
-                        <AlignRight className="w-3.5 h-3.5" />
-                        <span>Right</span>
-                      </button>
+                    </div>
+
+                    {/* Horizontal Alignment */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-slate-500 font-bold">
+                          Horizontal Alignment (Left / Center / Right)
+                        </label>
+                        <span className="text-[9px] font-mono text-slate-400 capitalize">
+                          {tBox.alignment || 'left'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 p-1 bg-[#F8F9FD] rounded-xl border border-[#EEF1F6]">
+                        <button
+                          type="button"
+                          onClick={() => setTBox((p) => ({ ...p, alignment: 'left' }))}
+                          className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            tBox.alignment === 'left' || !tBox.alignment
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-black'
+                          }`}
+                        >
+                          <AlignLeft className="w-3.5 h-3.5" />
+                          <span>Left</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTBox((p) => ({ ...p, alignment: 'center' }))}
+                          className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            tBox.alignment === 'center'
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-black'
+                          }`}
+                        >
+                          <AlignCenter className="w-3.5 h-3.5" />
+                          <span>Center</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTBox((p) => ({ ...p, alignment: 'right' }))}
+                          className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            tBox.alignment === 'right'
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-black'
+                          }`}
+                        >
+                          <AlignRight className="w-3.5 h-3.5" />
+                          <span>Right</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Vertical Alignment */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-slate-500 font-bold">
+                          Vertical Alignment (Top / Center / Bottom)
+                        </label>
+                        <span className="text-[9px] font-mono text-slate-400 capitalize">
+                          {tBox.verticalAlignment || 'center'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 p-1 bg-[#F8F9FD] rounded-xl border border-[#EEF1F6]">
+                        <button
+                          type="button"
+                          onClick={() => setTBox((p) => ({ ...p, verticalAlignment: 'top' }))}
+                          className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            tBox.verticalAlignment === 'top'
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-black'
+                          }`}
+                        >
+                          <span className="text-xs">⬆️</span>
+                          <span>Top</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTBox((p) => ({ ...p, verticalAlignment: 'center' }))}
+                          className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            tBox.verticalAlignment === 'center' || !tBox.verticalAlignment
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-black'
+                          }`}
+                        >
+                          <span className="text-xs">↕️</span>
+                          <span>Center (Middle)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTBox((p) => ({ ...p, verticalAlignment: 'bottom' }))}
+                          className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            tBox.verticalAlignment === 'bottom'
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-black'
+                          }`}
+                        >
+                          <span className="text-xs">⬇️</span>
+                          <span>Bottom</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

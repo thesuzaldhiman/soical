@@ -450,7 +450,13 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
   const totalTextHeight =
     headlineLines.length * lineHeight +
     (subtitleLines.length > 0 ? subtitleLines.length * subLineHeight + 10 : 0);
-  const startY = tBox.y + fontSize + Math.max(0, (tBox.height - totalTextHeight) / 2);
+  const verticalAlignment = (tBox as any).verticalAlignment || 'center';
+  let startY = tBox.y + fontSize * 0.9 + Math.max(0, (tBox.height - totalTextHeight) / 2);
+  if (verticalAlignment === 'top') {
+    startY = tBox.y + fontSize * 0.9 + 6;
+  } else if (verticalAlignment === 'bottom') {
+    startY = tBox.y + tBox.height - totalTextHeight + fontSize * 0.9 - 6;
+  }
 
   const headlineTspans = headlineLines
     .map((line, idx) => {

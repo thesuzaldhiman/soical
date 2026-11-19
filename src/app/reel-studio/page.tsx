@@ -41,6 +41,9 @@ import {
   Sliders,
   CalendarClock,
   BookmarkCheck,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from 'lucide-react';
 
 // ── Built-in Animation Effects ──
@@ -290,6 +293,7 @@ export default function ReelStudioPage() {
           highlightColor: '#FACC15',
           fontFamily: 'Noto Sans Devanagari',
           alignment: 'center',
+          verticalAlignment: 'center',
         },
         isDefault: false,
       }
@@ -324,6 +328,7 @@ export default function ReelStudioPage() {
       highlightColor: '#FACC15',
       fontFamily: 'Noto Sans Devanagari',
       alignment: 'center',
+      verticalAlignment: 'center',
     }
   );
 
@@ -427,7 +432,10 @@ export default function ReelStudioPage() {
       );
       setTBox(
         target.titleBox
-          ? { ...target.titleBox }
+          ? {
+              ...target.titleBox,
+              verticalAlignment: target.titleBox.verticalAlignment || 'center',
+            }
           : {
               x: 60,
               y: Math.round((target.canvasHeight || 1920) * 0.65),
@@ -439,6 +447,7 @@ export default function ReelStudioPage() {
               highlightColor: '#FACC15',
               fontFamily: 'Noto Sans Devanagari',
               alignment: 'center',
+              verticalAlignment: 'center',
             }
       );
 
@@ -902,6 +911,7 @@ export default function ReelStudioPage() {
         highlightColor: '#FACC15',
         fontFamily: 'Noto Sans Devanagari',
         alignment: 'center',
+        verticalAlignment: 'center',
       },
     };
 
@@ -1580,14 +1590,31 @@ export default function ReelStudioPage() {
                         height: `${Math.round(tBox.height * displayScale)}px`,
                         zIndex: 3,
                         pointerEvents: 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent:
+                          tBox.verticalAlignment === 'top'
+                            ? 'flex-start'
+                            : tBox.verticalAlignment === 'bottom'
+                            ? 'flex-end'
+                            : 'center',
+                        alignItems:
+                          tBox.alignment === 'left'
+                            ? 'flex-start'
+                            : tBox.alignment === 'right'
+                            ? 'flex-end'
+                            : 'center',
+                        textAlign: tBox.alignment || 'center',
                         color: tBox.textColor || '#FFFFFF',
                         fontSize: `${Math.round((tBox.fontSize || 56) * displayScale)}px`,
                         lineHeight: tBox.lineHeight || 1.35,
                         fontFamily: `"${tBox.fontFamily || 'Noto Sans Devanagari'}", "Poppins", sans-serif`,
-                        textAlign: tBox.alignment || 'center',
                         textShadow: '0 2px 4px rgba(0,0,0,0.8)',
+                        padding: `${Math.round(6 * displayScale)}px`,
+                        boxSizing: 'border-box',
+                        overflow: 'hidden',
                       }}
-                      className="p-1 font-bold line-clamp-4"
+                      className="font-bold"
                     >
                       {genHeadline}
                     </div>
@@ -1998,6 +2025,134 @@ export default function ReelStudioPage() {
                             className="w-7 h-7 rounded border border-slate-200 cursor-pointer p-0"
                           />
                           <span className="font-mono text-[10px] font-bold text-slate-700">{tBox.highlightColor}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Text Alignment & Centering Controls */}
+                    <div className="space-y-2 pt-2 border-t border-[#EEF1F6]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-black text-slate-800 flex items-center gap-1.5">
+                          <AlignCenter className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Text Alignment (Position)</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTBox((p) => ({
+                              ...p,
+                              alignment: 'center',
+                              verticalAlignment: 'center',
+                            }))
+                          }
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wide flex items-center gap-1 transition-all cursor-pointer ${
+                            tBox.alignment === 'center' && (tBox.verticalAlignment === 'center' || !tBox.verticalAlignment)
+                              ? 'bg-rose-600 text-white shadow-xs'
+                              : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                          }`}
+                          title="Set both Horizontal and Vertical alignment to Center"
+                        >
+                          <span>🎯 Center Both (H + V)</span>
+                        </button>
+                      </div>
+
+                      {/* Horizontal Alignment */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] text-slate-500 font-bold">
+                            Horizontal Alignment (Left / Center / Right)
+                          </label>
+                          <span className="text-[9px] font-mono text-slate-400 capitalize">
+                            {tBox.alignment || 'center'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 p-1 bg-[#F8F9FD] rounded-xl border border-[#EEF1F6]">
+                          <button
+                            type="button"
+                            onClick={() => setTBox((p) => ({ ...p, alignment: 'left' }))}
+                            className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              tBox.alignment === 'left'
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-black'
+                            }`}
+                          >
+                            <AlignLeft className="w-3.5 h-3.5" />
+                            <span>Left</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTBox((p) => ({ ...p, alignment: 'center' }))}
+                            className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              tBox.alignment === 'center' || !tBox.alignment
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-black'
+                            }`}
+                          >
+                            <AlignCenter className="w-3.5 h-3.5" />
+                            <span>Center</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTBox((p) => ({ ...p, alignment: 'right' }))}
+                            className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              tBox.alignment === 'right'
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-black'
+                            }`}
+                          >
+                            <AlignRight className="w-3.5 h-3.5" />
+                            <span>Right</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Vertical Alignment */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] text-slate-500 font-bold">
+                            Vertical Alignment (Top / Center / Bottom)
+                          </label>
+                          <span className="text-[9px] font-mono text-slate-400 capitalize">
+                            {tBox.verticalAlignment || 'center'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 p-1 bg-[#F8F9FD] rounded-xl border border-[#EEF1F6]">
+                          <button
+                            type="button"
+                            onClick={() => setTBox((p) => ({ ...p, verticalAlignment: 'top' }))}
+                            className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              tBox.verticalAlignment === 'top'
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-black'
+                            }`}
+                          >
+                            <span className="text-xs">⬆️</span>
+                            <span>Top</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTBox((p) => ({ ...p, verticalAlignment: 'center' }))}
+                            className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              tBox.verticalAlignment === 'center' || !tBox.verticalAlignment
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-black'
+                            }`}
+                          >
+                            <span className="text-xs">↕️</span>
+                            <span>Center</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTBox((p) => ({ ...p, verticalAlignment: 'bottom' }))}
+                            className={`py-1.5 flex items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              tBox.verticalAlignment === 'bottom'
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-black'
+                            }`}
+                          >
+                            <span className="text-xs">⬇️</span>
+                            <span>Bottom</span>
+                          </button>
                         </div>
                       </div>
                     </div>

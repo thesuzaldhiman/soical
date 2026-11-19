@@ -201,6 +201,7 @@ function renderHeadlineInsideBox(
     highlightColor?: string;
     fontFamily?: string;
     alignment?: 'left' | 'center' | 'right';
+    verticalAlignment?: 'top' | 'center' | 'bottom';
   }
 ) {
   const fontSize = box.fontSize || 42;
@@ -210,6 +211,7 @@ function renderHeadlineInsideBox(
   const highlightColor = box.highlightColor || '#FBBF24';
   const fontFamily = box.fontFamily || 'Noto Sans Devanagari';
   const alignment = box.alignment || 'left';
+  const verticalAlignment = box.verticalAlignment || 'center';
 
   ctx.save();
   ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
@@ -239,9 +241,14 @@ function renderHeadlineInsideBox(
     lines.push(currentLine);
   }
 
-  // Calculate starting Y position
+  // Calculate starting Y position based on verticalAlignment ('top' | 'center' | 'bottom')
   const totalTextHeight = lines.length * lineHeight;
-  const startY = box.y + fontSize + Math.max(0, (box.height - totalTextHeight) / 2);
+  let startY = box.y + fontSize * 0.9 + Math.max(0, (box.height - totalTextHeight) / 2);
+  if (verticalAlignment === 'top') {
+    startY = box.y + fontSize * 0.9 + 6;
+  } else if (verticalAlignment === 'bottom') {
+    startY = box.y + box.height - totalTextHeight + fontSize * 0.9 - 6;
+  }
 
   lines.forEach((line, lineIdx) => {
     const y = startY + lineIdx * lineHeight;

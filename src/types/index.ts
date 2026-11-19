@@ -286,6 +286,7 @@ export interface SigTemplate {
     highlightColor: string;
     fontFamily: string;
     alignment: 'left' | 'center' | 'right';
+    verticalAlignment?: 'top' | 'center' | 'bottom';
   };
   isDefault?: boolean;
 }
