@@ -431,6 +431,9 @@ export async function downloadYouTubeVideo(
   const args: string[] = [
     '--no-playlist',
     '--no-warnings',
+    '--no-update',
+    '--extractor-args',
+    'youtube:player_client=android,web',
     '-f',
     'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
     '--merge-output-format',
@@ -442,9 +445,6 @@ export async function downloadYouTubeVideo(
   if (ffmpegDir) {
     args.push('--ffmpeg-location', ffmpegDir);
   }
-
-  // Node runtime for JS challenge solving
-  args.push('--js-runtimes', 'node');
 
   // Add the YouTube URL
   args.push(watchUrl);
