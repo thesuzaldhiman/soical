@@ -145,6 +145,8 @@ async function handleProcessQueue(request: NextRequest) {
             commentText: post.commentText || '',
             contentHtml: post.message || '',
             isAiGenerated: false,
+            intervalMinSeconds: Number(post.intervalMinSeconds) || 0,
+            intervalMaxSeconds: Number(post.intervalMaxSeconds) || 0,
             targets: targetsPayload,
           });
 

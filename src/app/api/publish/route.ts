@@ -13,6 +13,8 @@ export async function POST(request: NextRequest) {
       commentText = '',
       contentHtml = '',
       isAiGenerated = false,
+      intervalMinSeconds = 0,
+      intervalMaxSeconds = 0,
       targets = [],
     } = body;
 
@@ -39,6 +41,8 @@ export async function POST(request: NextRequest) {
       commentText,
       contentHtml,
       isAiGenerated: Boolean(isAiGenerated),
+      intervalMinSeconds: Number(intervalMinSeconds) || 0,
+      intervalMaxSeconds: Number(intervalMaxSeconds) || 0,
       targets: targets as PublishTarget[],
     });
 

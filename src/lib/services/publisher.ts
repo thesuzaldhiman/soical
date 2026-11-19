@@ -113,14 +113,34 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
     linkUrl = '',
     commentText = '',
     contentHtml = '',
+    intervalMinSeconds = 0,
+    intervalMaxSeconds = 0,
     targets = [],
   } = options;
 
   const results: TargetDispatchResult[] = [];
+  const minSec = typeof intervalMinSeconds === 'number' ? intervalMinSeconds : 0;
+  const maxSec = typeof intervalMaxSeconds === 'number' ? Math.max(minSec, intervalMaxSeconds) : minSec;
 
-  await Promise.all(
-    targets.map(async (target) => {
-      const timestamp = new Date().toISOString();
+  for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+    const target = targets[targetIndex];
+
+    // Anti-ban delay between sequential pages
+    if (targetIndex > 0) {
+      let delaySec = 0;
+      if (minSec > 0 || maxSec > 0) {
+        delaySec = minSec === maxSec ? minSec : Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec;
+      } else {
+        delaySec = 2; // Safe 2s gap between targets to prevent Meta bot detection
+      }
+
+      if (delaySec > 0) {
+        console.log(`[Anti-Ban Queue] Target ${targetIndex + 1}/${targets.length}: waiting ${delaySec}s before publishing to "${target.name}"...`);
+        await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
+      }
+    }
+
+    const timestamp = new Date().toISOString();
 
       // 1. TELEGRAM DISPATCH
       if (target.platform === 'telegram') {
@@ -136,7 +156,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: 'Missing Telegram Bot Token or Channel Chat ID.',
             timestamp,
           });
-          return;
+          continue;
         }
 
         try {
@@ -207,7 +227,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               error: tgResData?.description || 'Telegram API rejected post.',
               timestamp,
             });
-            return;
+            continue;
           }
 
           const messageId = tgResData.result.message_id;
@@ -252,7 +272,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             timestamp,
           });
         }
-        return;
+        continue;
       }
 
       // 2. FACEBOOK GRAPH API DISPATCH
@@ -269,7 +289,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: 'Missing Facebook Page Access Token.',
             timestamp,
           });
-          return;
+          continue;
         }
 
         try {
@@ -384,19 +404,51 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 let photoMime = 'image/jpeg';
                 let photoExt = 'jpg';
 
-                if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
-                  if (fs.existsSync(localFilePath)) {
-                    photoBuffer = fs.readFileSync(localFilePath);
-                    photoExt = path.extname(localFilePath).replace('.', '') || 'jpg';
-                    photoMime = photoExt === 'png' ? 'image/png' : photoExt === 'gif' ? 'image/gif' : photoExt === 'webp' ? 'image/webp' : 'image/jpeg';
-                  } else {
-                    const filename = path.basename(cleanRelPath);
-                    const dbMedia = (await getMediaFromDb(cleanRelPath)) || (await getMediaFromDb(filename));
-                    if (dbMedia) {
-                      photoBuffer = dbMedia.data;
-                      photoMime = dbMedia.mimeType || 'image/jpeg';
-                      photoExt = photoMime.split('/')[1] || 'jpg';
+                // 1. Check if local file in public directory (e.g. /uploads/...) or MySQL DB
+                let resolvedLocalPath = '';
+                let searchRel = cleanRelPath;
+                if (mediaUrl.includes('/uploads/')) {
+                  searchRel = mediaUrl.substring(mediaUrl.indexOf('/uploads/')).replace(/^\/+/, '');
+                  resolvedLocalPath = path.join(process.cwd(), 'public', searchRel);
+                } else if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
+                  resolvedLocalPath = localFilePath;
+                }
+
+                if (resolvedLocalPath && fs.existsSync(resolvedLocalPath)) {
+                  photoBuffer = fs.readFileSync(resolvedLocalPath);
+                  photoExt = path.extname(resolvedLocalPath).replace('.', '') || 'jpg';
+                  photoMime = photoExt === 'png' ? 'image/png' : photoExt === 'gif' ? 'image/gif' : photoExt === 'webp' ? 'image/webp' : 'image/jpeg';
+                } else {
+                  const filename = path.basename(searchRel);
+                  const dbMedia = (await getMediaFromDb(searchRel)) || (await getMediaFromDb(filename));
+                  if (dbMedia) {
+                    photoBuffer = dbMedia.data;
+                    photoMime = dbMedia.mimeType || 'image/jpeg';
+                    photoExt = photoMime.split('/')[1] || 'jpg';
+                  }
+                }
+
+                // 2. If remote HTTP/HTTPS, fetch buffer once so Meta doesn't fail crawling the URL externally
+                if (!photoBuffer && (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://'))) {
+                  try {
+                    const fetchRes = await fetch(mediaUrl, {
+                      headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                      },
+                      signal: AbortSignal.timeout(10000),
+                    });
+                    if (fetchRes.ok) {
+                      const ab = await fetchRes.arrayBuffer();
+                      photoBuffer = Buffer.from(ab);
+                      const ct = fetchRes.headers.get('content-type') || '';
+                      if (ct.includes('png')) { photoExt = 'png'; photoMime = 'image/png'; }
+                      else if (ct.includes('webp')) { photoExt = 'webp'; photoMime = 'image/webp'; }
+                      else if (ct.includes('gif')) { photoExt = 'gif'; photoMime = 'image/gif'; }
+                      else { photoExt = 'jpg'; photoMime = 'image/jpeg'; }
                     }
+                  } catch (e) {
+                    console.warn('[publisher] Remote media buffer download failed, fallback to url param:', e);
                   }
                 }
 
@@ -473,7 +525,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               error: errMsg,
               timestamp,
             });
-            return;
+            continue;
           }
 
           const postId = fbResData.post_id || fbResData.id;
@@ -516,7 +568,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             timestamp,
           });
         }
-        return;
+        continue;
       }
 
       // 3. WORDPRESS DISPATCH (Auto Engine Bridge API & Standard REST API)
@@ -534,7 +586,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: 'Missing WordPress Site URL.',
             timestamp,
           });
-          return;
+          continue;
         }
 
         const wpPostTitle = title || message?.split('\n')[0] || 'Social Post Update';
@@ -587,7 +639,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: errMsg,
                 timestamp,
               });
-              return;
+              continue;
             }
 
             const wpPostId = resData.post_id || resData.id;
@@ -600,7 +652,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               postUrl: resData.permalink || resData.url || `${siteUrl}/?p=${wpPostId}`,
               timestamp,
             });
-            return;
+            continue;
           }
 
           // Option B: Standard WP REST API (Application Passwords)
@@ -629,7 +681,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: resData?.message || `WordPress REST API error HTTP ${wpRes.status}`,
                 timestamp,
               });
-              return;
+              continue;
             }
 
             results.push({
@@ -641,7 +693,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               postUrl: resData.link || `${siteUrl}/?p=${resData.id}`,
               timestamp,
             });
-            return;
+            continue;
           }
 
           // Fallback for mock/simulation
@@ -654,7 +706,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             postUrl: `${siteUrl || 'https://mywordpress.com'}/sample-post-${Date.now()}`,
             timestamp,
           });
-          return;
+          continue;
         } catch (err: unknown) {
           results.push({
             pageId: target.id,
@@ -664,7 +716,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: err instanceof Error ? err.message : 'Network error contacting WordPress site',
             timestamp,
           });
-          return;
+          continue;
         }
       }
 
@@ -681,7 +733,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: 'No active OAuth access token found for YouTube channel. Please connect via "OAuth Login (Google Cloud)" in Accounts to enable automated publishing.',
             timestamp,
           });
-          return;
+          continue;
         }
 
         if (postType !== 'video' || !mediaUrl) {
@@ -693,7 +745,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: 'YouTube supports video and Shorts uploads only. Please attach a video file.',
             timestamp,
           });
-          return;
+          continue;
         }
 
         try {
@@ -736,7 +788,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               error: 'Failed to retrieve video file for YouTube upload.',
               timestamp,
             });
-            return;
+            continue;
           }
 
           const ytTitle = (title || message.split('\n')[0] || 'New Video').slice(0, 100);
@@ -791,7 +843,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               error: uploadData.error.message || 'YouTube Data API upload error',
               timestamp,
             });
-            return;
+            continue;
           }
 
           const videoId = uploadData.id;
@@ -806,7 +858,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             postUrl,
             timestamp,
           });
-          return;
+          continue;
         } catch (ytErr: unknown) {
           results.push({
             pageId: target.id,
@@ -816,7 +868,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: ytErr instanceof Error ? ytErr.message : 'Network error uploading to YouTube',
             timestamp,
           });
-          return;
+          continue;
         }
       }
 
@@ -834,7 +886,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: 'Missing Instagram Business User ID or Page Access Token.',
             timestamp,
           });
-          return;
+          continue;
         }
 
         try {
@@ -910,7 +962,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: 'Instagram Reel requires a video file or public video URL.',
                 timestamp,
               });
-              return;
+              continue;
             }
 
             const publicVideoUrl = await ensurePublicMediaUrl(mediaUrl, true);
@@ -941,7 +993,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: errMsg,
                 timestamp,
               });
-              return;
+              continue;
             }
 
             const creationId = createData.id;
@@ -1002,7 +1054,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: errMsg,
                 timestamp,
               });
-              return;
+              continue;
             }
 
             const mediaId = pubData.id;
@@ -1046,7 +1098,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               postUrl,
               timestamp,
             });
-            return;
+            continue;
           }
 
           // B. Photo / Image Publishing
@@ -1062,7 +1114,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: 'Instagram requires an image or video to create a post.',
                 timestamp,
               });
-              return;
+              continue;
             }
 
             // Step 1: Create Image Container
@@ -1090,7 +1142,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: errMsg,
                 timestamp,
               });
-              return;
+              continue;
             }
 
             const creationId = createData.id;
@@ -1122,7 +1174,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                 error: errMsg,
                 timestamp,
               });
-              return;
+              continue;
             }
 
             const mediaId = pubData.id;
@@ -1166,7 +1218,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               postUrl,
               timestamp,
             });
-            return;
+            continue;
           }
 
           // C. Text-only (Instagram Graph API requires media)
@@ -1179,7 +1231,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
               'Instagram Graph API does not support text-only posts. Please attach an image or video/reel to publish to Instagram.',
             timestamp,
           });
-          return;
+          continue;
         } catch (igErr: unknown) {
           const errMsg = igErr instanceof Error ? igErr.message : 'Unknown Instagram publishing error';
           console.error('[Instagram Publisher Error]:', igErr);
@@ -1191,7 +1243,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             error: errMsg,
             timestamp,
           });
-          return;
+          continue;
         }
       }
 
@@ -1204,8 +1256,7 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
         externalPostId: `sim_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         timestamp,
       });
-    })
-  );
+    }
 
-  return results;
+    return results;
 }

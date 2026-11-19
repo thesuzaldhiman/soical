@@ -247,6 +247,19 @@ function ComposerContent() {
   const [composerIntervalMinSec, setComposerIntervalMinSec] = useState(60);
   const [composerIntervalMaxSec, setComposerIntervalMaxSec] = useState(180);
 
+  // Auto-sync anti-ban delay defaults from user settings
+  useEffect(() => {
+    if (settings) {
+      const min = settings.pageIntervalMinSeconds ?? 0;
+      const max = settings.pageIntervalMaxSeconds ?? 0;
+      if (min > 0 || max > 0) {
+        setComposerIntervalEnabled(true);
+        if (min > 0) setComposerIntervalMinSec(min);
+        if (max > 0) setComposerIntervalMaxSec(max);
+      }
+    }
+  }, [settings]);
+
   const INTERVAL_PRESETS = [
     { label: 'Fast (30s – 1m)', min: 30, max: 60 },
     { label: 'Recommended (1m – 3m)', min: 60, max: 180 },
@@ -555,8 +568,11 @@ function ComposerContent() {
 
     if (mode === 'schedule') {
       const targetPages = pages.filter((p) => selectedPageIds.includes(p.id));
+      const effIntervalEnabled = composerIntervalEnabled || (settings?.pageIntervalMinSeconds ?? 0) > 0 || (settings?.pageIntervalMaxSeconds ?? 0) > 0;
+      const effMin = composerIntervalEnabled ? composerIntervalMinSec : (settings?.pageIntervalMinSeconds || 60);
+      const effMax = composerIntervalEnabled ? composerIntervalMaxSec : (settings?.pageIntervalMaxSeconds || Math.max(effMin, 180));
 
-      if (targetPages.length > 1 && composerIntervalEnabled && composerIntervalMaxSec > 0) {
+      if (targetPages.length > 1 && effIntervalEnabled && effMax > 0) {
         // Multi-page staggered schedule
         const baseTimeMs = new Date(scheduledDateTime).getTime();
         let cumulativeDelaySec = 0;
@@ -566,8 +582,8 @@ function ComposerContent() {
           if (i > 0) {
             const randDelay =
               Math.floor(
-                Math.random() * (Math.max(composerIntervalMinSec, composerIntervalMaxSec) - composerIntervalMinSec + 1)
-              ) + composerIntervalMinSec;
+                Math.random() * (Math.max(effMin, effMax) - effMin + 1)
+              ) + effMin;
             cumulativeDelaySec += randDelay;
           }
           const itemScheduledAt = new Date(baseTimeMs + cumulativeDelaySec * 1000).toISOString();
@@ -578,8 +594,8 @@ function ComposerContent() {
             mediaUrl: activeMediaUrl || undefined,
             linkUrl: activeLinkUrl || undefined,
             commentText: firstComment.trim() || undefined,
-            intervalMinSeconds: composerIntervalMinSec,
-            intervalMaxSeconds: composerIntervalMaxSec,
+            intervalMinSeconds: effMin,
+            intervalMaxSeconds: effMax,
             pageIds: [pg.id],
             status: 'scheduled',
             scheduledAt: itemScheduledAt,
@@ -597,7 +613,7 @@ function ComposerContent() {
         setIsSubmitting(false);
         setStatusBanner({
           type: 'success',
-          text: `Scheduled across ${targetPages.length} pages starting at ${new Date(scheduledDateTime).toLocaleTimeString()} with staggered ${composerIntervalMinSec}s–${composerIntervalMaxSec}s random intervals!`,
+          text: `Scheduled across ${targetPages.length} pages starting at ${new Date(scheduledDateTime).toLocaleTimeString()} with staggered ${effMin}s–${effMax}s random intervals!`,
         });
         setTimeout(() => router.push('/library?status=scheduled'), 1200);
         return;
@@ -638,8 +654,12 @@ function ComposerContent() {
     // MULTI-PAGE STAGGERED PUBLISH:
     // If multiple pages are selected and staggered interval is enabled:
     // Page 0 publishes immediately to FB. Pages 1..N-1 get scheduled with cumulative random delays.
-    if (targetPages.length > 1 && composerIntervalEnabled && composerIntervalMaxSec > 0) {
-      setPublishingMessage(`Publishing live to 1st page (${targetPages[0].name}) and queuing remaining ${targetPages.length - 1} pages...`);
+    const effLiveIntervalEnabled = composerIntervalEnabled || (settings?.pageIntervalMinSeconds ?? 0) > 0 || (settings?.pageIntervalMaxSeconds ?? 0) > 0;
+    const effLiveMin = composerIntervalEnabled ? composerIntervalMinSec : (settings?.pageIntervalMinSeconds || 60);
+    const effLiveMax = composerIntervalEnabled ? composerIntervalMaxSec : (settings?.pageIntervalMaxSeconds || Math.max(effLiveMin, 180));
+
+    if (targetPages.length > 1 && effLiveIntervalEnabled && effLiveMax > 0) {
+      setPublishingMessage(`Publishing live to 1st page (${targetPages[0].name}) and queuing remaining ${targetPages.length - 1} pages with anti-ban delay...`);
       const firstPage = targetPages[0];
       const acc0 = accounts.find((a) => a.id === firstPage.accountId);
 
@@ -678,8 +698,8 @@ function ComposerContent() {
           mediaUrl: activeMediaUrl || undefined,
           linkUrl: activeLinkUrl || undefined,
           commentText: firstComment.trim() || undefined,
-          intervalMinSeconds: composerIntervalMinSec,
-          intervalMaxSeconds: composerIntervalMaxSec,
+          intervalMinSeconds: effLiveMin,
+          intervalMaxSeconds: effLiveMax,
           pageIds: [firstPage.id],
           status: data.overallStatus || 'published',
           results: data.results,
@@ -699,8 +719,8 @@ function ComposerContent() {
           const nextPg = targetPages[i];
           const randDelay =
             Math.floor(
-              Math.random() * (Math.max(composerIntervalMinSec, composerIntervalMaxSec) - composerIntervalMinSec + 1)
-            ) + composerIntervalMinSec;
+              Math.random() * (Math.max(effLiveMin, effLiveMax) - effLiveMin + 1)
+            ) + effLiveMin;
           cumulativeDelaySec += randDelay;
           const scheduledTime = new Date(Date.now() + cumulativeDelaySec * 1000).toISOString();
 
@@ -710,8 +730,8 @@ function ComposerContent() {
             mediaUrl: activeMediaUrl || undefined,
             linkUrl: activeLinkUrl || undefined,
             commentText: firstComment.trim() || undefined,
-            intervalMinSeconds: composerIntervalMinSec,
-            intervalMaxSeconds: composerIntervalMaxSec,
+            intervalMinSeconds: effLiveMin,
+            intervalMaxSeconds: effLiveMax,
             pageIds: [nextPg.id],
             status: 'scheduled',
             scheduledAt: scheduledTime,
@@ -731,7 +751,7 @@ function ComposerContent() {
 
         setStatusBanner({
           type: 'success',
-          text: `Page 1 (${firstPage.name}) published live! ${targetPages.length - 1} remaining pages scheduled with staggered random interval (${composerIntervalMinSec}s – ${composerIntervalMaxSec}s).`,
+          text: `Page 1 (${firstPage.name}) published live! ${targetPages.length - 1} remaining pages scheduled with anti-ban random delay (${effLiveMin}s – ${effLiveMax}s).`,
           postUrl: data.results?.find((r: { postUrl?: string }) => r.postUrl)?.postUrl,
         });
 
