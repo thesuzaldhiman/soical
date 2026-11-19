@@ -800,6 +800,7 @@ export async function POST(request: NextRequest) {
     const pagePostsToPersist: Post[] = [];
     let cumulativeDelayMs = 0;
     let firstGeneratedCardUrl: string | undefined = undefined;
+    let firstGeneratedReelUrl: string | undefined = undefined;
 
     // Loop through each target page and dispatch 1-to-1 according to selected format
     for (let i = 0; i < targetPages.length; i++) {
@@ -833,9 +834,9 @@ export async function POST(request: NextRequest) {
           // Priority 3: TITLES HAVE RUN OUT FOR THIS PAGE!
           // (e.g. 4 pages selected, but only 2 or 3 titles given)
           // As required by user:
-          // "aur agar mene title kam diye like slected page 4 hai and mene title 2 hidiye hai kya 3 teen hi diye hai to teen pages me to alag iamge jaye gi but ek jis page ke liye title bhi bacha iamge nhi bachi tab default image chali jani chahiye"
-          assignedTitle = mainTitle;
-          assignedSubtitle = undefined;
+          // "Fallback me raw photo nahi jayegi, balki Selected Page 1 par jo Image 1 (default title image) bani hai wahi Image 1 is page par jayegi!"
+          assignedTitle = availableTitleVariations[0]?.title?.trim() || mainTitle;
+          assignedSubtitle = availableTitleVariations[0]?.subtitle?.trim() || undefined;
           hasCustomTitle = false;
           isFallbackDefaultImage = true;
         }
@@ -872,11 +873,36 @@ export async function POST(request: NextRequest) {
       } else if (dispatchFormat === 'text_only') {
         postTypeToSend = 'text';
         linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
-      } else if (dispatchFormat === 'featured_image' || isFallbackDefaultImage) {
-        // If the rule is featured_image OR titles ran out (isFallbackDefaultImage === true):
-        // Use the original article photo directly (Default Image) without generating a custom card!
+      } else if (dispatchFormat === 'featured_image') {
         postTypeToSend = imageUrl ? 'image' : 'text';
         mediaToSend = imageUrl || '';
+        linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
+      } else if (isFallbackDefaultImage) {
+        // Fallback for pages where extra titles ran out (e.g. 4 pages selected, but only 2 or 3 titles given)
+        // User requirement:
+        // "Fallback me raw photo (clean original photo) nahi jayegi, balki Selected Page 1 par jo Image 1 (default title image) bani hai wahi Image 1 is page par jayegi!"
+        if (dispatchFormat === 'ai_reel' && firstGeneratedReelUrl) {
+          postTypeToSend = 'video';
+          mediaToSend = firstGeneratedReelUrl;
+        } else {
+          postTypeToSend = 'image';
+          if (!firstGeneratedCardUrl) {
+            try {
+              const cardBase64 = await generateServerCardImage({
+                headline: assignedTitle,
+                subtitle: assignedSubtitle,
+                featuredImageUrl: imageUrl || undefined,
+                template: templateToUse,
+                category: categories[0] || 'News',
+                siteName: payload.site_name || incomingSiteUrl || '',
+              });
+              firstGeneratedCardUrl = offloadBase64Media(cardBase64) || cardBase64;
+            } catch (cardErr) {
+              console.error('[WP Webhook] Fallback card generation error:', cardErr);
+            }
+          }
+          mediaToSend = firstGeneratedCardUrl || imageUrl || '';
+        }
         linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
       } else if (dispatchFormat === 'ai_reel') {
         // AI Video Reel (9:16 Video with motion effects and background music)
@@ -909,6 +935,9 @@ export async function POST(request: NextRequest) {
             musicVolume: vConfig?.musicVolume ?? 100,
           });
           mediaToSend = reelRes.videoUrl;
+          if (!firstGeneratedReelUrl) {
+            firstGeneratedReelUrl = reelRes.videoUrl;
+          }
           console.log(`[WP Webhook] Video Reel generated for Page ${page.name}: ${reelRes.videoUrl}`);
         } catch (reelErr) {
           console.error('[WP Webhook] Reel generation error, fallback to card image:', reelErr);
@@ -995,7 +1024,7 @@ export async function POST(request: NextRequest) {
           mediaUrl: mediaToSend || undefined,
           thumbnailUrl: mediaToSend || imageUrl || undefined,
           featuredImageUrl: imageUrl || undefined,
-          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
+          isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
           sigTemplateId: selectedSigTemplateId || templateToUse?.id,
           linkUrl: linkToSend || undefined,
           commentText: commentText || undefined,
@@ -1053,7 +1082,7 @@ export async function POST(request: NextRequest) {
           mediaUrl: mediaToSend || undefined,
           thumbnailUrl: mediaToSend || imageUrl || undefined,
           featuredImageUrl: imageUrl || undefined,
-          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
+          isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
           sigTemplateId: selectedSigTemplateId || templateToUse?.id,
           linkUrl: linkToSend || undefined,
           commentText: commentText || undefined,
@@ -1117,7 +1146,7 @@ export async function POST(request: NextRequest) {
           mediaUrl: mediaToSend,
           linkUrl: linkToSend,
           commentText,
-          isAiGenerated: !isFallbackDefaultImage && dispatchFormat === 'ai_image',
+          isAiGenerated: dispatchFormat === 'ai_image',
           targets: [targetItem],
         });
 
@@ -1133,7 +1162,7 @@ export async function POST(request: NextRequest) {
           mediaUrl: mediaToSend || undefined,
           thumbnailUrl: mediaToSend || imageUrl || undefined,
           featuredImageUrl: imageUrl || undefined,
-          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
+          isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
           sigTemplateId: selectedSigTemplateId || templateToUse?.id,
           linkUrl: linkToSend || undefined,
           commentText: commentText || undefined,
@@ -1186,7 +1215,7 @@ export async function POST(request: NextRequest) {
           mediaUrl: mediaToSend || undefined,
           thumbnailUrl: mediaToSend || imageUrl || undefined,
           featuredImageUrl: imageUrl || undefined,
-          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
+          isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
           sigTemplateId: selectedSigTemplateId || templateToUse?.id,
           linkUrl: linkToSend || undefined,
           commentText: commentText || undefined,
