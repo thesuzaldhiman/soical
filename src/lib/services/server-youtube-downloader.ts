@@ -549,35 +549,31 @@ export async function downloadYouTubeVideo(
     TMP: localTmpDir,
   };
 
+  if (!cookiesPath) {
+    throw new Error(
+      'YouTube Cookies Required: Hostinger cloud datacenter IP is blocked by YouTube bot protection. Please click "🍪 Add Cookies" on the YouTube Sync page, paste your Netscape cookies.txt, and click Save. They are stored permanently in your cloud database.'
+    );
+  }
+
   // Multi-tier download strategies
   const strategies = [
-    // Strategy 1: Android Client with Format 18 / Best (with Cookies if available)
+    // Strategy 1: Android Client with Format 18 / Best (with Cookies)
     {
-      name: 'Strategy 1 (Android 18/Best + Cookies)',
+      name: 'Strategy 1 (Android 18/Best)',
       format: '18/b/best/bv*[ext=mp4]+ba[ext=m4a]/bestvideo+bestaudio/bv*+ba',
       extractorArgs: 'youtube:player_client=android',
-      useCookies: true,
     },
-    // Strategy 2: Android Clean Direct (without Cookies - bypasses corrupt/expired cookies)
+    // Strategy 2: Android + Web-Embedded Dual Fallback (with Cookies)
     {
-      name: 'Strategy 2 (Android Clean Direct)',
-      format: '18/b/best/bv*[ext=mp4]+ba[ext=m4a]/bestvideo+bestaudio/bv*+ba',
-      extractorArgs: 'youtube:player_client=android',
-      useCookies: false,
-    },
-    // Strategy 3: Android + Web-Embedded Dual Fallback
-    {
-      name: 'Strategy 3 (Android + Web-Embedded Fallback)',
+      name: 'Strategy 2 (Android + Web-Embedded)',
       format: '18/best/bestvideo+bestaudio/bv*+ba/b',
       extractorArgs: 'youtube:player_client=android,web_embedded',
-      useCookies: true,
     },
-    // Strategy 4: Android + TV Fallback
+    // Strategy 3: Android + TV Fallback (with Cookies)
     {
-      name: 'Strategy 4 (Android + TV Fallback)',
+      name: 'Strategy 3 (Android + TV Fallback)',
       format: '18/best/b',
       extractorArgs: 'youtube:player_client=android,tv',
-      useCookies: false,
     },
   ];
 
@@ -595,6 +591,7 @@ export async function downloadYouTubeVideo(
       '--ignore-config',
       '--no-check-certificates',
       '--geo-bypass',
+      '-4', // Force IPv4 to prevent IPv6 datacenter subnet blocking
     ];
 
     if (strat.extractorArgs) {
@@ -611,9 +608,7 @@ export async function downloadYouTubeVideo(
       stratArgs.push('--ffmpeg-location', ffmpegDir);
     }
 
-    if (cookiesPath && strat.useCookies) {
-      stratArgs.push('--cookies', cookiesPath);
-    }
+    stratArgs.push('--cookies', cookiesPath);
 
     stratArgs.push('-o', finalFilePath);
     stratArgs.push(watchUrl);

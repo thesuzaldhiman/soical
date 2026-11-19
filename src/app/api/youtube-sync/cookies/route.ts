@@ -125,11 +125,17 @@ export async function POST(request: NextRequest) {
     try {
       const pool = getDbPool();
       if (pool) {
-        await pool.query(
-          'UPDATE app_user_data SET youtube_cookies = ?, updated_at = NOW() WHERE email = ?',
-          [cleanContent, email]
+        const [updateRes] = await pool.query<any>(
+          'UPDATE app_user_data SET youtube_cookies = ?, updated_at = NOW()',
+          [cleanContent]
         );
-        console.log(`[YouTube Cookies] Successfully backed up cookies.txt in MySQL for ${email}`);
+        if (!updateRes || updateRes.affectedRows === 0) {
+          await pool.query(
+            'INSERT INTO app_user_data (email, youtube_cookies) VALUES (?, ?) ON DUPLICATE KEY UPDATE youtube_cookies = ?',
+            [email || 'suzaldhiman@gmail.com', cleanContent, cleanContent]
+          );
+        }
+        console.log(`[YouTube Cookies] Successfully backed up cookies.txt in MySQL (${cleanContent.length} chars)`);
       }
     } catch (dbErr) {
       console.warn('[YouTube Cookies] Note on saving cookies to MySQL:', dbErr);
