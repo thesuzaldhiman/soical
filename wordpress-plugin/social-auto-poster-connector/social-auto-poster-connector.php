@@ -3,7 +3,7 @@
  * Plugin Name: Social Auto Poster Connector (Multi-Titles & Instant Dispatch)
  * Plugin URI: https://game.khabarmonkey.com
  * Description: Connects WordPress directly to Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line) and automatically pushes published posts to your Facebook Pages and social channels with unique titles and first-comment links.
- * Version: 1.3.4
+ * Version: 1.3.5
  * Author: Suzal Dhiman (Khabar Monkey Media)
  * Author URI: https://game.khabarmonkey.com
  * License: GPL-2.0+
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-define('SAP_CONNECTOR_VERSION', '1.3.4');
+define('SAP_CONNECTOR_VERSION', '1.3.5');
 define('SAP_CONNECTOR_DIR', plugin_dir_path(__FILE__));
 define('SAP_CONNECTOR_URL', plugin_dir_url(__FILE__));
 
@@ -58,6 +58,9 @@ class Social_Auto_Poster_Connector {
         add_filter('pre_set_site_transient_update_plugins', array($this, 'check_plugin_update'));
         add_filter('plugins_api', array($this, 'plugin_popup_details'), 20, 3);
         add_action('wp_ajax_sap_check_update_now', array($this, 'ajax_check_update_now'));
+
+        // Open Graph Title Override (Comment Link Preview Optimization - Site Name Only)
+        $this->init_og_title_hooks();
     }
 
     /* ==========================================================================
@@ -79,6 +82,8 @@ class Social_Auto_Poster_Connector {
         register_setting('sap_settings_group', 'sap_secret_key');
         register_setting('sap_settings_group', 'sap_auto_publish');
         register_setting('sap_settings_group', 'sap_first_comment');
+        register_setting('sap_settings_group', 'sap_og_site_name_only');
+        register_setting('sap_settings_group', 'sap_og_custom_site_name');
     }
 
     public function render_settings_page() {
@@ -86,6 +91,8 @@ class Social_Auto_Poster_Connector {
         $secret_key = get_option('sap_secret_key', '');
         $auto_publish = get_option('sap_auto_publish', '1');
         $first_comment = get_option('sap_first_comment', '1');
+        $og_site_name_only = get_option('sap_og_site_name_only', '1');
+        $og_custom_site_name = get_option('sap_og_custom_site_name', '');
 
         $remote_update = $this->fetch_remote_info();
         $has_update = $remote_update && version_compare(SAP_CONNECTOR_VERSION, $remote_update['version'], '<');
@@ -177,6 +184,30 @@ class Social_Auto_Poster_Connector {
                                     <input type="checkbox" name="sap_first_comment" value="1" <?php checked('1', $first_comment); ?> />
                                     <span style="color: #1e293b; font-weight: 500;">Facebook Post ke first comment mein article ka direct permalink add karein (High Reach Hack)</span>
                                 </label>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <th scope="row" style="font-weight: 600; color: #334155;">Comment Link OG Title</th>
+                            <td>
+                                <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" name="sap_og_site_name_only" value="1" <?php checked('1', $og_site_name_only); ?> style="margin-top: 3px;" />
+                                    <div>
+                                        <span style="color: #1e293b; font-weight: 600;">Set Default OG Title to Website Name Only (Comment Link Preview)</span>
+                                        <p style="margin: 4px 0 0 0; color: #64748b; font-size: 12px; line-height: 1.5;">
+                                            Facebook comment me jab post ka link jayega, toh preview card me post ka lamba title nahi dikhega, <b>sirf website ka name</b> dikhega. Article ki apni featured image preview bilkul same rahegi.
+                                        </p>
+                                    </div>
+                                </label>
+                                <div style="margin-top: 10px; padding-left: 26px;">
+                                    <label style="font-size: 12px; font-weight: 600; color: #475569; display: block; margin-bottom: 4px;">
+                                        Custom Website Name for OG Title (Optional):
+                                    </label>
+                                    <input type="text" name="sap_og_custom_site_name" value="<?php echo esc_attr($og_custom_site_name); ?>" placeholder="<?php echo esc_attr(get_bloginfo('name')); ?>" class="regular-text" style="width: 100%; max-width: 380px; padding: 6px 10px; border-radius: 6px;" />
+                                    <span style="font-size: 11px; color: #94a3b8; display: block; margin-top: 3px;">
+                                        Khali chhodenge toh WordPress ka default Site Title (<b><?php echo esc_html(get_bloginfo('name')); ?></b>) use hoga.
+                                    </span>
+                                </div>
                             </td>
                         </tr>
                     </table>
@@ -1553,6 +1584,123 @@ class Social_Auto_Poster_Connector {
             'status'    => $status,
             'message'   => 'Post created on WordPress successfully!',
         ));
+    }
+
+    /* ==========================================================================
+       OPEN GRAPH TITLE OVERRIDE (WEBSITE NAME ONLY FOR COMMENT PREVIEW)
+       ========================================================================== */
+
+    public function init_og_title_hooks() {
+        $og_enabled = get_option('sap_og_site_name_only', '1');
+        if ($og_enabled !== '1') {
+            return;
+        }
+
+        // Rank Math SEO filters
+        add_filter('rank_math/opengraph/facebook/title', array($this, 'filter_og_title_site_name'), 9999);
+        add_filter('rank_math/opengraph/twitter/title', array($this, 'filter_og_title_site_name'), 9999);
+
+        // Yoast SEO filters
+        add_filter('wpseo_opengraph_title', array($this, 'filter_og_title_site_name'), 9999);
+        add_filter('wpseo_twitter_title', array($this, 'filter_og_title_site_name'), 9999);
+
+        // All in One SEO (AIOSEO) filters
+        add_filter('aioseo_facebook_tags', array($this, 'filter_aioseo_facebook_tags'), 9999);
+        add_filter('aioseo_twitter_tags', array($this, 'filter_aioseo_twitter_tags'), 9999);
+
+        // SEOPress filters
+        add_filter('seopress_social_fb_title', array($this, 'filter_og_title_site_name'), 9999);
+        add_filter('seopress_social_twitter_title', array($this, 'filter_og_title_site_name'), 9999);
+
+        // Jetpack Open Graph tags filter
+        add_filter('jetpack_open_graph_tags', array($this, 'filter_jetpack_og_tags'), 9999);
+
+        // Direct standard wp_head injection if no SEO plugin exists
+        add_action('wp_head', array($this, 'render_direct_og_title'), 1);
+
+        // Output buffer replacement to guarantee clean override regardless of theme or other plugins
+        add_action('template_redirect', array($this, 'start_og_title_buffer'), 1);
+    }
+
+    public function get_configured_site_name() {
+        $custom_name = trim(get_option('sap_og_custom_site_name', ''));
+        if (!empty($custom_name)) {
+            return $custom_name;
+        }
+        return get_bloginfo('name');
+    }
+
+    public function filter_og_title_site_name($title) {
+        if (is_singular() || is_single()) {
+            return $this->get_configured_site_name();
+        }
+        return $title;
+    }
+
+    public function filter_aioseo_facebook_tags($tags) {
+        if (is_array($tags) && (is_singular() || is_single())) {
+            $tags['og:title'] = $this->get_configured_site_name();
+        }
+        return $tags;
+    }
+
+    public function filter_aioseo_twitter_tags($tags) {
+        if (is_array($tags) && (is_singular() || is_single())) {
+            $tags['twitter:title'] = $this->get_configured_site_name();
+        }
+        return $tags;
+    }
+
+    public function filter_jetpack_og_tags($tags) {
+        if (is_array($tags) && (is_singular() || is_single())) {
+            $tags['og:title'] = $this->get_configured_site_name();
+        }
+        return $tags;
+    }
+
+    public function render_direct_og_title() {
+        if (is_singular() || is_single()) {
+            $site_name = esc_attr($this->get_configured_site_name());
+            echo '<meta property="og:site_name" content="' . $site_name . '" />' . "\n";
+            echo '<meta property="og:title" content="' . $site_name . '" />' . "\n";
+        }
+    }
+
+    public function start_og_title_buffer() {
+        if (!is_admin() && (is_singular() || is_single())) {
+            ob_start(array($this, 'replace_og_title_in_html'));
+        }
+    }
+
+    public function replace_og_title_in_html($html) {
+        if (empty($html) || !is_string($html)) {
+            return $html;
+        }
+
+        $site_name = esc_attr($this->get_configured_site_name());
+
+        // Regex 1: Replace <meta property="og:title" content="..." ... />
+        $replaced = preg_replace(
+            '/<meta\b([^>]*?)(?:property|name)=["\']og:title["\']([^>]*?)content=["\'][^"\']*["\']([^>]*?)\/?>/i',
+            '<meta $1property="og:title"$2content="' . $site_name . '"$3 />',
+            $html
+        );
+
+        if ($replaced !== null && $replaced !== $html) {
+            $html = $replaced;
+        } else {
+            // Also handle content attribute appearing BEFORE property="og:title"
+            $replaced_rev = preg_replace(
+                '/<meta\b([^>]*?)content=["\'][^"\']*["\']([^>]*?)(?:property|name)=["\']og:title["\']([^>]*?)\/?>/i',
+                '<meta $1content="' . $site_name . '"$2property="og:title"$3 />',
+                $html
+            );
+            if ($replaced_rev !== null) {
+                $html = $replaced_rev;
+            }
+        }
+
+        return $html;
     }
 }
 

@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
     name: 'Social Auto Poster Connector',
     slug: 'social-auto-poster-connector',
     plugin: 'social-auto-poster-connector/social-auto-poster-connector.php',
-    version: '1.3.4',
-    new_version: '1.3.4',
+    version: '1.3.5',
+    new_version: '1.3.5',
     author: 'Suzal Dhiman (Khabar Monkey Media)',
     author_profile: 'https://game.khabarmonkey.com',
     homepage: 'https://game.khabarmonkey.com',
@@ -41,14 +41,15 @@ export async function GET(request: NextRequest) {
     last_updated: new Date().toISOString().split('T')[0],
     download_url: downloadUrl,
     package: downloadUrl,
-    upgrade_notice: 'Version 1.3.4: Added Per-Page Title & Subtitle Studio, live connected page mapping, Gutenberg REST API meta registration, and bulletproof content image extraction.',
+    upgrade_notice: 'Version 1.3.5: Added Default OG Title override for Comment Previews (Website Name only, preserving original article featured image preview), Rank Math, Yoast SEO, AIOSEO & universal Open Graph compatibility.',
     sections: {
       description:
         'Connects WordPress directly to CreatorFlow Social Auto Poster SaaS. Supports Multiple Social Titles per post (1 title per line), automatic multi-page image variations, category sync, and first-comment article links for maximum reach.',
       installation:
         '1. Click "Update Now" in WordPress Plugins dashboard, or upload the zip archive.\n2. Configure Webhook URL & Secret Key in Settings > Social Auto Poster.\n3. Publish posts with multi-line social titles!',
       changelog:
-        '<h4>1.3.3</h4><ul><li>Shutdown hook dispatch queue: Guarantees Auto Engine finishes downloading and embedding inline content images before dispatch.</li><li>Top article content image extraction: Seamlessly detects &lt;figure class="ae-inline-image"&gt;&lt;img ...&gt;, Gutenberg blocks, and external image meta.</li><li>REST API featured image fix: /wp-json/social-poster/v1/posts now extracts real content images when featured thumbnail is not set.</li><li>Duplicate dispatch prevention within 90-second debounce window.</li></ul>',
+        '<h4>1.3.5</h4><ul><li>Default OG Title override: Automatically displays only the Website Name (Site Title) in Facebook comment link preview cards, leaving the article image preview 100% intact.</li><li>Universal compatibility with Rank Math, Yoast SEO, All in One SEO, SEOPress, Jetpack, and custom themes.</li><li>Customizable Site Name option in plugin settings.</li></ul>' +
+        '<h4>1.3.4</h4><ul><li>Added Per-Page Title & Subtitle Studio, live connected page mapping, Gutenberg REST API meta registration, and bulletproof content image extraction.</li></ul>',
     },
     banners: {
       high: `${origin}/icons/social/wordpress.png`,
