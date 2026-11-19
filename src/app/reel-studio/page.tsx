@@ -966,10 +966,12 @@ export default function ReelStudioPage() {
   const [reelCurrentTime, setReelCurrentTime] = useState(0);
   const [reelTotalDuration, setReelTotalDuration] = useState(0);
   const [showNativeControls, setShowNativeControls] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState(false);
 
   // Auto-init and load reel video element whenever a new video reel is generated
   useEffect(() => {
     if (reelVideoRef.current && generatedVideoUrl) {
+      setVideoLoadError(false);
       const vid = reelVideoRef.current;
       vid.defaultMuted = true;
       vid.muted = isMutedReel;
@@ -1626,7 +1628,9 @@ export default function ReelStudioPage() {
 
       const data = await res.json();
       if (data.success && data.videoUrl) {
-        setGeneratedVideoUrl(data.videoUrl);
+        setVideoLoadError(false);
+        const cacheBustedUrl = `${data.videoUrl}${data.videoUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        setGeneratedVideoUrl(cacheBustedUrl);
         setGeneratedVideoSize(data.sizeBytes);
       } else {
         alert(`Failed to render reel: ${data.error || 'Unknown error'}`);
@@ -1690,6 +1694,49 @@ export default function ReelStudioPage() {
   return (
     <AppShell>
       <div className="space-y-6 font-sans max-w-7xl pb-24 select-none animate-fade-in">
+        {/* Global Keyframes for Live Motion Preview */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes liveSubtleFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(0, -2.5px) scale(1.004); }
+          }
+          @keyframes liveMicroJitter {
+            0% { transform: translate(0, 0); }
+            25% { transform: translate(0.8px, -0.6px); }
+            50% { transform: translate(-0.7px, 0.5px); }
+            75% { transform: translate(0.5px, 0.7px); }
+            100% { transform: translate(0, 0); }
+          }
+          @keyframes liveSmoothSway {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(1.5px, -1px) rotate(0.12deg); }
+            66% { transform: translate(-1.5px, 0.8px) rotate(-0.12deg); }
+          }
+          @keyframes liveVerticalDrift {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3.5px); }
+          }
+          @keyframes livePulseShake {
+            0%, 100% { transform: scale(1) translate(0, 0); }
+            50% { transform: scale(1.012) translate(0.5px, -0.5px); }
+          }
+          @keyframes liveZoomIn {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.05); }
+          }
+          @keyframes liveZoomOut {
+            0% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+          }
+          @keyframes liveShake {
+            0%, 100% { transform: translate(0, 0); }
+            20% { transform: translate(-2px, 1.5px); }
+            40% { transform: translate(2px, -1px); }
+            60% { transform: translate(-1.5px, -1.5px); }
+            80% { transform: translate(1.5px, 1px); }
+          }
+        ` }} />
+
         {/* Hidden Audio Player for Previewing Beats */}
         <audio
           ref={audioPreviewRef}
@@ -2041,6 +2088,70 @@ export default function ReelStudioPage() {
                   <Check className="w-3.5 h-3.5" />
                   <span>Save Template</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Canvas Aspect Ratio & Custom Dimensions Selector */}
+            <div className="bg-white rounded-2xl border border-[#EEF1F6] p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-black text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Sliders className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Canvas Aspect Ratio:</span>
+                </span>
+                {[
+                  { label: '9:16 Reel (1080×1920)', w: 1080, h: 1920 },
+                  { label: '4:5 Feed (1080×1350)', w: 1080, h: 1350 },
+                  { label: '1:1 Square (1080×1080)', w: 1080, h: 1080 },
+                  { label: '16:9 Landscape (1920×1080)', w: 1920, h: 1080 },
+                ].map((ratio) => {
+                  const isActive = canvasWidth === ratio.w && canvasHeight === ratio.h;
+                  return (
+                    <button
+                      key={ratio.label}
+                      type="button"
+                      onClick={() => {
+                        setCanvasWidth(ratio.w);
+                        setCanvasHeight(ratio.h);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-rose-600 text-white shadow-2xs ring-2 ring-rose-500/20'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {ratio.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Custom W x H Inputs */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] font-bold text-slate-500">Custom Size:</span>
+                <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-mono text-slate-400">W:</span>
+                  <input
+                    type="number"
+                    min={320}
+                    max={3840}
+                    step={10}
+                    value={canvasWidth}
+                    onChange={(e) => setCanvasWidth(Math.max(320, Number(e.target.value) || 1080))}
+                    className="w-16 bg-transparent font-mono font-bold text-xs text-slate-900 focus:outline-none text-center"
+                  />
+                  <span className="text-[10px] text-slate-400 font-bold">×</span>
+                  <span className="text-[10px] font-mono text-slate-400">H:</span>
+                  <input
+                    type="number"
+                    min={320}
+                    max={3840}
+                    step={10}
+                    value={canvasHeight}
+                    onChange={(e) => setCanvasHeight(Math.max(320, Number(e.target.value) || 1920))}
+                    className="w-16 bg-transparent font-mono font-bold text-xs text-slate-900 focus:outline-none text-center"
+                  />
+                  <span className="text-[10px] text-slate-400 font-mono">px</span>
+                </div>
               </div>
             </div>
 
@@ -2774,9 +2885,9 @@ export default function ReelStudioPage() {
         {/* TAB 3: MOTION EFFECTS, OVERLAYS & CATEGORY MUSIC */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'motion' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left 8 Cols: Animations & Overlays */}
-            <div className="lg:col-span-8 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left 7 Cols: Motion Styles, Intensity, Overlays, Music & Duration */}
+            <div className="lg:col-span-7 space-y-6">
               {/* Section 1: Motion Animations (Multi-Select) */}
               <div className="bg-white rounded-3xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
@@ -2786,7 +2897,7 @@ export default function ReelStudioPage() {
                       <span>Motion Animation Style (Multi-Select)</span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Select multiple motion animation styles simultaneously (e.g. Camera Shake + Slow Zoom In + Glitter). All active effects composite seamlessly.
+                      Select camera motion animations. Multi-selection supported. High readability optimized for news headlines.
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -2796,14 +2907,15 @@ export default function ReelStudioPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const combo: VideoMotionEffect[] = ['shake', 'zoom_in', 'glitter'];
+                        const combo: VideoMotionEffect[] = ['subtle_float'];
                         setSelectedEffects(combo);
-                        setEffect('shake');
+                        setEffect('subtle_float');
+                        setMotionIntensity(20);
                       }}
                       className="text-[10px] font-bold text-rose-600 hover:text-rose-700 px-2 py-0.5 rounded-lg bg-rose-50/70 border border-rose-200 cursor-pointer"
-                      title="Quick combo: Shake + Zoom In + Glitter"
+                      title="Recommended: Gentle floating shake for crisp headline reading"
                     >
-                      Combo
+                      Gentle News
                     </button>
                     <button
                       type="button"
@@ -2818,7 +2930,7 @@ export default function ReelStudioPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                   {MOTION_EFFECTS.map((m) => {
                     const isSelected =
                       m.id === 'none'
@@ -2828,26 +2940,26 @@ export default function ReelStudioPage() {
                       <div
                         key={m.id}
                         onClick={() => handleToggleEffect(m.id)}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 select-none relative ${
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-1.5 select-none relative ${
                           isSelected
                             ? 'bg-rose-50/60 border-rose-500 ring-2 ring-rose-500/20 shadow-xs'
                             : 'bg-white border-[#EEF1F6] hover:border-slate-300'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xl">{m.icon}</span>
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${m.badgeColor}`}>
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="text-lg">{m.icon}</span>
+                          <div className="flex items-center gap-1">
+                            <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded-md border ${m.badgeColor}`}>
                               {m.badge}
                             </span>
                             <span
-                              className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                              className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
                                 isSelected
                                   ? 'bg-rose-600 border-rose-600 text-white'
                                   : 'border-slate-300 bg-white'
                               }`}
                             >
-                              {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                              {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                             </span>
                           </div>
                         </div>
@@ -2855,7 +2967,7 @@ export default function ReelStudioPage() {
                           <h4 className="font-extrabold text-xs text-slate-900 leading-tight">
                             {m.name}
                           </h4>
-                          <p className="text-[10px] text-slate-500 leading-snug mt-1">
+                          <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
                             {m.description}
                           </p>
                         </div>
@@ -2863,55 +2975,134 @@ export default function ReelStudioPage() {
                     );
                   })}
                 </div>
+
+                {/* Motion Intensity Slider */}
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Motion Shake Intensity</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400">
+                        Controls camera displacement speed &amp; amplitude (Keep low 10%-25% so viewer can read Hindi headline)
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 font-mono font-black text-xs">
+                      {motionIntensity}%
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMotionIntensity((p) => Math.max(5, p - 5))}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                      title="-5%"
+                    >
+                      -5%
+                    </button>
+                    <input
+                      type="range"
+                      min={5}
+                      max={100}
+                      step={5}
+                      value={motionIntensity}
+                      onChange={(e) => setMotionIntensity(Number(e.target.value))}
+                      className="flex-1 cursor-pointer accent-rose-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMotionIntensity((p) => Math.min(100, p + 5))}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                      title="+5%"
+                    >
+                      +5%
+                    </button>
+                  </div>
+
+                  {/* Preset Pills for Motion Intensity */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { val: 10, label: '10% (Ultra Gentle)' },
+                      { val: 20, label: '20% (Recommended / Readable)' },
+                      { val: 35, label: '35% (Dynamic)' },
+                      { val: 60, label: '60% (High Energy)' },
+                      { val: 100, label: '100% (Maximum)' },
+                    ].map((p) => (
+                      <button
+                        key={p.val}
+                        type="button"
+                        onClick={() => setMotionIntensity(p.val)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                          motionIntensity === p.val
+                            ? 'bg-rose-600 text-white shadow-2xs'
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* Section 2: Multi-Select Video Overlays */}
+              {/* Section 2: Multi-Select Visual Atmospheric Overlays */}
               <div className="bg-white rounded-3xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div>
                     <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
                       <Layers className="w-4 h-4 text-indigo-600" />
-                      <span>Multiple Video Overlays &amp; Textures</span>
+                      <span>Visual Atmospheric Overlays (Multi-Select)</span>
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Combine multiple cinematic overlays simultaneously (e.g. Red Alert + Vignette + Film Grain).
+                      Ambient falling particles, floating dust motes, sparkles, bokeh orbs, and film grain textures.
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
-                    {selectedOverlays.length} Active
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
+                      {selectedOverlays.length} Active
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOverlays([])}
+                      className="text-[10px] font-bold text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                   {VIDEO_OVERLAYS.map((ov) => {
                     const isChecked = selectedOverlays.includes(ov.id);
                     return (
                       <div
                         key={ov.id}
                         onClick={() => handleToggleOverlay(ov.id)}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 select-none ${
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-1.5 select-none ${
                           isChecked
                             ? 'bg-indigo-50/50 border-indigo-500 ring-2 ring-indigo-500/20'
                             : 'bg-white border-[#EEF1F6] hover:border-slate-300'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xl">{ov.icon}</span>
+                          <span className="text-lg">{ov.icon}</span>
                           <span
-                            className={`w-4 h-4 rounded-md border flex items-center justify-center ${
+                            className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center ${
                               isChecked
                                 ? 'bg-indigo-600 border-indigo-600 text-white'
                                 : 'border-slate-300 bg-white'
                             }`}
                           >
-                            {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                            {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                           </span>
                         </div>
                         <div>
                           <h4 className="font-extrabold text-xs text-slate-900 leading-tight">
                             {ov.name}
                           </h4>
-                          <p className="text-[10px] text-slate-500 leading-snug mt-1">
+                          <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
                             {ov.description}
                           </p>
                         </div>
@@ -2919,11 +3110,78 @@ export default function ReelStudioPage() {
                     );
                   })}
                 </div>
-              </div>
-            </div>
 
-            {/* Right 4 Cols: Category Music Library & Duration */}
-            <div className="lg:col-span-4 space-y-6">
+                {/* Atmospheric Overlay Intensity / Density Slider */}
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Particle Density &amp; Opacity</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400">
+                        Adjust particle count, speed, and visibility (Live preview updates immediately)
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-mono font-black text-xs">
+                      {overlayIntensity}%
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOverlayIntensity((p) => Math.max(10, p - 10))}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                      title="-10%"
+                    >
+                      -10%
+                    </button>
+                    <input
+                      type="range"
+                      min={10}
+                      max={100}
+                      step={5}
+                      value={overlayIntensity}
+                      onChange={(e) => setOverlayIntensity(Number(e.target.value))}
+                      className="flex-1 cursor-pointer accent-indigo-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setOverlayIntensity((p) => Math.min(100, p + 10))}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                      title="+10%"
+                    >
+                      +10%
+                    </button>
+                  </div>
+
+                  {/* Preset Pills for Overlay Intensity */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { val: 20, label: '20% (Subtle Dust)' },
+                      { val: 40, label: '40% (Recommended)' },
+                      { val: 60, label: '60% (Cinematic)' },
+                      { val: 85, label: '85% (Heavy Snow/Embers)' },
+                    ].map((p) => (
+                      <button
+                        key={p.val}
+                        type="button"
+                        onClick={() => setOverlayIntensity(p.val)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                          overlayIntensity === p.val
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Music Library, Duration, & Save */}
               <div className="bg-white rounded-3xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
@@ -2944,47 +3202,47 @@ export default function ReelStudioPage() {
                 </div>
 
                 {/* Preset Tracks List */}
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {PRESET_MUSIC_TRACKS.map((t) => {
                     const isSelected = musicUrl === t.url;
                     return (
                       <div
                         key={t.id}
-                        className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                        className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 ${
                           isSelected
                             ? 'bg-rose-50/50 border-rose-500 ring-1 ring-rose-500/30'
                             : 'bg-white border-[#EEF1F6] hover:border-slate-200'
                         }`}
                       >
                         <div
-                          className="flex-1 cursor-pointer"
+                          className="flex-1 cursor-pointer min-w-0"
                           onClick={() => {
                             setMusicUrl(t.url);
                             setMusicName(t.name);
                           }}
                         >
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className="text-xs font-black text-slate-900">{t.name}</span>
+                            <span className="text-xs font-black text-slate-900 truncate">{t.name}</span>
                             {isSelected && (
-                              <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-bold">
+                              <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[8px] font-bold shrink-0">
                                 Active
                               </span>
                             )}
                           </div>
-                          <p className="text-[10px] text-slate-500">{t.description}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{t.description}</p>
                         </div>
 
                         {/* Audio Preview Button */}
                         <button
                           type="button"
                           onClick={() => togglePlayAudio(t.url)}
-                          className="w-8 h-8 rounded-full bg-slate-900 hover:bg-black text-white flex items-center justify-center shrink-0 cursor-pointer shadow-xs"
+                          className="w-7 h-7 rounded-full bg-slate-900 hover:bg-black text-white flex items-center justify-center shrink-0 cursor-pointer shadow-xs"
                           title="Listen to preview beat"
                         >
                           {isPlayingAudio && audioPreviewRef.current?.src.includes(t.url) ? (
-                            <Pause className="w-3.5 h-3.5" />
+                            <Pause className="w-3 h-3" />
                           ) : (
-                            <Play className="w-3.5 h-3.5 ml-0.5" />
+                            <Play className="w-3 h-3 ml-0.5" />
                           )}
                         </button>
                       </div>
@@ -3050,35 +3308,6 @@ export default function ReelStudioPage() {
                       className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
                     >
                       +1s
-                    </button>
-                  </div>
-
-                  {/* Preset Pills for Animation Timing */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {[3, 5, 8, 10].map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setEffectDuration(Math.min(duration, t))}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                          effectDuration === t
-                            ? 'bg-rose-600 text-white shadow-2xs'
-                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
-                        }`}
-                      >
-                        {t}s
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setEffectDuration(duration)}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                        effectDuration === duration
-                          ? 'bg-slate-900 text-white shadow-2xs'
-                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
-                      }`}
-                    >
-                      Full Reel ({duration}s)
                     </button>
                   </div>
                 </div>
@@ -3193,6 +3422,29 @@ export default function ReelStudioPage() {
                   <span>Save Reel Settings</span>
                 </button>
               </div>
+            </div>
+
+            {/* Right 5 Cols: Sticky Real-time Live UI Preview */}
+            <div className="lg:col-span-5 sticky top-6 space-y-4">
+              <ReelLiveMockupPreview
+                canvasWidth={canvasWidth}
+                canvasHeight={canvasHeight}
+                templateImageUrl={templateImageUrl}
+                layerMode={layerMode}
+                backgroundColor={backgroundColor}
+                fBox={fBox}
+                tBox={tBox}
+                headline={genHeadline}
+                highlight={genHighlight}
+                photoUrl={genPhotoUrl}
+                selectedEffects={selectedEffects}
+                motionIntensity={motionIntensity}
+                selectedOverlays={selectedOverlays}
+                overlayIntensity={overlayIntensity}
+                isLiveMotionPlaying={isLiveMotionPlaying}
+                onToggleMotion={() => setIsLiveMotionPlaying((p) => !p)}
+                onGoToGenerator={() => setActiveTab('generator')}
+              />
             </div>
           </div>
         )}
@@ -3428,6 +3680,7 @@ export default function ReelStudioPage() {
                       onError={(e) => {
                         const err = e.currentTarget.error;
                         console.warn('[ReelStudio] Video player error:', err?.code, err?.message);
+                        setVideoLoadError(true);
                       }}
                       onTimeUpdate={(e) => {
                         const vid = e.currentTarget;
@@ -3436,7 +3689,10 @@ export default function ReelStudioPage() {
                           setReelProgress((vid.currentTime / vid.duration) * 100);
                         }
                       }}
-                      onPlay={() => setIsPlayingReel(true)}
+                      onPlay={() => {
+                        setIsPlayingReel(true);
+                        setVideoLoadError(false);
+                      }}
                       onPause={() => setIsPlayingReel(false)}
                       onClick={handleTogglePlayReel}
                       className="w-full h-full object-cover cursor-pointer"
@@ -3444,6 +3700,42 @@ export default function ReelStudioPage() {
                       <source src={generatedVideoUrl} type="video/mp4" />
                       Your browser does not support HTML5 video.
                     </video>
+
+                    {/* Error Fallback Banner if video playback fails */}
+                    {videoLoadError && (
+                      <div className="absolute inset-0 z-35 flex flex-col items-center justify-center p-6 bg-slate-950/92 text-center space-y-3 backdrop-blur-xs select-none">
+                        <div className="w-12 h-12 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+                          <Film className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <p className="text-white font-black text-xs">Video Playback Notice</p>
+                          <p className="text-[11px] text-slate-300 mt-1">Browser security or codec issue loading video stream</p>
+                        </div>
+                        <div className="flex flex-col gap-2 w-full pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowNativeControls(true);
+                              setVideoLoadError(false);
+                              if (reelVideoRef.current) {
+                                reelVideoRef.current.load();
+                                reelVideoRef.current.play().catch(() => {});
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs cursor-pointer shadow-md"
+                          >
+                            ▶️ Play with Native Player
+                          </button>
+                          <a
+                            href={generatedVideoUrl}
+                            download="reel-output.mp4"
+                            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer inline-block"
+                          >
+                            ⬇️ Download MP4 File
+                          </a>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Center Big Play Button Overlay (when paused) */}
                     {!isPlayingReel && !showNativeControls && (
