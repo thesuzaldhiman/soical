@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getDbPool } from '@/lib/db/mysql';
 
 const COOKIE_CANDIDATE_PATHS = [
   path.join(process.cwd(), 'cookies.txt'),
@@ -33,6 +34,37 @@ export async function GET() {
       }
     }
 
+    // Fallback: Check MySQL app_user_data for youtube_cookies
+    if (!foundPath) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          const [rows] = await pool.query<any[]>(
+            'SELECT youtube_cookies, updated_at FROM app_user_data WHERE youtube_cookies IS NOT NULL AND CHAR_LENGTH(youtube_cookies) > 50 LIMIT 1'
+          );
+          if (rows && rows.length > 0 && rows[0].youtube_cookies) {
+            const content = rows[0].youtube_cookies.trim();
+            // Restore to disk
+            for (const c of COOKIE_CANDIDATE_PATHS) {
+              try {
+                const dir = path.dirname(c);
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                fs.writeFileSync(c, content, 'utf8');
+              } catch {}
+            }
+            return NextResponse.json({
+              success: true,
+              hasCookies: true,
+              fileSizeBytes: content.length,
+              updatedAt: rows[0].updated_at || new Date().toISOString(),
+              activePath: COOKIE_CANDIDATE_PATHS[0],
+              message: 'YouTube cookies.txt restored from database.',
+            });
+          }
+        }
+      } catch {}
+    }
+
     if (!foundPath) {
       return NextResponse.json({
         success: true,
@@ -62,7 +94,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { cookiesContent } = body;
+    const { cookiesContent, email = 'suzaldhiman@gmail.com' } = body;
 
     if (!cookiesContent || typeof cookiesContent !== 'string' || cookiesContent.trim().length < 50) {
       return NextResponse.json(
@@ -74,7 +106,7 @@ export async function POST(request: NextRequest) {
     const cleanContent = cookiesContent.trim();
     let savedAny = false;
 
-    // Save across all standard and persistent candidate paths
+    // 1. Save across all standard and persistent candidate paths
     for (const c of COOKIE_CANDIDATE_PATHS) {
       try {
         const dir = path.dirname(c);
@@ -86,8 +118,21 @@ export async function POST(request: NextRequest) {
     }
 
     if (!savedAny) {
-      // Fallback direct write to default
       fs.writeFileSync(COOKIE_CANDIDATE_PATHS[0], cleanContent, 'utf8');
+    }
+
+    // 2. Persist to MySQL database in app_user_data so new builds never lose it
+    try {
+      const pool = getDbPool();
+      if (pool) {
+        await pool.query(
+          'UPDATE app_user_data SET youtube_cookies = ?, updated_at = NOW() WHERE email = ?',
+          [cleanContent, email]
+        );
+        console.log(`[YouTube Cookies] Successfully backed up cookies.txt in MySQL for ${email}`);
+      }
+    } catch (dbErr) {
+      console.warn('[YouTube Cookies] Note on saving cookies to MySQL:', dbErr);
     }
 
     console.log(`[YouTube Cookies] Successfully saved cookies.txt (${cleanContent.length} chars)`);

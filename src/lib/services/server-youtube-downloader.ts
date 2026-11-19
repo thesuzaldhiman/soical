@@ -179,8 +179,9 @@ export async function getYtDlpPath(): Promise<string> {
 
 /**
  * Resolves local cookies.txt file for authenticated YouTube access
+ * Checks disk first, and auto-restores from MySQL app_user_data if missing on fresh Hostinger build
  */
-function getCookiesPath(): string | null {
+async function getCookiesPathAsync(): Promise<string | null> {
   const candidates = [
     path.join(process.cwd(), 'cookies.txt'),
     path.join(process.cwd(), 'bin', 'cookies.txt'),
@@ -196,6 +197,30 @@ function getCookiesPath(): string | null {
       return c;
     }
   }
+
+  // Auto-restore from MySQL database if missing
+  try {
+    const { getDbPool } = await import('@/lib/db/mysql');
+    const pool = getDbPool();
+    if (pool) {
+      const [rows] = await pool.query<any[]>(
+        'SELECT youtube_cookies FROM app_user_data WHERE youtube_cookies IS NOT NULL AND CHAR_LENGTH(youtube_cookies) > 50 LIMIT 1'
+      );
+      if (rows && rows.length > 0 && rows[0].youtube_cookies) {
+        const content = rows[0].youtube_cookies.trim();
+        const restorePath = candidates[0];
+        const dir = path.dirname(restorePath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(restorePath, content, 'utf8');
+        try { fs.writeFileSync(path.join('/tmp', 'cookies.txt'), content, 'utf8'); } catch {}
+        console.log(`[YouTube Downloader] Auto-restored cookies.txt from MySQL database (${content.length} bytes)`);
+        return restorePath;
+      }
+    }
+  } catch (e) {
+    console.warn('[YouTube Downloader] Note on restoring cookies from DB:', e);
+  }
+
   return null;
 }
 
@@ -498,7 +523,7 @@ export async function downloadYouTubeVideo(
 
   const ytdlpBin = await getYtDlpPath();
   const ffmpegDir = getLocalFfmpegDir();
-  const cookiesPath = getCookiesPath();
+  const cookiesPath = await getCookiesPathAsync();
 
   const isShort = await checkIfVideoIsShort(cleanId);
 

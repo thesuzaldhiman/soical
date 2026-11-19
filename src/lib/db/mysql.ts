@@ -212,8 +212,12 @@ export async function initDbTables(): Promise<boolean> {
         if (!ylCols || ylCols.length === 0) {
           await connection.query(`ALTER TABLE app_user_data ADD COLUMN youtube_logs LONGTEXT NULL`);
         }
+        const [ycCols] = await connection.query<any[]>(`SHOW COLUMNS FROM app_user_data LIKE 'youtube_cookies'`);
+        if (!ycCols || ycCols.length === 0) {
+          await connection.query(`ALTER TABLE app_user_data ADD COLUMN youtube_cookies LONGTEXT NULL`);
+        }
       } catch (e) {
-        console.warn(`[MySQL] Note on adding youtube_rules/logs column:`, e);
+        console.warn(`[MySQL] Note on adding youtube_rules/logs/cookies column:`, e);
       }
 
       // Safe table creation for wp_plugins catalog
