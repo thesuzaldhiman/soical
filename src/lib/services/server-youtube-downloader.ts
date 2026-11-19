@@ -95,11 +95,8 @@ export async function getYtDlpPath(): Promise<string> {
     }
   }
 
-  // Dynamic on-demand download fallback
-  const isLinux = process.platform === 'linux';
-  const downloadUrl = isLinux
-    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux'
-    : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
+  // Dynamic on-demand download fallback (universal standalone python zipapp)
+  const downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
 
   const tmpDest = path.join('/tmp', binaryName);
   console.log(`[server-youtube-downloader] Downloading yt-dlp on-demand to ${tmpDest}...`);
@@ -385,14 +382,51 @@ export async function downloadYouTubeVideo(
   // Add the YouTube URL
   args.push(watchUrl);
 
+  // Setup local temp directory inside project to avoid Linux noexec /tmp restrictions
+  const localTmpDir = path.join(process.cwd(), '.tmp');
+  if (!fs.existsSync(localTmpDir)) {
+    try { fs.mkdirSync(localTmpDir, { recursive: true }); } catch {}
+  }
+
+  const customEnv = {
+    ...process.env,
+    TMPDIR: localTmpDir,
+    PYINSTALLER_TMPDIR: localTmpDir,
+    TEMP: localTmpDir,
+    TMP: localTmpDir,
+  };
+
   try {
-    const { stdout, stderr } = await execFileAsync(ytdlpBin, args, {
-      timeout: 180000, // 3 minutes timeout max
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    let executed = false;
+    let lastError: Error | null = null;
+
+    // Attempt 1: Run via python3 (preferred on Linux/Cloud to avoid ELF shared library restrictions)
+    try {
+      console.log(`[YouTube Downloader] Attempting execution via python3 for ${cleanId}...`);
+      await execFileAsync('python3', [ytdlpBin, ...args], {
+        timeout: 180000,
+        maxBuffer: 10 * 1024 * 1024,
+        env: customEnv,
+      });
+      executed = true;
+    } catch (pyErr) {
+      console.warn('[YouTube Downloader] python3 execution failed or not found, falling back to direct binary:', (pyErr as any)?.message);
+      lastError = pyErr instanceof Error ? pyErr : new Error(String(pyErr));
+    }
+
+    // Attempt 2: Direct binary execution with non-tmp TMPDIR
+    if (!executed) {
+      console.log(`[YouTube Downloader] Attempting direct binary execution for ${cleanId}...`);
+      await execFileAsync(ytdlpBin, args, {
+        timeout: 180000,
+        maxBuffer: 10 * 1024 * 1024,
+        env: customEnv,
+      });
+      executed = true;
+    }
 
     if (!fs.existsSync(finalFilePath) || fs.statSync(finalFilePath).size < 1000) {
-      throw new Error(`Download completed but output file is missing or invalid: ${stderr || stdout}`);
+      throw new Error(`Download completed but output file is missing or invalid.`);
     }
 
     const stat = fs.statSync(finalFilePath);

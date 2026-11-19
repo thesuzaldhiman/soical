@@ -37,19 +37,16 @@ async function downloadFile(url, dest) {
 }
 
 async function main() {
-  const platform = process.platform;
-  const isLinux = platform === 'linux';
   const binaryName = 'yt-dlp';
-  const downloadUrl = isLinux
-    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux'
-    : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
+  // Use universal standalone python zipapp (runs directly on all platforms with python3, no PyInstaller tmp extraction)
+  const downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
 
   const binDir = path.join(__dirname, '..', 'bin');
   const publicBinDir = path.join(__dirname, '..', 'public', 'bin');
   const targetBin = path.join(binDir, binaryName);
   const targetPublicBin = path.join(publicBinDir, binaryName);
 
-  if (fs.existsSync(targetBin) && fs.statSync(targetBin).size > 5000000) {
+  if (fs.existsSync(targetBin) && fs.statSync(targetBin).size > 2000000) {
     console.log(`[ensure-yt-dlp] Binary already present at ${targetBin}`);
     try {
       if (!fs.existsSync(targetPublicBin)) {

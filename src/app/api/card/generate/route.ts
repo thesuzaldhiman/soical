@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateServerCardImage } from '@/lib/services/server-image-generator';
 import { offloadBase64Media, sanitizePostMedia } from '@/lib/utils/media-storage';
+import { cleanHeadlineText } from '@/lib/utils/text-decoder';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES } from '@/lib/state/mock-data';
 import { Post, SigTemplate } from '@/types';
@@ -46,8 +47,10 @@ function resolveEmail(request: NextRequest, bodyEmail?: string): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const rawHeadline = body.headline;
+    const headline = cleanHeadlineText(rawHeadline);
+    const subtitle = body.subtitle ? cleanHeadlineText(body.subtitle) : undefined;
     const {
-      headline,
       featuredImageUrl,
       templateId,
       template: customTemplate,
