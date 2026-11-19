@@ -1,15 +1,26 @@
 /**
  * ensure-yt-dlp.js
- * Prepares the latest official yt-dlp binary for YouTube video stream extraction.
- * Uses release 2026.10.26 which features visionos/android clients that bypass YouTube's
- * "The page needs to be reloaded" challenge and supports 1080p/720p/360p video streams.
+ * Prepares the official standalone compiled yt-dlp binary for YouTube video stream extraction.
+ * On Linux (e.g. Hostinger CloudLinux/CentOS), downloads 'yt-dlp_linux' (41MB standalone ELF binary)
+ * which bundles Python 3.12 internally via PyInstaller — completely bypassing host system Python 3.9.
  */
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
 const REQUIRED_VERSION = '2026.10.26';
-const downloadUrl = `https://github.com/yt-dlp/yt-dlp/releases/download/${REQUIRED_VERSION}/yt-dlp`;
+
+function getDownloadUrl() {
+  const platform = process.env.npm_config_platform || process.platform;
+  if (platform === 'linux') {
+    return `https://github.com/yt-dlp/yt-dlp/releases/download/${REQUIRED_VERSION}/yt-dlp_linux`;
+  } else if (platform === 'darwin') {
+    return `https://github.com/yt-dlp/yt-dlp/releases/download/${REQUIRED_VERSION}/yt-dlp_macos`;
+  } else if (platform === 'win32') {
+    return `https://github.com/yt-dlp/yt-dlp/releases/download/${REQUIRED_VERSION}/yt-dlp.exe`;
+  }
+  return `https://github.com/yt-dlp/yt-dlp/releases/download/${REQUIRED_VERSION}/yt-dlp`;
+}
 
 async function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
@@ -42,25 +53,30 @@ async function downloadFile(url, dest) {
 }
 
 async function main() {
-  const binaryName = 'yt-dlp';
+  const platform = process.env.npm_config_platform || process.platform;
+  const binaryName = platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
   const binDir = path.join(__dirname, '..', 'bin');
   const publicBinDir = path.join(__dirname, '..', 'public', 'bin');
   const targetBin = path.join(binDir, binaryName);
   const targetPublicBin = path.join(publicBinDir, binaryName);
   const versionMarkerPath = path.join(binDir, '.ytdlp_version');
 
+  // Linux standalone binary is ~41MB; macOS standalone or script is >= 2MB
+  const minRequiredSize = platform === 'linux' ? 35000000 : 2000000;
+
   let hasValidBinary = false;
   if (fs.existsSync(targetBin) && fs.existsSync(versionMarkerPath)) {
     try {
       const v = fs.readFileSync(versionMarkerPath, 'utf8').trim();
-      if (v === REQUIRED_VERSION && fs.statSync(targetBin).size > 2000000) {
+      const st = fs.statSync(targetBin);
+      if (v === REQUIRED_VERSION && st.size >= minRequiredSize) {
         hasValidBinary = true;
       }
     } catch {}
   }
 
   if (hasValidBinary) {
-    console.log(`[ensure-yt-dlp] Verified yt-dlp v${REQUIRED_VERSION} already present at ${targetBin}`);
+    console.log(`[ensure-yt-dlp] Verified yt-dlp standalone v${REQUIRED_VERSION} already present at ${targetBin}`);
     try {
       if (!fs.existsSync(targetPublicBin)) {
         fs.mkdirSync(publicBinDir, { recursive: true });
@@ -71,7 +87,8 @@ async function main() {
     return;
   }
 
-  console.log(`[ensure-yt-dlp] Downloading Python 3.9-compatible yt-dlp (${REQUIRED_VERSION})...`);
+  const downloadUrl = getDownloadUrl();
+  console.log(`[ensure-yt-dlp] Downloading standalone yt-dlp (${REQUIRED_VERSION}) for ${platform} from ${downloadUrl}...`);
   try {
     await downloadFile(downloadUrl, targetBin);
     fs.writeFileSync(versionMarkerPath, REQUIRED_VERSION, 'utf8');
@@ -89,7 +106,7 @@ async function main() {
       }
     } catch {}
 
-    console.log(`[ensure-yt-dlp] Successfully prepared yt-dlp ${REQUIRED_VERSION} at ${targetBin}`);
+    console.log(`[ensure-yt-dlp] Successfully prepared standalone yt-dlp ${REQUIRED_VERSION} at ${targetBin}`);
   } catch (err) {
     console.warn(`[ensure-yt-dlp] Download warning: ${err.message}. Will use dynamic runtime fallback.`);
   }

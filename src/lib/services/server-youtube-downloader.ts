@@ -10,7 +10,20 @@ const execFileAsync = promisify(execFile);
 let cachedYtDlpPath: string | null = null;
 
 const COMPATIBLE_YTDLP_VERSION = '2026.10.26';
-const COMPATIBLE_DOWNLOAD_URL = `https://github.com/yt-dlp/yt-dlp/releases/download/${COMPATIBLE_YTDLP_VERSION}/yt-dlp`;
+
+function getDownloadUrlForPlatform(): string {
+  const p = process.platform;
+  if (p === 'linux') {
+    return `https://github.com/yt-dlp/yt-dlp/releases/download/${COMPATIBLE_YTDLP_VERSION}/yt-dlp_linux`;
+  }
+  if (p === 'darwin') {
+    return `https://github.com/yt-dlp/yt-dlp/releases/download/${COMPATIBLE_YTDLP_VERSION}/yt-dlp_macos`;
+  }
+  if (p === 'win32') {
+    return `https://github.com/yt-dlp/yt-dlp/releases/download/${COMPATIBLE_YTDLP_VERSION}/yt-dlp.exe`;
+  }
+  return `https://github.com/yt-dlp/yt-dlp/releases/download/${COMPATIBLE_YTDLP_VERSION}/yt-dlp`;
+}
 
 /**
  * Tests if a candidate yt-dlp binary is compatible with available Python runtime
@@ -18,32 +31,8 @@ const COMPATIBLE_DOWNLOAD_URL = `https://github.com/yt-dlp/yt-dlp/releases/downl
 function isBinaryCompatible(binPath: string): boolean {
   try {
     if (!fs.existsSync(binPath) || fs.statSync(binPath).size < 1000000) return false;
-    const pythonCandidates = [
-      'python3',
-      '/usr/bin/python3',
-      '/usr/local/bin/python3',
-      '/opt/alt/python311/bin/python3',
-      '/opt/alt/python312/bin/python3',
-      'python',
-    ];
-    for (const py of pythonCandidates) {
-      try {
-        const out = execFileSync(py, [binPath, '--version'], {
-          timeout: 4000,
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        if (out && out.trim().length > 0) return true;
-      } catch (err: any) {
-        const stderr = (err?.stderr || err?.message || '').toString();
-        if (stderr.includes('unsupported version of Python')) {
-          console.warn(`[server-youtube-downloader] Binary at ${binPath} rejected: unsupported Python version`);
-          return false;
-        }
-      }
-    }
 
-    // Try direct execution as fallback
+    // 1. PRIMARY: Test direct standalone binary execution (compiled ELF / Mach-O / PE binaries like yt-dlp_linux)
     try {
       const out = execFileSync(binPath, ['--version'], {
         timeout: 4000,
@@ -56,7 +45,30 @@ function isBinaryCompatible(binPath: string): boolean {
       if (stderr.includes('unsupported version of Python')) return false;
     }
 
-    return true;
+    // 2. FALLBACK: Test running with system Python interpreters (for zipapp fallback)
+    const pythonCandidates = [
+      '/opt/alt/python312/bin/python3',
+      '/opt/alt/python311/bin/python3',
+      '/opt/alt/python310/bin/python3',
+      '/usr/local/bin/python3',
+      '/usr/bin/python3',
+      'python3',
+      'python',
+    ];
+    for (const py of pythonCandidates) {
+      try {
+        const out = execFileSync(py, [binPath, '--version'], {
+          timeout: 4000,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (out && out.trim().length > 0) return true;
+      } catch (err: any) {
+        if (err?.code === 'ENOENT') continue;
+      }
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -157,19 +169,22 @@ export async function getYtDlpPath(): Promise<string> {
     }
   }
 
-  // Dynamic on-demand download fallback (universal standalone Python 3.9 compatible zipapp)
+  // Dynamic on-demand download fallback (official standalone binary)
   const tmpDest = path.join(process.cwd(), 'bin', binaryName);
   const fallbackTmpDest = path.join('/tmp', binaryName);
+  const downloadUrl = getDownloadUrlForPlatform();
 
-  console.log(`[server-youtube-downloader] Downloading Python 3.9-compatible yt-dlp on-demand to ${tmpDest}...`);
-  let ok = await downloadBinaryTo(COMPATIBLE_DOWNLOAD_URL, tmpDest);
+  console.log(`[server-youtube-downloader] Downloading standalone yt-dlp on-demand to ${tmpDest}...`);
+  let ok = await downloadBinaryTo(downloadUrl, tmpDest);
   if (!ok) {
-    ok = await downloadBinaryTo(COMPATIBLE_DOWNLOAD_URL, fallbackTmpDest);
+    ok = await downloadBinaryTo(downloadUrl, fallbackTmpDest);
     if (ok && fs.existsSync(fallbackTmpDest)) {
+      try { fs.chmodSync(fallbackTmpDest, 0o755); } catch {}
       cachedYtDlpPath = fallbackTmpDest;
       return fallbackTmpDest;
     }
   } else if (fs.existsSync(tmpDest)) {
+    try { fs.chmodSync(tmpDest, 0o755); } catch {}
     cachedYtDlpPath = tmpDest;
     return tmpDest;
   }
@@ -455,6 +470,22 @@ async function executeYtDlpCommand(
   args: string[],
   customEnv: any
 ): Promise<{ success: boolean; stderr?: string }> {
+  let lastErr = '';
+
+  // 1. PRIMARY: Direct binary execution (required for compiled standalone ELF binaries like yt-dlp_linux)
+  try {
+    await execFileAsync(ytdlpBin, args, {
+      timeout: 240000,
+      maxBuffer: 25 * 1024 * 1024,
+      env: customEnv,
+    });
+    return { success: true };
+  } catch (binErr: any) {
+    const msg = (binErr?.stderr || binErr?.message || '').toString();
+    lastErr = msg;
+  }
+
+  // 2. FALLBACK: Try available Python candidates (only used if running a raw .py / zipapp script)
   const pythonCandidates = [
     '/opt/alt/python312/bin/python3',
     '/opt/alt/python311/bin/python3',
@@ -465,9 +496,6 @@ async function executeYtDlpCommand(
     'python',
   ];
 
-  let lastErr = '';
-
-  // 1. Try available Python candidates
   for (const py of pythonCandidates) {
     try {
       await execFileAsync(py, [ytdlpBin, ...args], {
@@ -477,23 +505,10 @@ async function executeYtDlpCommand(
       });
       return { success: true };
     } catch (err: any) {
-      const msg = (err?.stderr || err?.message || '').toString();
-      lastErr = msg;
       if (err?.code === 'ENOENT') continue;
+      const msg = (err?.stderr || err?.message || '').toString();
+      lastErr = msg || lastErr;
     }
-  }
-
-  // 2. Try direct binary execution
-  try {
-    await execFileAsync(ytdlpBin, args, {
-      timeout: 240000,
-      maxBuffer: 25 * 1024 * 1024,
-      env: customEnv,
-    });
-    return { success: true };
-  } catch (binErr: any) {
-    const msg = (binErr?.stderr || binErr?.message || '').toString();
-    lastErr = msg || lastErr;
   }
 
   return { success: false, stderr: lastErr };
