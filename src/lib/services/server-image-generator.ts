@@ -393,20 +393,17 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     }
   }
 
-  // Intelligent Layer Ordering:
-  // If layerMode is 'background', OR if template image is a branded PNG frame (e.g. contains 'media_', 'fb-templets', 'templet', 'frame')
-  // OR if fBox is placed in the cutout area (y >= 150) where branded news frames have bottom comment banners:
-  // we place the Frame on BOTTOM and Photo ON TOP!
-  const isBackgroundMode =
-    template?.layerMode === 'background' ||
-    Boolean(
-      template?.templateImageUrl &&
-        (template.templateImageUrl.includes('media_') ||
-          template.templateImageUrl.includes('fb-templets') ||
-          template.templateImageUrl.includes('frame') ||
-          template.templateImageUrl.includes('templet'))
-    ) ||
-    fBox.y >= 150;
+  // Layer Stacking Ordering:
+  // 1. If layerMode === 'background':
+  //    The template is a solid Background Card.
+  //    The post's featured photo sits ON TOP of the background card.
+  //    Order: Frame (bottom) -> Photo (top)
+  //
+  // 2. If layerMode === 'overlay' (Default for transparent PNG frames):
+  //    The template is a transparent PNG Frame (with transparent cutout, borders, logos, and banners).
+  //    The post's featured photo sits BEHIND the PNG frame cutout.
+  //    Order: Photo (bottom) -> PNG Frame (top)
+  const isBackgroundMode = template?.layerMode === 'background';
 
   if (isBackgroundMode) {
     if (frameLayerItem) layers.push(frameLayerItem);

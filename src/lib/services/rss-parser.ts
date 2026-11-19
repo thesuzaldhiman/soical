@@ -1,3 +1,5 @@
+import { cleanHeadlineText, decodeHtmlEntities } from '@/lib/utils/text-decoder';
+
 export interface RssItem {
   id: string;
   title: string;
@@ -23,21 +25,7 @@ export interface FetchFeedOptions {
 }
 
 function cleanHtmlEntities(str: string): string {
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#8216;/g, '‘')
-    .replace(/&#8217;/g, '’')
-    .replace(/&#8220;/g, '“')
-    .replace(/&#8221;/g, '”')
-    .replace(/&#8211;/g, '–')
-    .replace(/&#8212;/g, '—')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+  return cleanHeadlineText(str);
 }
 
 function stripHtml(html: string): string {

@@ -693,6 +693,7 @@ export const INITIAL_SIG_TEMPLATES: SigTemplate[] = [
     canvasWidth: 1200,
     canvasHeight: 630,
     templateImageUrl: '',
+    layerMode: 'overlay',
     videoConfig: {
       enabled: false,
       durationSeconds: 15,
@@ -728,6 +729,7 @@ export const INITIAL_SIG_TEMPLATES: SigTemplate[] = [
     canvasWidth: 1080,
     canvasHeight: 1350,
     templateImageUrl: '/uploads/media_8c7a84d712a33674.png',
+    layerMode: 'overlay',
     videoConfig: {
       enabled: true,
       durationSeconds: 15,
