@@ -1,13 +1,14 @@
 /**
  * ensure-yt-dlp.js
- * Prepares the Python 3.9-compatible yt-dlp binary for YouTube video stream extraction.
- * Uses release 2025.10.14 which is guaranteed to run on Python 3.9+ environments (e.g., Hostinger CloudLinux/CentOS).
+ * Prepares the latest official yt-dlp binary for YouTube video stream extraction.
+ * Uses release 2026.10.26 which features visionos/android clients that bypass YouTube's
+ * "The page needs to be reloaded" challenge and supports 1080p/720p/360p video streams.
  */
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-const REQUIRED_VERSION = '2025.10.14';
+const REQUIRED_VERSION = '2026.10.26';
 const downloadUrl = `https://github.com/yt-dlp/yt-dlp/releases/download/${REQUIRED_VERSION}/yt-dlp`;
 
 async function downloadFile(url, dest) {

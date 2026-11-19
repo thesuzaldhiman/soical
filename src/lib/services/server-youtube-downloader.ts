@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 
 let cachedYtDlpPath: string | null = null;
 
-const COMPATIBLE_YTDLP_VERSION = '2025.10.14';
+const COMPATIBLE_YTDLP_VERSION = '2026.10.26';
 const COMPATIBLE_DOWNLOAD_URL = `https://github.com/yt-dlp/yt-dlp/releases/download/${COMPATIBLE_YTDLP_VERSION}/yt-dlp`;
 
 /**
@@ -541,44 +541,67 @@ export async function downloadYouTubeVideo(
     } catch {}
   }
 
+  // Ensure Node.js binary directory is on PATH so yt-dlp can use Node as its JavaScript engine
+  const nodeBinDir = path.dirname(process.execPath);
+  const currentPath = process.env.PATH || '';
+  const extendedPath = [
+    nodeBinDir,
+    path.join(process.cwd(), 'bin'),
+    path.join(process.cwd(), 'public', 'bin'),
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    currentPath,
+  ].join(path.delimiter);
+
   const customEnv = {
     ...process.env,
+    PATH: extendedPath,
     TMPDIR: localTmpDir,
     PYINSTALLER_TMPDIR: localTmpDir,
     TEMP: localTmpDir,
     TMP: localTmpDir,
   };
 
-  if (!cookiesPath) {
-    throw new Error(
-      'YouTube Cookies Required: Hostinger cloud datacenter IP is blocked by YouTube bot protection. Please click "🍪 Add Cookies" on the YouTube Sync page, paste your Netscape cookies.txt, and click Save. They are stored permanently in your cloud database.'
-    );
-  }
-
   // Multi-tier download strategies
-  const strategies = [
-    // Strategy 1: Android Client with Format 18 / Best (with Cookies)
+  const strategies: Array<{
+    name: string;
+    format: string;
+    extractorArgs?: string;
+    useCookies: boolean;
+  }> = [
+    // Strategy 1: Modern High Quality (visionos / default in yt-dlp 2026.10.26)
     {
-      name: 'Strategy 1 (Android 18/Best)',
-      format: '18/b/best/bv*[ext=mp4]+ba[ext=m4a]/bestvideo+bestaudio/bv*+ba',
+      name: 'Strategy 1 (High Quality MP4 + VisionOS)',
+      format: 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/18/best',
+      extractorArgs: undefined,
+      useCookies: !!cookiesPath,
+    },
+    // Strategy 2: Android Client Format 18 (Pre-muxed 360p, fast and lightweight)
+    {
+      name: 'Strategy 2 (Android 18/Best)',
+      format: '18/b/best',
       extractorArgs: 'youtube:player_client=android',
+      useCookies: false, // Android client rejects cookies; omitting cookies prevents fallback to TV client
     },
-    // Strategy 2: Android + Web-Embedded Dual Fallback (with Cookies)
+    // Strategy 3: Clean Fallback without Cookies
     {
-      name: 'Strategy 2 (Android + Web-Embedded)',
-      format: '18/best/bestvideo+bestaudio/bv*+ba/b',
-      extractorArgs: 'youtube:player_client=android,web_embedded',
+      name: 'Strategy 3 (Clean Direct Fallback)',
+      format: 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/18/best',
+      extractorArgs: undefined,
+      useCookies: false,
     },
-    // Strategy 3: Android + TV Fallback (with Cookies)
+    // Strategy 4: Android Direct with Cookies
     {
-      name: 'Strategy 3 (Android + TV Fallback)',
-      format: '18/best/b',
-      extractorArgs: 'youtube:player_client=android,tv',
+      name: 'Strategy 4 (Android 18 with Cookies)',
+      format: '18/b/best',
+      extractorArgs: 'youtube:player_client=android',
+      useCookies: !!cookiesPath,
     },
   ];
 
   let downloadSucceeded = false;
-  let lastFailureMessage = '';
+  const failureHistory: string[] = [];
 
   for (let i = 0; i < strategies.length; i++) {
     const strat = strategies[i];
@@ -608,7 +631,9 @@ export async function downloadYouTubeVideo(
       stratArgs.push('--ffmpeg-location', ffmpegDir);
     }
 
-    stratArgs.push('--cookies', cookiesPath);
+    if (cookiesPath && strat.useCookies) {
+      stratArgs.push('--cookies', cookiesPath);
+    }
 
     stratArgs.push('-o', finalFilePath);
     stratArgs.push(watchUrl);
@@ -627,16 +652,17 @@ export async function downloadYouTubeVideo(
       console.log(`[YouTube Downloader] ${strat.name} succeeded for ${cleanId}!`);
       break;
     } else {
-      lastFailureMessage = execResult.stderr || 'Downloaded file was missing or empty.';
+      const msg = execResult.stderr || 'Downloaded file was missing or empty.';
+      failureHistory.push(`[${strat.name}]: ${msg}`);
       console.warn(
-        `[YouTube Downloader] ${strat.name} failed for ${cleanId}: ${lastFailureMessage.substring(0, 160)}`
+        `[YouTube Downloader] ${strat.name} failed for ${cleanId}: ${msg.substring(0, 160)}`
       );
     }
   }
 
   if (!downloadSucceeded || !fs.existsSync(finalFilePath)) {
     throw new Error(
-      `Failed to download YouTube video: ${lastFailureMessage || 'All download strategies failed.'}`
+      `Failed to download YouTube video: ${failureHistory[failureHistory.length - 1] || 'All download strategies failed.'}`
     );
   }
 
