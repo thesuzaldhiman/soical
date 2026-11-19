@@ -40,7 +40,7 @@ function resolveEmail(request: NextRequest, bodyEmail?: string): string {
       }
     } catch {}
   }
-  return 'me.sumitji@gmail.com';
+  return 'suzaldhiman@gmail.com';
 }
 
 export async function POST(request: NextRequest) {
