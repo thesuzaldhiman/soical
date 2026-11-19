@@ -177,6 +177,24 @@ export async function getYtDlpPath(): Promise<string> {
 }
 
 /**
+ * Resolves local cookies.txt file for authenticated YouTube access
+ */
+function getCookiesPath(): string | null {
+  const candidates = [
+    path.join(process.cwd(), 'cookies.txt'),
+    path.join(process.cwd(), 'bin', 'cookies.txt'),
+    path.join(process.cwd(), 'public', 'cookies.txt'),
+    path.join('/tmp', 'cookies.txt'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c) && fs.statSync(c).size > 50) {
+      return c;
+    }
+  }
+  return null;
+}
+
+/**
  * Finds local FFmpeg binary path for audio-video merging
  */
 function getLocalFfmpegDir(): string | null {
@@ -444,6 +462,12 @@ export async function downloadYouTubeVideo(
 
   if (ffmpegDir) {
     args.push('--ffmpeg-location', ffmpegDir);
+  }
+
+  const cookiesPath = getCookiesPath();
+  if (cookiesPath) {
+    console.log(`[YouTube Downloader] Using authenticated cookies from: ${cookiesPath}`);
+    args.push('--cookies', cookiesPath);
   }
 
   // Add the YouTube URL

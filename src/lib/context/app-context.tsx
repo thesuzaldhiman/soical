@@ -1354,6 +1354,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return nextPages;
     });
 
+    // Send instant alert email if configured in settings
+    try {
+      const emailToSend = settings?.alertEmail || user?.email;
+      if (emailToSend && targetPage) {
+        fetch('/api/alerts/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: emailToSend,
+            platform: targetPage.platform,
+            pageName: targetPage.name,
+            pageId: targetPage.id,
+            reason: 'User disconnected page from CreatorFlow dashboard',
+          }),
+        }).catch((err) => console.warn('[Alert Notify Error]', err));
+      }
+    } catch (e) {
+      console.warn('[Disconnect Notification Error]', e);
+    }
+
     // When a page is disconnected, clean up associated accounts to prevent phantom/orphaned accounts
     setAccounts((prev) => {
       const remainingWpPages = nextPages.filter((p) => p.platform === 'wordpress');

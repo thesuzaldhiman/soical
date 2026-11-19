@@ -6,17 +6,37 @@ interface SendResetEmailParams {
   recipientName?: string;
 }
 
+interface SendAlertEmailParams {
+  toEmail: string;
+  subject: string;
+  title: string;
+  message: string;
+  platform?: string;
+  accountName?: string;
+  details?: Record<string, string>;
+  isTest?: boolean;
+}
+
+const DEFAULT_SMTP_HOST = 'smtp.hostinger.com';
+const DEFAULT_SMTP_PORT = 465;
+const DEFAULT_SMTP_USER = 'alerts@khabarmonkey.com';
+const DEFAULT_SMTP_PASS = 'KhabarAlert#82ae7ac7!';
+
+export function getSmtpConfig() {
+  const host = process.env.SMTP_HOST || DEFAULT_SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || String(DEFAULT_SMTP_PORT), 10);
+  const user = process.env.SMTP_USER || DEFAULT_SMTP_USER;
+  const pass = process.env.SMTP_PASS || DEFAULT_SMTP_PASS;
+  const from = process.env.SMTP_FROM || `"Social Auto Poster" <${user}>`;
+  return { host, port, user, pass, from };
+}
+
 export async function sendPasswordResetEmail({
   toEmail,
   resetUrl,
   recipientName = 'User',
 }: SendResetEmailParams): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const smtpHost = process.env.SMTP_HOST || 'smtp.hostinger.com';
-  const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  const smtpFrom =
-    process.env.SMTP_FROM || `"Social Auto Poster" <${smtpUser || 'noreply@khabarmonkey.com'}>`;
+  const { host: smtpHost, port: smtpPort, user: smtpUser, pass: smtpPass, from: smtpFrom } = getSmtpConfig();
 
   // HTML Email Template
   const htmlContent = `
@@ -120,3 +140,137 @@ export async function sendPasswordResetEmail({
   }
 }
 
+/**
+ * Send an alert or test notification email (e.g. Account Disconnect, Health Error, or Test Alert)
+ */
+export async function sendAlertEmail({
+  toEmail,
+  subject,
+  title,
+  message,
+  platform = 'Social Media',
+  accountName,
+  details = {},
+  isTest = false,
+}: SendAlertEmailParams): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  if (!toEmail || !toEmail.includes('@')) {
+    return { success: false, error: 'Invalid recipient email address' };
+  }
+
+  const { host: smtpHost, port: smtpPort, user: smtpUser, pass: smtpPass, from: smtpFrom } = getSmtpConfig();
+
+  const badgeColor = isTest ? '#10B981' : '#EF4444';
+  const badgeText = isTest ? 'TEST NOTIFICATION' : 'URGENT ALERT';
+  const headerIcon = isTest ? '🔔' : '⚠️';
+
+  const detailRows = Object.entries(details)
+    .map(
+      ([key, val]) => `
+      <tr>
+        <td style="padding: 6px 0; font-size: 13px; color: #64748B; width: 140px;"><strong>${key}:</strong></td>
+        <td style="padding: 6px 0; font-size: 13px; color: #0F172A; font-family: monospace;">${val}</td>
+      </tr>`
+    )
+    .join('');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${subject}</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #F8F9FA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1E293B;">
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #F8F9FA; padding: 40px 15px;">
+        <tr>
+          <td align="center">
+            <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 540px; background-color: #FFFFFF; border-radius: 20px; border: 1px solid #E2E8F0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+              <tr>
+                <td style="padding: 28px 32px 20px 32px; border-bottom: 1px solid #F1F5F9;">
+                  <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td>
+                        <span style="display: inline-block; padding: 4px 10px; background-color: ${badgeColor}; color: #FFFFFF; font-size: 11px; font-weight: 800; border-radius: 6px; letter-spacing: 0.5px;">
+                          ${badgeText}
+                        </span>
+                        <h2 style="margin: 12px 0 0 0; font-size: 19px; font-weight: 800; color: #0F172A; letter-spacing: -0.5px;">
+                          ${headerIcon} ${title}
+                        </h2>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 28px 32px;">
+                  <p style="margin: 0 0 16px 0; font-size: 14px; line-height: 1.6; color: #334155;">
+                    ${message}
+                  </p>
+
+                  ${
+                    accountName
+                      ? `<div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 18px; margin: 20px 0;">
+                          <div style="font-size: 12px; color: #64748B; margin-bottom: 4px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Affected Destination</div>
+                          <div style="font-size: 15px; font-weight: 700; color: #0F172A;">
+                            ${accountName} <span style="font-size: 12px; font-weight: 500; color: #64748B;">(${platform})</span>
+                          </div>
+                        </div>`
+                      : ''
+                  }
+
+                  ${
+                    detailRows
+                      ? `<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 16px; border-top: 1px solid #F1F5F9; padding-top: 12px;">
+                          ${detailRows}
+                        </table>`
+                      : ''
+                  }
+
+                  <div style="text-align: center; margin: 28px 0 10px 0;">
+                    <a href="https://game.khabarmonkey.com/settings" target="_blank" style="display: inline-block; padding: 12px 24px; background-color: #0F172A; color: #FFFFFF; text-decoration: none; font-size: 13px; font-weight: 700; border-radius: 10px; letter-spacing: 0.2px;">
+                      Open Settings &amp; Accounts
+                    </a>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 18px 32px; background-color: #F8F9FA; text-align: center; font-size: 12px; color: #94A3B8; border-top: 1px solid #F1F5F9;">
+                  Sent automatically by Social Auto Poster Alert System • game.khabarmonkey.com
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+    });
+
+    const info = await transporter.sendMail({
+      from: smtpFrom,
+      to: toEmail,
+      subject,
+      text: `${title}\n\n${message}\n\nPlatform: ${platform}\nAccount: ${accountName || 'N/A'}\nSettings: https://game.khabarmonkey.com/settings`,
+      html: htmlContent,
+    });
+
+    console.log(`[Mailer Alert] Email sent to ${toEmail} | MessageId: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown mailer error';
+    console.error('[Mailer Alert] Failed to send alert email via SMTP:', errorMsg);
+    return { success: false, error: errorMsg };
+  }
+}

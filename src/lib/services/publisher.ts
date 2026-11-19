@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { getMediaFromDb } from '@/lib/db/mysql';
+import { getBaseUrl } from '@/lib/utils/url';
 
 export interface PublishTarget {
   id: string;
@@ -295,16 +297,34 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                   fbResData = await fbRes.json();
                 }
               } else {
-                // Check if local file in public directory (e.g. /uploads/...)
+                // Check if local file in public directory (e.g. /uploads/...) or MySQL DB
                 const cleanRelPath = mediaUrl.replace(/^\/+/, '');
                 const localFilePath = path.join(process.cwd(), 'public', cleanRelPath);
 
-                if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://') && fs.existsSync(localFilePath)) {
-                  const fileBuffer = fs.readFileSync(localFilePath);
-                  const ext = path.extname(localFilePath).replace('.', '') || 'mp4';
-                  const blob = new Blob([fileBuffer], { type: `video/${ext}` });
+                let videoBuffer: Buffer | null = null;
+                let videoMime = 'video/mp4';
+                let videoExt = 'mp4';
+
+                if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
+                  if (fs.existsSync(localFilePath)) {
+                    videoBuffer = fs.readFileSync(localFilePath);
+                    videoExt = path.extname(localFilePath).replace('.', '') || 'mp4';
+                    videoMime = `video/${videoExt}`;
+                  } else {
+                    const filename = path.basename(cleanRelPath);
+                    const dbMedia = (await getMediaFromDb(cleanRelPath)) || (await getMediaFromDb(filename));
+                    if (dbMedia) {
+                      videoBuffer = dbMedia.data;
+                      videoMime = dbMedia.mimeType || 'video/mp4';
+                      videoExt = videoMime.split('/')[1] || 'mp4';
+                    }
+                  }
+                }
+
+                if (videoBuffer) {
+                  const blob = new Blob([new Uint8Array(videoBuffer)], { type: videoMime });
                   const form = new FormData();
-                  form.append('source', blob, `video_${Date.now()}.${ext}`);
+                  form.append('source', blob, `video_${Date.now()}.${videoExt}`);
                   if (message) form.append('description', message);
                   form.append('access_token', accessToken);
 
@@ -314,8 +334,13 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                   });
                   fbResData = await fbRes.json();
                 } else {
+                  // Ensure absolute URL if relative path
+                  const absoluteUrl = mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')
+                    ? mediaUrl
+                    : `${getBaseUrl()}/${cleanRelPath}`;
+
                   const formData = new URLSearchParams();
-                  formData.append('file_url', mediaUrl);
+                  formData.append('file_url', absoluteUrl);
                   if (message) formData.append('description', message);
                   formData.append('access_token', accessToken);
 
@@ -351,17 +376,34 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                   fbResData = await fbRes.json();
                 }
               } else {
-                // Check if local file in public directory (e.g. /uploads/...)
+                // Check if local file in public directory (e.g. /uploads/...) or MySQL DB
                 const cleanRelPath = mediaUrl.replace(/^\/+/, '');
                 const localFilePath = path.join(process.cwd(), 'public', cleanRelPath);
 
-                if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://') && fs.existsSync(localFilePath)) {
-                  const fileBuffer = fs.readFileSync(localFilePath);
-                  const ext = path.extname(localFilePath).replace('.', '') || 'jpg';
-                  const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-                  const blob = new Blob([fileBuffer], { type: mimeType });
+                let photoBuffer: Buffer | null = null;
+                let photoMime = 'image/jpeg';
+                let photoExt = 'jpg';
+
+                if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
+                  if (fs.existsSync(localFilePath)) {
+                    photoBuffer = fs.readFileSync(localFilePath);
+                    photoExt = path.extname(localFilePath).replace('.', '') || 'jpg';
+                    photoMime = photoExt === 'png' ? 'image/png' : photoExt === 'gif' ? 'image/gif' : photoExt === 'webp' ? 'image/webp' : 'image/jpeg';
+                  } else {
+                    const filename = path.basename(cleanRelPath);
+                    const dbMedia = (await getMediaFromDb(cleanRelPath)) || (await getMediaFromDb(filename));
+                    if (dbMedia) {
+                      photoBuffer = dbMedia.data;
+                      photoMime = dbMedia.mimeType || 'image/jpeg';
+                      photoExt = photoMime.split('/')[1] || 'jpg';
+                    }
+                  }
+                }
+
+                if (photoBuffer) {
+                  const blob = new Blob([new Uint8Array(photoBuffer)], { type: photoMime });
                   const form = new FormData();
-                  form.append('source', blob, `photo_${Date.now()}.${ext}`);
+                  form.append('source', blob, `photo_${Date.now()}.${photoExt}`);
                   if (message) form.append('caption', message);
                   form.append('access_token', accessToken);
                   if (options.isAiGenerated) {
@@ -374,8 +416,13 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
                   });
                   fbResData = await fbRes.json();
                 } else {
+                  // Ensure absolute URL if relative path
+                  const absoluteUrl = mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')
+                    ? mediaUrl
+                    : `${getBaseUrl()}/${cleanRelPath}`;
+
                   const formData = new URLSearchParams();
-                  formData.append('url', mediaUrl);
+                  formData.append('url', absoluteUrl);
                   if (message) formData.append('caption', message);
                   formData.append('access_token', accessToken);
                   if (options.isAiGenerated) {
