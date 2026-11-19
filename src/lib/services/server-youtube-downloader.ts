@@ -3,6 +3,7 @@ import path from 'path';
 import https from 'https';
 import { execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
+import { saveMediaToDb } from '@/lib/db/mysql';
 
 const execFileAsync = promisify(execFile);
 
@@ -185,6 +186,10 @@ function getCookiesPath(): string | null {
     path.join(process.cwd(), 'bin', 'cookies.txt'),
     path.join(process.cwd(), 'public', 'cookies.txt'),
     path.join('/tmp', 'cookies.txt'),
+    path.join(process.cwd(), '..', 'cookies.txt'),
+    path.join(process.cwd(), '..', '..', 'cookies.txt'),
+    '/home/u941411339/domains/game.khabarmonkey.com/cookies.txt',
+    '/home/u941411339/domains/game.khabarmonkey.com/public_html/cookies.txt',
   ];
   for (const c of candidates) {
     if (fs.existsSync(c) && fs.statSync(c).size > 50) {
@@ -418,6 +423,61 @@ export interface DownloadedYouTubeVideoResult {
 }
 
 /**
+ * Executes yt-dlp with the best available Python interpreter on CloudLinux / Hostinger
+ */
+async function executeYtDlpCommand(
+  ytdlpBin: string,
+  args: string[],
+  customEnv: any
+): Promise<{ success: boolean; stderr?: string }> {
+  const pythonCandidates = [
+    '/opt/alt/python312/bin/python3',
+    '/opt/alt/python311/bin/python3',
+    '/opt/alt/python310/bin/python3',
+    '/usr/local/bin/python3',
+    '/usr/bin/python3',
+    'python3',
+    'python',
+  ];
+
+  let lastErr = '';
+
+  // 1. Try available Python candidates
+  for (const py of pythonCandidates) {
+    try {
+      await execFileAsync(py, [ytdlpBin, ...args], {
+        timeout: 240000,
+        maxBuffer: 25 * 1024 * 1024,
+        env: customEnv,
+      });
+      return { success: true };
+    } catch (err: any) {
+      const msg = (err?.stderr || err?.message || '').toString();
+      lastErr = msg;
+      // If Python binary itself does not exist on disk, continue to next
+      if (err?.code === 'ENOENT') continue;
+      // If error came from yt-dlp execution itself, break and try direct binary or next strategy
+      break;
+    }
+  }
+
+  // 2. Try direct binary execution
+  try {
+    await execFileAsync(ytdlpBin, args, {
+      timeout: 240000,
+      maxBuffer: 25 * 1024 * 1024,
+      env: customEnv,
+    });
+    return { success: true };
+  } catch (binErr: any) {
+    const msg = (binErr?.stderr || binErr?.message || '').toString();
+    lastErr = msg || lastErr;
+  }
+
+  return { success: false, stderr: lastErr };
+}
+
+/**
  * Downloads a YouTube video or short into an MP4 file on the local server
  */
 export async function downloadYouTubeVideo(
@@ -441,43 +501,22 @@ export async function downloadYouTubeVideo(
 
   const ytdlpBin = await getYtDlpPath();
   const ffmpegDir = getLocalFfmpegDir();
+  const cookiesPath = getCookiesPath();
 
   const isShort = await checkIfVideoIsShort(cleanId);
 
-  console.log(`[YouTube Downloader] Starting download for ${cleanId} (isShort: ${isShort}) using binary: ${ytdlpBin}`);
-
-  const args: string[] = [
-    '--no-playlist',
-    '--no-warnings',
-    '--no-update',
-    // Allow android, web or default clients seamlessly
-    '--extractor-args',
-    'youtube:player_client=android,web',
-    '-f',
-    'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b',
-    '--merge-output-format',
-    'mp4',
-    '-o',
-    finalFilePath,
-  ];
-
-  if (ffmpegDir) {
-    args.push('--ffmpeg-location', ffmpegDir);
-  }
-
-  const cookiesPath = getCookiesPath();
-  if (cookiesPath) {
-    console.log(`[YouTube Downloader] Using authenticated cookies from: ${cookiesPath}`);
-    args.push('--cookies', cookiesPath);
-  }
-
-  // Add the YouTube URL
-  args.push(watchUrl);
+  console.log(
+    `[YouTube Downloader] Starting resilient download for ${cleanId} (isShort: ${isShort}) | cookies: ${
+      cookiesPath ? 'YES' : 'NO'
+    }`
+  );
 
   // Setup local temp directory inside project to avoid Linux noexec /tmp restrictions
   const localTmpDir = path.join(process.cwd(), '.tmp');
   if (!fs.existsSync(localTmpDir)) {
-    try { fs.mkdirSync(localTmpDir, { recursive: true }); } catch {}
+    try {
+      fs.mkdirSync(localTmpDir, { recursive: true });
+    } catch {}
   }
 
   const customEnv = {
@@ -488,67 +527,135 @@ export async function downloadYouTubeVideo(
     TMP: localTmpDir,
   };
 
-  try {
-    let executed = false;
-    let lastError: Error | null = null;
+  // Multi-tier download strategies
+  const strategies = [
+    // Strategy 1: High-Quality native MP4 (Fastest & best quality for Meta/FB)
+    {
+      name: 'Strategy 1 (High-Quality MP4)',
+      format: 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b/best',
+      extractorArgs: cookiesPath
+        ? 'youtube:player_client=web,android'
+        : 'youtube:player_client=android,web',
+    },
+    // Strategy 2: Universal Adaptive (Accepts any video/audio stream and merges to MP4)
+    {
+      name: 'Strategy 2 (Universal Streams Fallback)',
+      format: 'bv*+ba/b/best',
+      extractorArgs: 'youtube:player_client=android,web_embedded,tv',
+    },
+    // Strategy 3: Permissive Single Stream (Guarantees format resolution)
+    {
+      name: 'Strategy 3 (Single Stream Fallback)',
+      format: 'best',
+      extractorArgs: undefined,
+    },
+  ];
 
-    // Attempt 1: Run via available python3 executables (CloudLinux Alt-Python 3.11/3.12 or system Python 3.9)
-    const pythonCandidates = [
-      '/opt/alt/python311/bin/python3',
-      '/opt/alt/python312/bin/python3',
-      '/usr/local/bin/python3',
-      '/usr/bin/python3',
-      'python3',
-      'python',
+  let downloadSucceeded = false;
+  let lastFailureMessage = '';
+
+  for (let i = 0; i < strategies.length; i++) {
+    const strat = strategies[i];
+    console.log(`[YouTube Downloader] Running [${i + 1}/${strategies.length}] ${strat.name} for ${cleanId}...`);
+
+    const stratArgs: string[] = [
+      '--no-playlist',
+      '--no-warnings',
+      '--no-update',
+      '--ignore-config',
+      '--no-check-certificates',
+      '--geo-bypass',
     ];
 
-    for (const py of pythonCandidates) {
-      if (executed) break;
+    if (strat.extractorArgs) {
+      stratArgs.push('--extractor-args', strat.extractorArgs);
+    }
+
+    if (strat.format) {
+      stratArgs.push('-f', strat.format);
+    }
+
+    stratArgs.push('--merge-output-format', 'mp4');
+
+    if (ffmpegDir) {
+      stratArgs.push('--ffmpeg-location', ffmpegDir);
+    }
+
+    if (cookiesPath) {
+      stratArgs.push('--cookies', cookiesPath);
+    }
+
+    stratArgs.push('-o', finalFilePath);
+    stratArgs.push(watchUrl);
+
+    // Clean up partial attempt file before running
+    if (fs.existsSync(finalFilePath)) {
       try {
-        console.log(`[YouTube Downloader] Attempting execution via ${py} for ${cleanId}...`);
-        await execFileAsync(py, [ytdlpBin, ...args], {
-          timeout: 180000,
-          maxBuffer: 15 * 1024 * 1024,
-          env: customEnv,
-        });
-        executed = true;
-      } catch (pyErr: any) {
-        const msg = (pyErr?.stderr || pyErr?.message || '').toString();
-        console.warn(`[YouTube Downloader] ${py} execution note:`, msg.substring(0, 150));
-        lastError = pyErr instanceof Error ? pyErr : new Error(String(pyErr));
-      }
+        fs.unlinkSync(finalFilePath);
+      } catch {}
     }
 
-    // Attempt 2: Direct binary execution with non-tmp TMPDIR
-    if (!executed) {
-      console.log(`[YouTube Downloader] Attempting direct binary execution for ${cleanId}...`);
-      await execFileAsync(ytdlpBin, args, {
-        timeout: 180000,
-        maxBuffer: 15 * 1024 * 1024,
-        env: customEnv,
-      });
-      executed = true;
+    const execResult = await executeYtDlpCommand(ytdlpBin, stratArgs, customEnv);
+
+    if (fs.existsSync(finalFilePath) && fs.statSync(finalFilePath).size > 5000) {
+      downloadSucceeded = true;
+      console.log(`[YouTube Downloader] ${strat.name} succeeded for ${cleanId}!`);
+      break;
+    } else {
+      lastFailureMessage = execResult.stderr || 'Downloaded file was missing or empty.';
+      console.warn(
+        `[YouTube Downloader] ${strat.name} failed for ${cleanId}: ${lastFailureMessage.substring(0, 160)}`
+      );
     }
-
-    if (!fs.existsSync(finalFilePath) || fs.statSync(finalFilePath).size < 1000) {
-      throw new Error(`Download completed but output file is missing or invalid.`);
-    }
-
-    const stat = fs.statSync(finalFilePath);
-    console.log(`[YouTube Downloader] Successfully downloaded ${cleanId} (${stat.size} bytes) -> ${publicVideoUrl}`);
-
-    return {
-      success: true,
-      videoId: cleanId,
-      localFilePath: finalFilePath,
-      publicUrl: publicVideoUrl,
-      fileSizeBytes: stat.size,
-      title: baseName,
-      isShort,
-    };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[YouTube Downloader] Error downloading ${cleanId}:`, msg);
-    throw new Error(`Failed to download YouTube video: ${msg}`);
   }
+
+  if (!downloadSucceeded || !fs.existsSync(finalFilePath)) {
+    throw new Error(
+      `Failed to download YouTube video: ${lastFailureMessage || 'All download strategies failed.'}`
+    );
+  }
+
+  const stat = fs.statSync(finalFilePath);
+  console.log(
+    `[YouTube Downloader] Successfully downloaded ${cleanId} (${stat.size} bytes) -> ${publicVideoUrl}`
+  );
+
+  // Mirror to public_html/uploads/youtube_videos for Hostinger / LiteSpeed direct serving
+  const altPublicHtmlDirs = [
+    path.join(process.cwd(), 'public_html', 'uploads', 'youtube_videos'),
+    path.join(process.cwd(), '..', 'public_html', 'uploads', 'youtube_videos'),
+    path.join(process.cwd(), '..', '..', 'public_html', 'uploads', 'youtube_videos'),
+    path.join(process.cwd(), '..', '..', '..', '..', 'public_html', 'uploads', 'youtube_videos'),
+    '/home/u941411339/domains/game.khabarmonkey.com/public_html/uploads/youtube_videos',
+  ];
+  for (const altDir of altPublicHtmlDirs) {
+    try {
+      if (!fs.existsSync(altDir)) fs.mkdirSync(altDir, { recursive: true });
+      const altFile = path.join(altDir, finalFilename);
+      fs.copyFileSync(finalFilePath, altFile);
+      try {
+        fs.chmodSync(altFile, 0o644);
+      } catch {}
+    } catch {}
+  }
+
+  // Persist to MySQL / Cloud database if available
+  try {
+    const videoBuffer = fs.readFileSync(finalFilePath);
+    const storageId = publicVideoUrl.replace(/^\/+uploads\/+/, '').replace(/^\/+/, '');
+    saveMediaToDb(storageId, 'video/mp4', videoBuffer).catch(() => {});
+    saveMediaToDb(finalFilename, 'video/mp4', videoBuffer).catch(() => {});
+  } catch (e) {
+    console.warn('[YouTube Downloader] Note on saving video to DB:', e);
+  }
+
+  return {
+    success: true,
+    videoId: cleanId,
+    localFilePath: finalFilePath,
+    publicUrl: publicVideoUrl,
+    fileSizeBytes: stat.size,
+    title: baseName,
+    isShort,
+  };
 }
