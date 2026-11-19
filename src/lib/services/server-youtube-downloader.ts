@@ -450,10 +450,11 @@ export async function downloadYouTubeVideo(
     '--no-playlist',
     '--no-warnings',
     '--no-update',
+    // Allow android, web or default clients seamlessly
     '--extractor-args',
-    'youtube:player_client=android',
+    'youtube:player_client=android,web',
     '-f',
-    '18/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b',
     '--merge-output-format',
     'mp4',
     '-o',
