@@ -475,21 +475,21 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       '-i',
       inputMusic,
       '-filter_complex',
-      `[0:v]${videoFilter}[v];[1:a]atrim=0:${duration},asetpts=PTS-STARTPTS,volume=${volRatio.toFixed(2)},afade=t=out:st=${fadeStart}:d=1.5[a]`,
+      `[0:v]${videoFilter},trim=duration=${duration},setpts=PTS-STARTPTS[v];[1:a]atrim=0:${duration},asetpts=PTS-STARTPTS,volume=${volRatio.toFixed(2)},afade=t=out:st=${fadeStart}:d=1.5[a]`,
       '-map',
       '[v]',
       '-map',
       '[a]'
     );
   } else {
-    // No music: Add synthetic silent stereo AAC track (required for valid Instagram & YouTube video containers)
+    // No music: Add synthetic silent stereo AAC track with explicit duration
     args.push(
       '-f',
       'lavfi',
       '-i',
-      'anullsrc=channel_layout=stereo:sample_rate=44100',
+      `anullsrc=channel_layout=stereo:sample_rate=44100:d=${duration}`,
       '-filter_complex',
-      `[0:v]${videoFilter}[v]`,
+      `[0:v]${videoFilter},trim=duration=${duration},setpts=PTS-STARTPTS[v]`,
       '-map',
       '[v]',
       '-map',
