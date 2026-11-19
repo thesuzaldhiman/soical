@@ -433,9 +433,9 @@ export async function downloadYouTubeVideo(
     '--no-warnings',
     '--no-update',
     '--extractor-args',
-    'youtube:player_client=android,web',
+    'youtube:player_client=android',
     '-f',
-    'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    '18/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
     '--merge-output-format',
     'mp4',
     '-o',
@@ -467,13 +467,13 @@ export async function downloadYouTubeVideo(
     let executed = false;
     let lastError: Error | null = null;
 
-    // Attempt 1: Run via available python3 executables (CloudLinux / CentOS / cPanel / AlmaLinux)
+    // Attempt 1: Run via available python3 executables (CloudLinux Alt-Python 3.11/3.12 or system Python 3.9)
     const pythonCandidates = [
-      'python3',
-      '/usr/bin/python3',
-      '/usr/local/bin/python3',
       '/opt/alt/python311/bin/python3',
       '/opt/alt/python312/bin/python3',
+      '/usr/local/bin/python3',
+      '/usr/bin/python3',
+      'python3',
       'python',
     ];
 
