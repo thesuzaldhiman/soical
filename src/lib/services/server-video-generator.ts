@@ -2,14 +2,44 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import zlib from 'zlib';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { VideoMotionEffect, VideoOverlayType } from '@/types';
 import { saveMediaToDb, getMediaFromDb } from '@/lib/db/mysql';
 
-const execFileAsync = promisify(execFile);
-
 let cachedFfmpegPath: string | null = null;
+
+function runFfmpegSpawn(bin: string, args: string[], timeoutMs = 120000): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`FFmpeg timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString();
+      if (stderr.length > 8000) {
+        stderr = stderr.slice(-8000);
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}: ${stderr.trim()}`));
+      }
+    });
+  });
+}
 
 function pipeDownload(
   stream: import('http').IncomingMessage,
@@ -502,7 +532,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   console.log(`[server-video-generator] Spawning ffmpeg from '${ffmpegBin}': effect=${effect}, duration=${duration}s, hasMusic=${!!inputMusic}`);
 
   try {
-    await execFileAsync(ffmpegBin, args, { timeout: 120000, maxBuffer: 50 * 1024 * 1024 });
+    await runFfmpegSpawn(ffmpegBin, args, 120000);
 
     if (!fs.existsSync(finalFilePath)) {
       throw new Error('FFmpeg completed but output file was not created.');
