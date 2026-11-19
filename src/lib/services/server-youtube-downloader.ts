@@ -454,10 +454,7 @@ async function executeYtDlpCommand(
     } catch (err: any) {
       const msg = (err?.stderr || err?.message || '').toString();
       lastErr = msg;
-      // If Python binary itself does not exist on disk, continue to next
       if (err?.code === 'ENOENT') continue;
-      // If error came from yt-dlp execution itself, break and try direct binary or next strategy
-      break;
     }
   }
 
@@ -529,25 +526,33 @@ export async function downloadYouTubeVideo(
 
   // Multi-tier download strategies
   const strategies = [
-    // Strategy 1: High-Quality native MP4 (Fastest & best quality for Meta/FB)
+    // Strategy 1: Android Client with Format 18 / Best (with Cookies if available)
     {
-      name: 'Strategy 1 (High-Quality MP4)',
-      format: 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b/best',
-      extractorArgs: cookiesPath
-        ? 'youtube:player_client=web,android'
-        : 'youtube:player_client=android,web',
+      name: 'Strategy 1 (Android 18/Best + Cookies)',
+      format: '18/b/best/bv*[ext=mp4]+ba[ext=m4a]/bestvideo+bestaudio/bv*+ba',
+      extractorArgs: 'youtube:player_client=android',
+      useCookies: true,
     },
-    // Strategy 2: Universal Adaptive (Accepts any video/audio stream and merges to MP4)
+    // Strategy 2: Android Clean Direct (without Cookies - bypasses corrupt/expired cookies)
     {
-      name: 'Strategy 2 (Universal Streams Fallback)',
-      format: 'bv*+ba/b/best',
-      extractorArgs: 'youtube:player_client=android,web_embedded,tv',
+      name: 'Strategy 2 (Android Clean Direct)',
+      format: '18/b/best/bv*[ext=mp4]+ba[ext=m4a]/bestvideo+bestaudio/bv*+ba',
+      extractorArgs: 'youtube:player_client=android',
+      useCookies: false,
     },
-    // Strategy 3: Permissive Single Stream (Guarantees format resolution)
+    // Strategy 3: Android + Web-Embedded Dual Fallback
     {
-      name: 'Strategy 3 (Single Stream Fallback)',
-      format: 'best',
-      extractorArgs: undefined,
+      name: 'Strategy 3 (Android + Web-Embedded Fallback)',
+      format: '18/best/bestvideo+bestaudio/bv*+ba/b',
+      extractorArgs: 'youtube:player_client=android,web_embedded',
+      useCookies: true,
+    },
+    // Strategy 4: Android + TV Fallback
+    {
+      name: 'Strategy 4 (Android + TV Fallback)',
+      format: '18/best/b',
+      extractorArgs: 'youtube:player_client=android,tv',
+      useCookies: false,
     },
   ];
 
@@ -581,7 +586,7 @@ export async function downloadYouTubeVideo(
       stratArgs.push('--ffmpeg-location', ffmpegDir);
     }
 
-    if (cookiesPath) {
+    if (cookiesPath && strat.useCookies) {
       stratArgs.push('--cookies', cookiesPath);
     }
 
