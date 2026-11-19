@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbPool } from '@/lib/db/mysql';
 import { YouTubeSyncRule } from '@/types';
-import { processYouTubeSyncRule } from '@/lib/services/youtube-sync-service';
+import {
+  processYouTubeSyncRule,
+  executeYouTubeRuleTestPost,
+} from '@/lib/services/youtube-sync-service';
 
 function parseJsonSafe<T>(val: unknown, fallback: T): T {
   if (!val) return fallback;
@@ -15,12 +18,21 @@ function parseJsonSafe<T>(val: unknown, fallback: T): T {
 
 /**
  * POST /api/youtube-sync/trigger
- * Manually trigger video sync for a specific rule right now
+ * Triggers video sync or an instant test post for a YouTube rule
+ * Supports:
+ *  - mode: 'test' -> picks a new video from the channel and publishes it to Facebook
+ *  - mode: 'normal' (default) -> runs standard sync for new unposted feed videos
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email = 'suzaldhiman@gmail.com', ruleId } = body;
+    const {
+      email = 'suzaldhiman@gmail.com',
+      ruleId,
+      mode = 'normal',
+      videoId,
+      targetPageId,
+    } = body;
 
     if (!ruleId) {
       return NextResponse.json({ success: false, error: 'ruleId is required' }, { status: 400 });
@@ -47,13 +59,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Rule not found' }, { status: 404 });
     }
 
-    // Force active for this manual trigger run
+    // ── Mode A: Instant Test Post ("har bar koi new video") ──
+    if (mode === 'test' || mode === 'test_post') {
+      console.log(`[API YouTube Trigger] Running TEST POST for rule: ${rule.name} (${rule.id})`);
+      const testResult = await executeYouTubeRuleTestPost(rule.id, email, {
+        videoId,
+        targetPageId,
+      });
+
+      return NextResponse.json({
+        success: testResult.success,
+        isTest: true,
+        testResult,
+        result: {
+          ruleId: rule.id,
+          ruleName: rule.name,
+          processedCount: testResult.success ? 1 : 0,
+          skippedCount: 0,
+          logs: [testResult.log],
+          video: testResult.video,
+          targets: testResult.targets,
+        },
+      });
+    }
+
+    // ── Mode B: Standard Live Sync Runner ──
     const ruleToRun: YouTubeSyncRule = {
       ...rule,
       isActive: true,
     };
 
-    console.log(`[API YouTube Trigger] Running rule: ${rule.name} (${rule.id})`);
+    console.log(`[API YouTube Trigger] Running standard sync for rule: ${rule.name} (${rule.id})`);
     const syncResult = await processYouTubeSyncRule(ruleToRun, email);
 
     return NextResponse.json({

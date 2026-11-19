@@ -348,3 +348,293 @@ export async function runAllActiveYouTubeRules(): Promise<{ totalRules: number; 
 
   return { totalRules, totalProcessed };
 }
+
+export interface TestPostOptions {
+  videoId?: string;
+  targetPageId?: string;
+}
+
+export interface TestPostExecutionResult {
+  success: boolean;
+  ruleId: string;
+  ruleName: string;
+  channelTitle: string;
+  video: {
+    id: string;
+    title: string;
+    description: string;
+    watchUrl: string;
+    thumbnailUrl: string;
+    isShort: boolean;
+    localFilePath?: string;
+    publicUrl?: string;
+    fileSizeBytes?: number;
+  };
+  targets: Array<{
+    pageId: string;
+    pageName: string;
+    platform: string;
+    status: 'success' | 'failed';
+    postUrl?: string;
+    error?: string;
+  }>;
+  log: YouTubeSyncLog;
+  note?: string;
+  error?: string;
+}
+
+/**
+ * Executes an instant Test Post from a selected YouTube channel rule to Facebook.
+ * Guarantees that every test click selects a NEW / DIFFERENT video!
+ */
+export async function executeYouTubeRuleTestPost(
+  ruleId: string,
+  userEmail: string,
+  options?: TestPostOptions
+): Promise<TestPostExecutionResult> {
+  const pool = getDbPool();
+  if (!pool) {
+    throw new Error('Database pool not available');
+  }
+
+  // 1. Fetch user data
+  const [userRows] = await pool.query<any[]>(
+    'SELECT pages, posts, youtube_rules, youtube_logs FROM app_user_data WHERE email = ? LIMIT 1',
+    [userEmail]
+  );
+
+  if (!userRows || userRows.length === 0) {
+    throw new Error(`User not found: ${userEmail}`);
+  }
+
+  const userPages: SocialPage[] = parseJsonSafe(userRows[0].pages, []);
+  const userPosts: Post[] = parseJsonSafe(userRows[0].posts, []);
+  const allUserRules: YouTubeSyncRule[] = parseJsonSafe(userRows[0].youtube_rules, []);
+  const allUserLogs: YouTubeSyncLog[] = parseJsonSafe(userRows[0].youtube_logs, []);
+
+  const rule = allUserRules.find((r) => r.id === ruleId);
+  if (!rule) {
+    throw new Error(`YouTube rule with ID ${ruleId} not found`);
+  }
+
+  // Determine target pages (if options.targetPageId provided, use that; else rule.targetPageIds; else first fb page)
+  let destinationPages: SocialPage[] = [];
+  if (options?.targetPageId) {
+    destinationPages = userPages.filter((p) => p.id === options.targetPageId);
+  } else if (rule.targetPageIds && rule.targetPageIds.length > 0) {
+    destinationPages = userPages.filter((p) => rule.targetPageIds.includes(p.id));
+  }
+
+  if (destinationPages.length === 0) {
+    const fbPages = userPages.filter((p) => p.platform === 'facebook');
+    if (fbPages.length > 0) {
+      destinationPages = [fbPages[0]];
+    } else {
+      throw new Error('No connected Facebook Pages found. Please connect a Facebook Page first.');
+    }
+  }
+
+  // 2. Fetch latest videos from YouTube RSS feed (15 videos)
+  const latestVideos = await fetchChannelLatestVideos(rule.channelId, 15);
+  if (!latestVideos || latestVideos.length === 0) {
+    throw new Error(`No videos found in YouTube channel feed for "${rule.channelTitle}"`);
+  }
+
+  // 3. Check shorts status for candidate videos
+  const candidateVideos = await Promise.all(
+    latestVideos.map(async (v) => {
+      const isShort = await checkIfVideoIsShort(v.id);
+      return { ...v, isShort };
+    })
+  );
+
+  // Filter based on rule.filterType
+  let filtered = candidateVideos;
+  if (rule.filterType === 'shorts_only') {
+    filtered = candidateVideos.filter((v) => v.isShort);
+  } else if (rule.filterType === 'videos_only') {
+    filtered = candidateVideos.filter((v) => !v.isShort);
+  }
+
+  // If no videos match the exact filter, fallback to all videos so test never gets stuck
+  if (filtered.length === 0) {
+    filtered = candidateVideos;
+  }
+
+  // 4. PICK A NEW VIDEO EVERY TIME ("har bar koi new video ok"):
+  let chosenVideo: typeof candidateVideos[0] | undefined;
+
+  if (options?.videoId) {
+    // User specifically chose a video ID
+    chosenVideo = candidateVideos.find((v) => v.id === options.videoId) || {
+      id: options.videoId,
+      title: 'YouTube Test Video',
+      description: '',
+      publishedAt: new Date().toISOString(),
+      thumbnailUrl: `https://i.ytimg.com/vi/${options.videoId}/hqdefault.jpg`,
+      watchUrl: `https://www.youtube.com/watch?v=${options.videoId}`,
+      isShort: false,
+    };
+  } else {
+    const processedSet = new Set(rule.processedVideoIds || []);
+    // Find videos in filtered list that have NOT been processed yet
+    const freshVideos = filtered.filter((v) => !processedSet.has(v.id));
+
+    if (freshVideos.length > 0) {
+      // Pick the first fresh video
+      chosenVideo = freshVideos[0];
+    } else {
+      // All candidate videos in the feed have already been processed in previous runs/tests!
+      // In this case, round-robin cycle through all filtered videos so that each click picks a new video!
+      const lastIndex = rule.lastTestVideoIndex ?? -1;
+      const nextIndex = (lastIndex + 1) % filtered.length;
+      chosenVideo = filtered[nextIndex];
+      rule.lastTestVideoIndex = nextIndex;
+    }
+  }
+
+  if (!chosenVideo) {
+    throw new Error('Unable to select a candidate video from channel');
+  }
+
+  console.log(`[YouTube Test Post] Selected video for test: "${chosenVideo.title}" (${chosenVideo.id})`);
+
+  // Step 5: Download the YouTube video
+  const cleanId = chosenVideo.id.replace(/[^a-zA-Z0-9_-]/g, '');
+  const dlResult = await downloadYouTubeVideo(
+    cleanId,
+    `yt_test_${rule.id}_${cleanId}_${Date.now()}`
+  );
+
+  // Step 6: Format caption & comment
+  const captionText = buildVideoCaption(chosenVideo.title, chosenVideo.description, rule);
+  const firstComment = rule.linkInComment ? `Original Source: ${chosenVideo.watchUrl}` : undefined;
+
+  // Step 7: Dispatch to Facebook Target Pages
+  const publishTargets = destinationPages.map((dp) => ({
+    id: dp.id,
+    name: dp.name,
+    platform: dp.platform,
+    accessToken: dp.accessToken,
+    pageId: dp.pageId || dp.id,
+  }));
+
+  console.log(
+    `[YouTube Test Post] Publishing "${chosenVideo.title}" to ${publishTargets.length} target(s)...`
+  );
+
+  const dispatchResults = await dispatchToTargets({
+    postType: 'video',
+    title: chosenVideo.title,
+    message: captionText,
+    mediaUrl: dlResult.publicUrl,
+    commentText: firstComment,
+    targets: publishTargets as PublishTarget[],
+  });
+
+  const publishedTargets = (dispatchResults || []).map((dr: any) => ({
+    pageId: dr.pageId,
+    pageName: dr.pageName,
+    platform: dr.platform,
+    status: dr.status as 'success' | 'failed',
+    postUrl: dr.postUrl,
+    error: dr.error,
+  }));
+
+  const anySuccess = publishedTargets.some((pt) => pt.status === 'success');
+
+  // Step 8: Log & Database Record
+  const logId = `ytlog_test_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const syncLog: YouTubeSyncLog = {
+    id: logId,
+    ruleId: rule.id,
+    ruleName: rule.name,
+    videoId: chosenVideo.id,
+    videoTitle: chosenVideo.title,
+    videoUrl: chosenVideo.watchUrl,
+    thumbnailUrl: chosenVideo.thumbnailUrl,
+    isShort: chosenVideo.isShort,
+    isTest: true,
+    status: anySuccess ? 'published' : 'failed',
+    publishedTargets,
+    downloadedFilePath: dlResult.localFilePath,
+    fileSizeBytes: dlResult.fileSizeBytes,
+    createdAt: new Date().toISOString(),
+  };
+
+  // Create post entry in Post Library
+  const newPostRecord: Post = {
+    id: `post_yt_test_${chosenVideo.id}_${Date.now()}`,
+    workspaceId: 'ws_default',
+    postType: 'video',
+    title: `[Test] ${chosenVideo.title}`,
+    message: captionText,
+    mediaUrl: dlResult.publicUrl,
+    pageIds: destinationPages.map((dp) => dp.id),
+    status: anySuccess ? 'published' : 'failed',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    publishedAt: anySuccess ? new Date().toISOString() : undefined,
+    results: (dispatchResults || []).map((dr: any) => ({
+      pageId: dr.pageId,
+      pageName: dr.pageName,
+      platform: dr.platform,
+      status: dr.status,
+      postUrl: dr.postUrl,
+      error: dr.error,
+      timestamp: new Date().toISOString(),
+    })),
+  };
+  userPosts.unshift(newPostRecord);
+  allUserLogs.unshift(syncLog);
+
+  // Update processedVideoIds so future tests and regular syncs pick the NEXT video!
+  const processedSet = new Set(rule.processedVideoIds || []);
+  processedSet.add(chosenVideo.id);
+  const updatedProcessedIds = Array.from(processedSet).slice(-200);
+
+  const updatedRule: YouTubeSyncRule = {
+    ...rule,
+    processedVideoIds: updatedProcessedIds,
+    lastTestVideoIndex: rule.lastTestVideoIndex ?? 0,
+    totalSyncedCount: (rule.totalSyncedCount || 0) + (anySuccess ? 1 : 0),
+    lastCheckedAt: new Date().toISOString(),
+    lastProcessedAt: anySuccess ? new Date().toISOString() : rule.lastProcessedAt,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const updatedRulesList = allUserRules.map((r) => (r.id === rule.id ? updatedRule : r));
+
+  await pool.query(
+    'UPDATE app_user_data SET youtube_rules = ?, youtube_logs = ?, posts = ?, updated_at = NOW() WHERE email = ?',
+    [
+      JSON.stringify(updatedRulesList),
+      JSON.stringify(allUserLogs.slice(0, 100)),
+      JSON.stringify(userPosts.slice(0, 500)),
+      userEmail,
+    ]
+  );
+
+  return {
+    success: anySuccess,
+    ruleId: rule.id,
+    ruleName: rule.name,
+    channelTitle: rule.channelTitle,
+    video: {
+      id: chosenVideo.id,
+      title: chosenVideo.title,
+      description: chosenVideo.description,
+      watchUrl: chosenVideo.watchUrl,
+      thumbnailUrl: chosenVideo.thumbnailUrl,
+      isShort: chosenVideo.isShort,
+      localFilePath: dlResult.localFilePath,
+      publicUrl: dlResult.publicUrl,
+      fileSizeBytes: dlResult.fileSizeBytes,
+    },
+    targets: publishedTargets,
+    log: syncLog,
+    note: anySuccess
+      ? `Successfully posted test video "${chosenVideo.title}" to Facebook!`
+      : 'Failed posting to Facebook targets.',
+  };
+}

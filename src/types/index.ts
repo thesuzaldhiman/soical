@@ -467,6 +467,7 @@ export interface YouTubeSyncRule {
   linkInComment?: boolean;
   publishMode: YouTubePublishMode;
   processedVideoIds: string[];
+  lastTestVideoIndex?: number;
   lastCheckedAt?: string;
   lastProcessedAt?: string;
   totalSyncedCount: number;
@@ -484,6 +485,7 @@ export interface YouTubeSyncLog {
   thumbnailUrl: string;
   durationSeconds?: number;
   isShort: boolean;
+  isTest?: boolean;
   status: 'downloading' | 'publishing' | 'published' | 'draft_saved' | 'failed';
   publishedTargets?: Array<{
     pageId: string;

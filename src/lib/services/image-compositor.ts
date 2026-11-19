@@ -1,4 +1,5 @@
 import { SigTemplate } from '@/types';
+import { cleanHeadlineText } from '@/lib/utils/text-decoder';
 
 export interface ComposeCardOptions {
   template: SigTemplate;
@@ -16,7 +17,9 @@ export async function renderTemplateToCanvas(
   canvas: HTMLCanvasElement,
   options: ComposeCardOptions
 ): Promise<string> {
-  const { template, headline, highlightPhrase = '', featuredImageUrl = '' } = options;
+  const rawHeadline = options.headline || '';
+  const headline = cleanHeadlineText(rawHeadline);
+  const { template, highlightPhrase = '', featuredImageUrl = '' } = options;
 
   const width = template.canvasWidth || 1200;
   const height = template.canvasHeight || 630;

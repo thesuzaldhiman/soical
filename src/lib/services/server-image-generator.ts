@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { SigTemplate } from '@/types';
 import { getMediaFromDb } from '@/lib/db/mysql';
+import { cleanHeadlineText } from '@/lib/utils/text-decoder';
 
 export interface GenerateCardOptions {
   headline: string;
@@ -260,7 +261,9 @@ function escapeXml(str: string): string {
 export async function generateServerCardImage(options: GenerateCardOptions): Promise<string> {
   ensureFontsRegistered();
 
-  const { headline, subtitle, featuredImageUrl, template, siteName } = options;
+  const { subtitle, featuredImageUrl, template, siteName } = options;
+  const headline = cleanHeadlineText(options.headline || '');
+  const cleanSubtitle = subtitle ? cleanHeadlineText(subtitle) : undefined;
 
   const width = Math.max(300, template?.canvasWidth || 1200);
   const height = Math.max(300, template?.canvasHeight || 630);
@@ -443,8 +446,8 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
   const subFontSize = Math.round(fontSize * 0.62);
   const subLineHeight = subFontSize * 1.3;
   const subtitleLines =
-    options.subtitle && options.subtitle.trim()
-      ? wrapHeadline(options.subtitle.trim(), tBox.width, subFontSize)
+    cleanSubtitle && cleanSubtitle.trim()
+      ? wrapHeadline(cleanSubtitle.trim(), tBox.width, subFontSize)
       : [];
 
   const totalTextHeight =

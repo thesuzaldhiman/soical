@@ -103,11 +103,18 @@ async function handleProcessQueue(request: NextRequest) {
         const scheduledTime = new Date(post.scheduledAt).getTime();
         if (isNaN(scheduledTime) || scheduledTime > now) continue;
 
-        // Due post found! Dispatch it.
+        // Due post found! Dispatch it strictly to intended target page(s)
         const targetPages = Array.isArray(pages)
-          ? pages.filter((pg: any) => post.pageIds?.includes(pg.id))
+          ? pages.filter((pg: any) => post.pageIds?.includes(pg.id) || post.pageIds?.includes(pg.pageId))
           : [];
-        const finalTargets = targetPages.length > 0 ? targetPages : (Array.isArray(pages) ? pages : []);
+
+        // Safety Guard: If post has specific pageIds but none found in account, skip to avoid unintended broadcast!
+        if (Array.isArray(post.pageIds) && post.pageIds.length > 0 && targetPages.length === 0) {
+          console.warn(`[Process Queue] Post "${post.title}" (${post.id}) has pageIds [${post.pageIds.join(', ')}], but no matching page found in user account. Skipping dispatch to prevent broadcast.`);
+          continue;
+        }
+
+        const finalTargets = targetPages.length > 0 ? targetPages : (Array.isArray(pages) && (!post.pageIds || post.pageIds.length === 0) ? pages : []);
 
         const targetsPayload: PublishTarget[] = finalTargets.map((pg: any) => ({
           id: pg.id,

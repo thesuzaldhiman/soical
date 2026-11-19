@@ -191,7 +191,14 @@ interface AppContextType {
   saveYouTubeRule: (rule: YouTubeSyncRule) => Promise<boolean>;
   deleteYouTubeRule: (id: string) => Promise<boolean>;
   toggleYouTubeRule: (id: string) => Promise<boolean>;
-  triggerYouTubeSync: (ruleId: string) => Promise<any>;
+  triggerYouTubeSync: (
+    ruleId: string,
+    options?: { mode?: 'normal' | 'test'; videoId?: string; targetPageId?: string }
+  ) => Promise<any>;
+  triggerYouTubeTestPost: (
+    ruleId: string,
+    options?: { videoId?: string; targetPageId?: string }
+  ) => Promise<any>;
   refreshYouTubeRules: () => Promise<void>;
 }
 
@@ -318,6 +325,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   deleteYouTubeRule: async () => false,
   toggleYouTubeRule: async () => false,
   triggerYouTubeSync: async () => null,
+  triggerYouTubeTestPost: async () => null,
   refreshYouTubeRules: async () => {},
 };
 
@@ -1787,8 +1795,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Resolve target pages
-    const targetPages = pages.filter((pg) => postToApprove.pageIds.includes(pg.id));
-    const finalTargets = targetPages.length > 0 ? targetPages : pages;
+    const targetPages = pages.filter((pg) => postToApprove.pageIds?.some((pid) => pid === pg.id || pid === pg.pageId));
+    const finalTargets = targetPages.length > 0 ? targetPages : (Array.isArray(postToApprove.pageIds) && postToApprove.pageIds.length > 0 ? [] : pages);
+    if (finalTargets.length === 0) {
+      console.warn('[approvePost] No matching pages found for post pageIds:', postToApprove.pageIds);
+      return;
+    }
 
     const targetsPayload = finalTargets.map((p) => ({
       id: p.id,
@@ -1965,8 +1977,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
 
     const currentPages = pagesRef.current;
-    const targetPages = currentPages.filter((pg) => postToDispatch.pageIds.includes(pg.id));
-    const finalTargets = targetPages.length > 0 ? targetPages : currentPages;
+    const targetPages = currentPages.filter((pg) => postToDispatch.pageIds?.some((pid) => pid === pg.id || pid === pg.pageId));
+    const finalTargets = targetPages.length > 0 ? targetPages : (Array.isArray(postToDispatch.pageIds) && postToDispatch.pageIds.length > 0 ? [] : currentPages);
+    if (finalTargets.length === 0) {
+      console.warn('[dispatchDueScheduledPost] No matching pages found for post pageIds:', postToDispatch.pageIds);
+      dispatchingQueueIdsRef.current.delete(postId);
+      return false;
+    }
 
     const targetsPayload = finalTargets.map((p) => ({
       id: p.id,
@@ -2740,7 +2757,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return saveYouTubeRule({ ...target, isActive: !target.isActive });
   };
 
-  const triggerYouTubeSync = async (ruleId: string): Promise<any> => {
+  const triggerYouTubeSync = async (
+    ruleId: string,
+    options?: { mode?: 'normal' | 'test'; videoId?: string; targetPageId?: string }
+  ): Promise<any> => {
     try {
       const cleanEmail = (
         user?.email ||
@@ -2751,7 +2771,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch('/api/youtube-sync/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, ruleId }),
+        body: JSON.stringify({
+          email: cleanEmail,
+          ruleId,
+          mode: options?.mode || 'normal',
+          videoId: options?.videoId,
+          targetPageId: options?.targetPageId,
+        }),
       });
       const data = await res.json();
       await refreshYouTubeRules();
@@ -2760,6 +2786,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.error('[triggerYouTubeSync] Error:', e);
       return null;
     }
+  };
+
+  const triggerYouTubeTestPost = async (
+    ruleId: string,
+    options?: { videoId?: string; targetPageId?: string }
+  ): Promise<any> => {
+    return triggerYouTubeSync(ruleId, {
+      mode: 'test',
+      videoId: options?.videoId,
+      targetPageId: options?.targetPageId,
+    });
   };
 
   // Initial fetch of YouTube rules
@@ -3832,6 +3869,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteYouTubeRule,
         toggleYouTubeRule,
         triggerYouTubeSync,
+        triggerYouTubeTestPost,
         refreshYouTubeRules,
       }}
     >

@@ -5,7 +5,8 @@ import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES } from '@/lib/state/
 import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate, AppSettings } from '@/types';
 import { generateServerCardImage } from '@/lib/services/server-image-generator';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
-import { sanitizePostMedia } from '@/lib/utils/media-storage';
+import { sanitizePostMedia, offloadBase64Media } from '@/lib/utils/media-storage';
+import { cleanHeadlineText, decodeHtmlEntities } from '@/lib/utils/text-decoder';
 import fs from 'fs';
 import path from 'path';
 
@@ -378,19 +379,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized: Invalid or missing Webhook Secret Key' }, { status: 401 });
     }
 
-    const mainTitle = (payload.main_title || payload.title || '').trim();
+    const rawMainTitle = (payload.main_title || payload.title || '').trim();
+    const mainTitle = cleanHeadlineText(rawMainTitle);
     if (!mainTitle) {
       return NextResponse.json({ error: 'Missing post title in payload' }, { status: 400 });
     }
 
     const socialTitles: string[] = Array.isArray(payload.social_titles)
-      ? payload.social_titles.map((t: any) => String(t).trim()).filter(Boolean)
+      ? payload.social_titles.map((t: any) => cleanHeadlineText(String(t))).filter(Boolean)
       : [];
 
     const permalink = (payload.permalink || '').trim();
     const incomingSiteUrl = (payload.site_url || '').trim().replace(/\/+$/, '').toLowerCase();
     const explicitEmail = (payload.user_email || payload.email || '').trim().toLowerCase();
-    const excerpt = (payload.excerpt || '').trim();
+    const excerpt = cleanHeadlineText(payload.excerpt || '');
     const categories: string[] = Array.isArray(payload.categories)
       ? payload.categories
       : payload.category
@@ -714,6 +716,53 @@ export async function POST(request: NextRequest) {
       ? payload.social_titles.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0)
       : [];
 
+    interface TitleVariationItem {
+      title: string;
+      subtitle?: string;
+      pageId?: string;
+      pageName?: string;
+    }
+
+    const availableTitleVariations: TitleVariationItem[] = [];
+
+    // First collect from structured variations
+    if (incomingVariations.length > 0) {
+      for (const v of incomingVariations) {
+        if (v && v.title && v.title.trim()) {
+          availableTitleVariations.push({
+            title: v.title.trim(),
+            subtitle: v.subtitle?.trim() || undefined,
+            pageId: v.page_id,
+            pageName: v.page_name,
+          });
+        }
+      }
+    }
+
+    // Then merge/extend from rawSocialTitles (e.g. pasted lines in WordPress meta box)
+    if (rawSocialTitles.length > 0) {
+      rawSocialTitles.forEach((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        let t = trimmed;
+        let s: string | undefined = undefined;
+        if (trimmed.includes('|')) {
+          const parts = trimmed.split('|');
+          t = parts[0]?.trim() || trimmed;
+          s = parts.slice(1).join('|').trim() || undefined;
+        }
+        if (!availableTitleVariations[idx]) {
+          availableTitleVariations[idx] = { title: t, subtitle: s };
+        } else if (!availableTitleVariations[idx].title) {
+          availableTitleVariations[idx].title = t;
+          if (s && !availableTitleVariations[idx].subtitle) availableTitleVariations[idx].subtitle = s;
+        }
+      });
+    }
+
+    const totalTitlesProvided = availableTitleVariations.filter((v) => v && v.title?.trim()).length;
+    const isMultiTitleActive = enableMultiTitles && totalTitlesProvided > 0;
+
     const userSettings: Partial<AppSettings> = userState.settings || {};
     const effectiveCaptionStyle =
       matchingRule?.captionStyle ||
@@ -748,49 +797,53 @@ export async function POST(request: NextRequest) {
       0;
 
     const dispatchResults: any[] = [];
-    const newScheduledPosts: Post[] = [];
+    const pagePostsToPersist: Post[] = [];
     let cumulativeDelayMs = 0;
     let firstGeneratedCardUrl: string | undefined = undefined;
 
-    // Loop through each target page and dispatch according to selected format
+    // Loop through each target page and dispatch 1-to-1 according to selected format
     for (let i = 0; i < targetPages.length; i++) {
       const page = targetPages[i];
 
       // Resolve Title and Subtitle for this specific page
       let assignedTitle = mainTitle;
       let assignedSubtitle: string | undefined = undefined;
+      let hasCustomTitle = false;
+      let isFallbackDefaultImage = false;
 
-      if (enableMultiTitles) {
-        // Priority 1: Match by pageId or page.name in incomingVariations
-        const matchedVar = incomingVariations.find(
+      if (isMultiTitleActive) {
+        // Priority 1: Match by pageId or page.name in availableTitleVariations
+        const matchedVar = availableTitleVariations.find(
           (v) =>
-            (v.page_id && (v.page_id === page.id || v.page_id === page.pageId)) ||
-            (v.page_name && v.page_name.trim().toLowerCase() === page.name.trim().toLowerCase())
+            v &&
+            ((v.pageId && (v.pageId === page.id || v.pageId === page.pageId)) ||
+             (v.pageName && v.pageName.trim().toLowerCase() === page.name.trim().toLowerCase()))
         );
 
-        const varAtIndex = incomingVariations[i];
-        const rawLine = rawSocialTitles[i];
         if (matchedVar && matchedVar.title && matchedVar.title.trim()) {
           assignedTitle = matchedVar.title.trim();
           assignedSubtitle = matchedVar.subtitle?.trim() || undefined;
-        } else if (varAtIndex && varAtIndex.title && varAtIndex.title.trim()) {
-          // Priority 2: Match by index in variations array
-          assignedTitle = varAtIndex.title.trim();
-          assignedSubtitle = varAtIndex.subtitle?.trim() || undefined;
-        } else if (rawLine) {
-          // Priority 3: Check rawSocialTitles[i] with "Title | Subtitle" support
-          const trimmedLine = rawLine.trim();
-          if (trimmedLine.includes('|')) {
-            const parts = trimmedLine.split('|');
-            assignedTitle = parts[0]?.trim() || mainTitle;
-            assignedSubtitle = parts.slice(1).join('|').trim() || undefined;
-          } else {
-            assignedTitle = trimmedLine;
-          }
-        } else if (i === 0) {
+          hasCustomTitle = true;
+        } else if (i < availableTitleVariations.length && availableTitleVariations[i]?.title?.trim()) {
+          // Priority 2: 1-to-1 sequential matching (Page 1 -> Title 1, Page 2 -> Title 2, Page 3 -> Title 3)
+          assignedTitle = availableTitleVariations[i].title.trim();
+          assignedSubtitle = availableTitleVariations[i].subtitle?.trim() || undefined;
+          hasCustomTitle = true;
+        } else {
+          // Priority 3: TITLES HAVE RUN OUT FOR THIS PAGE!
+          // (e.g. 4 pages selected, but only 2 or 3 titles given)
+          // As required by user:
+          // "aur agar mene title kam diye like slected page 4 hai and mene title 2 hidiye hai kya 3 teen hi diye hai to teen pages me to alag iamge jaye gi but ek jis page ke liye title bhi bacha iamge nhi bachi tab default image chali jani chahiye"
           assignedTitle = mainTitle;
-          assignedSubtitle = payload.subtitle || payload.main_subtitle || undefined;
+          assignedSubtitle = undefined;
+          hasCustomTitle = false;
+          isFallbackDefaultImage = true;
         }
+      } else {
+        // Single title mode or multi-title disabled:
+        assignedTitle = mainTitle;
+        assignedSubtitle = payload.subtitle || payload.main_subtitle || undefined;
+        hasCustomTitle = true;
       }
 
       // Format caption and comment according to automation rules
@@ -819,9 +872,11 @@ export async function POST(request: NextRequest) {
       } else if (dispatchFormat === 'text_only') {
         postTypeToSend = 'text';
         linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
-      } else if (dispatchFormat === 'featured_image') {
+      } else if (dispatchFormat === 'featured_image' || isFallbackDefaultImage) {
+        // If the rule is featured_image OR titles ran out (isFallbackDefaultImage === true):
+        // Use the original article photo directly (Default Image) without generating a custom card!
         postTypeToSend = imageUrl ? 'image' : 'text';
-        mediaToSend = imageUrl;
+        mediaToSend = imageUrl || '';
         linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
       } else if (dispatchFormat === 'ai_reel') {
         // AI Video Reel (9:16 Video with motion effects and background music)
@@ -837,8 +892,9 @@ export async function POST(request: NextRequest) {
             category: categories[0] || 'News',
             siteName: payload.site_name || incomingSiteUrl || '',
           });
+          const staticCardUrl = offloadBase64Media(cardBase64) || cardBase64;
           if (!firstGeneratedCardUrl) {
-            firstGeneratedCardUrl = cardBase64;
+            firstGeneratedCardUrl = staticCardUrl;
           }
 
           const vConfig = templateToUse.videoConfig;
@@ -873,9 +929,10 @@ export async function POST(request: NextRequest) {
             category: categories[0] || 'News',
             siteName: payload.site_name || incomingSiteUrl || '',
           });
-          mediaToSend = cardBase64;
+          const staticCardUrl = offloadBase64Media(cardBase64) || cardBase64;
+          mediaToSend = staticCardUrl;
           if (!firstGeneratedCardUrl) {
-            firstGeneratedCardUrl = cardBase64;
+            firstGeneratedCardUrl = staticCardUrl;
           }
         } catch (cardErr) {
           console.error('[WP Webhook] Server Card generation error with template:', cardErr);
@@ -910,9 +967,10 @@ export async function POST(request: NextRequest) {
               category: categories[0] || 'News',
               siteName: payload.site_name || incomingSiteUrl || '',
             });
-            mediaToSend = fallbackCard;
+            const staticFallback = offloadBase64Media(fallbackCard) || fallbackCard;
+            mediaToSend = staticFallback;
             if (!firstGeneratedCardUrl) {
-              firstGeneratedCardUrl = fallbackCard;
+              firstGeneratedCardUrl = staticFallback;
             }
           } catch (retryErr) {
             console.error('[WP Webhook] Secondary card fallback also failed, using raw imageUrl:', retryErr);
@@ -928,6 +986,38 @@ export async function POST(request: NextRequest) {
       // If Draft Mode is enabled for this automation rule:
       // Do NOT dispatch live to Facebook! Queue as draft in results.
       if (isDraftMode) {
+        const draftPost: Post = {
+          id: `post_wp_draft_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+          workspaceId: 'ws_default',
+          postType: postTypeToSend,
+          title: assignedTitle,
+          message,
+          mediaUrl: mediaToSend || undefined,
+          thumbnailUrl: mediaToSend || imageUrl || undefined,
+          featuredImageUrl: imageUrl || undefined,
+          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
+          sigTemplateId: selectedSigTemplateId || templateToUse?.id,
+          linkUrl: linkToSend || undefined,
+          commentText: commentText || undefined,
+          pageIds: [page.id], // Strictly isolated to this page!
+          status: 'draft',
+          results: [
+            {
+              pageId: page.id,
+              platform: page.platform as any,
+              pageName: page.name,
+              status: 'draft',
+              titleUsed: assignedTitle,
+              subtitleUsed: assignedSubtitle,
+              mediaUrl: mediaToSend,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        pagePostsToPersist.push(draftPost);
         dispatchResults.push({
           pageId: page.id,
           pageName: page.name,
@@ -935,7 +1025,8 @@ export async function POST(request: NextRequest) {
           titleUsed: assignedTitle,
           subtitleUsed: assignedSubtitle,
           titleIndex: i + 1,
-          isUniqueVariation: true,
+          isUniqueVariation: !isFallbackDefaultImage,
+          isFallbackDefaultImage,
           mediaUrl: mediaToSend,
           status: 'draft',
           timestamp: new Date().toISOString(),
@@ -959,14 +1050,14 @@ export async function POST(request: NextRequest) {
           postType: postTypeToSend,
           title: assignedTitle,
           message,
-          mediaUrl: mediaToSend,
+          mediaUrl: mediaToSend || undefined,
           thumbnailUrl: mediaToSend || imageUrl || undefined,
           featuredImageUrl: imageUrl || undefined,
-          isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
+          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
           sigTemplateId: selectedSigTemplateId || templateToUse?.id,
           linkUrl: linkToSend || undefined,
           commentText: commentText || undefined,
-          pageIds: [page.id],
+          pageIds: [page.id], // Strictly isolated to this page!
           status: 'scheduled',
           scheduledAt: scheduledAtIso,
           intervalMinSeconds,
@@ -987,7 +1078,7 @@ export async function POST(request: NextRequest) {
           updatedAt: new Date().toISOString(),
         };
 
-        newScheduledPosts.push(staggerPost);
+        pagePostsToPersist.push(staggerPost);
         dispatchResults.push({
           pageId: page.id,
           pageName: page.name,
@@ -999,7 +1090,8 @@ export async function POST(request: NextRequest) {
           status: 'scheduled',
           scheduledAt: scheduledAtIso,
           staggerDelaySeconds: Math.round(cumulativeDelayMs / 1000),
-          isUniqueVariation: true,
+          isUniqueVariation: !isFallbackDefaultImage,
+          isFallbackDefaultImage,
         });
         continue;
       }
@@ -1025,26 +1117,99 @@ export async function POST(request: NextRequest) {
           mediaUrl: mediaToSend,
           linkUrl: linkToSend,
           commentText,
-          isAiGenerated: dispatchFormat === 'ai_image',
+          isAiGenerated: !isFallbackDefaultImage && dispatchFormat === 'ai_image',
           targets: [targetItem],
         });
 
-        if (singleResult && singleResult.length > 0) {
-          const res0 = singleResult[0];
-          dispatchResults.push({
-            ...res0,
-            pageId: page.id,
-            pageName: page.name,
-            platform: page.platform,
-            titleUsed: assignedTitle,
-            subtitleUsed: assignedSubtitle,
-            mediaUrl: mediaToSend,
-            titleIndex: i + 1,
-            isUniqueVariation: true,
-          });
-        }
+        const res0 = singleResult?.[0];
+        const pageStatus = res0?.status === 'success' ? 'published' : 'failed';
+
+        const livePost: Post = {
+          id: `post_wp_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+          workspaceId: 'ws_default',
+          postType: postTypeToSend,
+          title: assignedTitle,
+          message,
+          mediaUrl: mediaToSend || undefined,
+          thumbnailUrl: mediaToSend || imageUrl || undefined,
+          featuredImageUrl: imageUrl || undefined,
+          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
+          sigTemplateId: selectedSigTemplateId || templateToUse?.id,
+          linkUrl: linkToSend || undefined,
+          commentText: commentText || undefined,
+          pageIds: [page.id], // Strictly isolated to this page!
+          status: pageStatus,
+          publishedAt: new Date().toISOString(),
+          results: [
+            {
+              pageId: page.id,
+              platform: (page.platform || 'facebook') as any,
+              pageName: page.name,
+              status: pageStatus === 'published' ? 'success' : 'failed',
+              titleUsed: assignedTitle,
+              subtitleUsed: assignedSubtitle,
+              mediaUrl: mediaToSend,
+              externalPostId: res0?.externalPostId,
+              postUrl: res0?.postUrl,
+              commentId: res0?.commentId,
+              commentStatus: res0?.commentStatus,
+              error: res0?.error,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        pagePostsToPersist.push(livePost);
+
+        dispatchResults.push({
+          ...(res0 || {}),
+          pageId: page.id,
+          pageName: page.name,
+          platform: page.platform,
+          titleUsed: assignedTitle,
+          subtitleUsed: assignedSubtitle,
+          mediaUrl: mediaToSend,
+          titleIndex: i + 1,
+          isUniqueVariation: !isFallbackDefaultImage,
+          isFallbackDefaultImage,
+        });
       } catch (dispErr: unknown) {
         const errMsg = dispErr instanceof Error ? dispErr.message : 'Dispatch failed';
+        const failedPost: Post = {
+          id: `post_wp_fail_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+          workspaceId: 'ws_default',
+          postType: postTypeToSend,
+          title: assignedTitle,
+          message,
+          mediaUrl: mediaToSend || undefined,
+          thumbnailUrl: mediaToSend || imageUrl || undefined,
+          featuredImageUrl: imageUrl || undefined,
+          isAiGenerated: !isFallbackDefaultImage && (dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel'),
+          sigTemplateId: selectedSigTemplateId || templateToUse?.id,
+          linkUrl: linkToSend || undefined,
+          commentText: commentText || undefined,
+          pageIds: [page.id],
+          status: 'failed',
+          results: [
+            {
+              pageId: page.id,
+              platform: (page.platform || 'facebook') as any,
+              pageName: page.name,
+              status: 'failed',
+              titleUsed: assignedTitle,
+              subtitleUsed: assignedSubtitle,
+              mediaUrl: mediaToSend,
+              error: errMsg,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        pagePostsToPersist.push(failedPost);
         dispatchResults.push({
           pageId: page.id,
           pageName: page.name,
@@ -1054,70 +1219,15 @@ export async function POST(request: NextRequest) {
           mediaUrl: mediaToSend,
           status: 'failed',
           error: errMsg,
+          isUniqueVariation: !isFallbackDefaultImage,
+          isFallbackDefaultImage,
           timestamp: new Date().toISOString(),
         });
       }
     }
 
     // 4. Save to Posts History (Post Library)
-    const finalMedia = firstGeneratedCardUrl || (imageUrl || undefined);
-    const postStatusValue: 'published' | 'draft' | 'failed' = isDraftMode
-      ? 'draft'
-      : dispatchResults.some((r) => r.status === 'success')
-      ? 'published'
-      : dispatchResults.some((r) => r.status === 'scheduled')
-      ? 'published'
-      : 'failed';
-
-    const firstPageFormatted = formatAutomationCaption({
-      title: mainTitle,
-      subtitle: payload.subtitle,
-      excerpt,
-      permalink,
-      captionStyle: effectiveCaptionStyle,
-      charLimit: effectiveCharLimit,
-      seeMoreText: effectiveSeeMoreText,
-      linkPlacement: effectiveLinkPlacement,
-      commentTemplate: effectiveCommentTemplate,
-    });
-
-    const newPostRecord: Post = {
-      id: `post_wp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      workspaceId: 'ws_default',
-      postType: dispatchFormat === 'link_card' ? 'link' : dispatchFormat === 'text_only' ? 'text' : dispatchFormat === 'ai_reel' ? 'video' : 'image',
-      title: mainTitle,
-      message: firstPageFormatted.caption,
-      mediaUrl: finalMedia,
-      thumbnailUrl: finalMedia || imageUrl || undefined,
-      featuredImageUrl: imageUrl || undefined,
-      isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
-      sigTemplateId: selectedSigTemplateId || templateToUse?.id,
-      linkUrl: (effectiveLinkPlacement === 'first_comment' ? undefined : permalink) || undefined,
-      commentText: firstPageFormatted.commentText || undefined,
-      pageIds: intervalMaxSeconds > 0 && targetPages.length > 1
-        ? [targetPages[0].id]
-        : targetPages.map((p) => p.id),
-      status: postStatusValue,
-      scheduledAt: new Date().toISOString(),
-      publishedAt: isDraftMode ? undefined : new Date().toISOString(),
-      results: dispatchResults.filter((r) => r.status !== 'scheduled').map((r) => ({
-        pageId: r.pageId,
-        platform: (r.platform || 'facebook') as any,
-        pageName: r.pageName,
-        status: r.status,
-        titleUsed: r.titleUsed,
-        subtitleUsed: r.subtitleUsed,
-        mediaUrl: r.mediaUrl,
-        externalPostId: r.externalPostId,
-        postUrl: r.postUrl,
-        error: r.error,
-        timestamp: r.timestamp || new Date().toISOString(),
-      })),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    await persistPosts([newPostRecord, ...newScheduledPosts], resolvedEmail);
+    await persistPosts(pagePostsToPersist, resolvedEmail);
 
     return NextResponse.json({
       success: true,
@@ -1131,7 +1241,7 @@ export async function POST(request: NextRequest) {
       mainTitle,
       totalVariations: Math.max(1, incomingVariations.length, rawSocialTitles.length),
       assignedPagesCount: targetPages.length,
-      firstCommentEnabled: !!firstPageFormatted.commentText,
+      firstCommentEnabled: addFirstComment,
       dispatchedCount: dispatchResults.filter((r) => r.status === 'success').length,
       results: dispatchResults,
       queuedAt: new Date().toISOString(),
