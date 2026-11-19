@@ -97,10 +97,60 @@ export default function YouTubeSyncPage() {
   const [testTargetPageId, setTestTargetPageId] = useState<string>(pages[0]?.id || '');
   const [testPostResult, setTestPostResult] = useState<any>(null);
 
-  // Auto-refresh rules on mount
+  // YouTube Server Cookies State (Bypass Bot Check)
+  const [isCookieModalOpen, setIsCookieModalOpen] = useState(false);
+  const [cookiesStatus, setCookiesStatus] = useState<{ hasCookies: boolean; fileSizeBytes?: number; updatedAt?: string } | null>(null);
+  const [cookieInputText, setCookieInputText] = useState('');
+  const [isSavingCookies, setIsSavingCookies] = useState(false);
+  const [cookieSaveMsg, setCookieSaveMsg] = useState<string | null>(null);
+
+  const fetchCookieStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/youtube-sync/cookies');
+      const data = await res.json();
+      if (data.success) {
+        setCookiesStatus({
+          hasCookies: data.hasCookies,
+          fileSizeBytes: data.fileSizeBytes,
+          updatedAt: data.updatedAt,
+        });
+      }
+    } catch {}
+  }, []);
+
+  const handleSaveCookies = async () => {
+    if (!cookieInputText.trim()) {
+      alert('Please paste cookies.txt content.');
+      return;
+    }
+    setIsSavingCookies(true);
+    setCookieSaveMsg(null);
+    try {
+      const res = await fetch('/api/youtube-sync/cookies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookiesContent: cookieInputText }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCookieSaveMsg('Cookies successfully saved on server! YouTube bot check is now bypassed.');
+        setCookieInputText('');
+        await fetchCookieStatus();
+      } else {
+        alert(data.error || 'Failed saving cookies.');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Error saving cookies.');
+    } finally {
+      setIsSavingCookies(false);
+    }
+  };
+
+  // Auto-refresh rules and cookie status on mount
   useEffect(() => {
     refreshYouTubeRules();
-  }, [refreshYouTubeRules]);
+    fetchCookieStatus();
+  }, [refreshYouTubeRules, fetchCookieStatus]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -419,7 +469,21 @@ export default function YouTubeSyncPage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsCookieModalOpen(true)}
+                className={`px-4 py-3 rounded-2xl text-xs font-black shadow-lg transition-all hover:scale-[1.02] flex items-center gap-2 cursor-pointer border ${
+                  cookiesStatus?.hasCookies
+                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400'
+                    : 'bg-amber-400 hover:bg-amber-500 text-slate-950 border-amber-300'
+                }`}
+                title="Manage YouTube cookies.txt to bypass datacenter bot challenges"
+              >
+                <span>🍪</span>
+                <span>{cookiesStatus?.hasCookies ? 'Cookies Active ✓' : 'Add Cookies (Bypass Bot)'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleOpenNewModal}
@@ -982,14 +1046,35 @@ export default function YouTubeSyncPage() {
               )}
 
               {testStep === 'error' && (
-                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-xs text-rose-900 font-bold">
-                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <div className="space-y-0.5">
-                    <span>Error: {testStatusMsg}</span>
-                    <p className="text-[10px] text-rose-700 font-normal">
-                      Please verify that your server has Python and FFmpeg installed and the YouTube video is publicly accessible.
-                    </p>
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl space-y-3 text-xs text-rose-900 font-bold">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                    <div className="space-y-0.5">
+                      <span>Error: {testStatusMsg}</span>
+                      <p className="text-[10px] text-rose-700 font-normal">
+                        {testStatusMsg.includes('not a bot') || testStatusMsg.includes('Sign in')
+                          ? 'YouTube Cloud Datacenter Bot Block: YouTube requires authenticated cookies to download from cloud hosting.'
+                          : 'Please verify that your server has Python and FFmpeg installed and the YouTube video is publicly accessible.'}
+                      </p>
+                    </div>
                   </div>
+
+                  {(testStatusMsg.includes('not a bot') || testStatusMsg.includes('Sign in')) && (
+                    <div className="pt-2 border-t border-rose-200/60 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-rose-800 font-semibold">
+                        🍪 Cookies add karne ke baad ye problem permanent solve ho jayegi:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCookieModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <span>🍪 Add YouTube Cookies</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1087,6 +1172,113 @@ export default function YouTubeSyncPage() {
                     )}
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═════════════════════════════════════════════════════════════════════ */}
+        {/* YOUTUBE COOKIES MANAGER MODAL */}
+        {/* ═════════════════════════════════════════════════════════════════════ */}
+        {isCookieModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+            <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-6 space-y-5 shadow-2xl relative my-8">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center text-lg">
+                    🍪
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-slate-900">
+                      YouTube Server Cookies (Bypass Bot Checks)
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Allows server to download from YouTube on Hostinger without bot blocks
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsCookieModalOpen(false)}
+                  className="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center font-bold text-sm cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Status Badge */}
+              <div
+                className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
+                  cookiesStatus?.hasCookies
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950 font-bold'
+                    : 'bg-amber-50 border-amber-200 text-amber-950 font-bold'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span>{cookiesStatus?.hasCookies ? '✅ Cookies Active on Server' : '⚠️ No Cookies Configured'}</span>
+                  {cookiesStatus?.fileSizeBytes && (
+                    <span className="text-[10px] text-slate-500 font-normal">
+                      ({(cookiesStatus.fileSizeBytes / 1024).toFixed(1)} KB)
+                    </span>
+                  )}
+                </div>
+                {cookiesStatus?.updatedAt && (
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    Updated: {new Date(cookiesStatus.updatedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+
+              {/* Instructions */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] text-slate-700 space-y-1.5 leading-relaxed">
+                <p className="font-bold text-slate-900">💡 How to get cookies.txt (1-minute guide):</p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-600">
+                  <li>Browser me extension install karein: <strong>Get cookies.txt LOCALLY</strong></li>
+                  <li>YouTube.com par jayein (apne kisi bhi normal account se login).</li>
+                  <li>Extension icon par click karein aur <strong>Export</strong> ya text copy karein.</li>
+                  <li>Neeche diye box me paste karke <strong>Save Cookies</strong> dabayein.</li>
+                </ol>
+              </div>
+
+              {cookieSaveMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{cookieSaveMsg}</span>
+                </div>
+              )}
+
+              {/* Cookie Content Textarea */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Paste Netscape Format cookies.txt:
+                </label>
+                <textarea
+                  rows={6}
+                  value={cookieInputText}
+                  onChange={(e) => setCookieInputText(e.target.value)}
+                  placeholder={`# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t...\tSAPISID\t...\n.youtube.com\tTRUE\t/\tTRUE\t...\t__Secure-3PSID\t...`}
+                  className="w-full p-3 rounded-xl border border-slate-200 text-xs font-mono bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 resize-none text-slate-800"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCookieModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCookies}
+                  disabled={isSavingCookies || !cookieInputText.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingCookies ? 'Saving...' : 'Save Cookies on Server'}
+                </button>
               </div>
             </div>
           </div>

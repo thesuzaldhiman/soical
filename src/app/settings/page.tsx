@@ -40,6 +40,8 @@ import {
   MessageSquare,
   Link2,
   FileText,
+  Loader2,
+  Mail,
 } from 'lucide-react';
 
 const PAGE_INTERVAL_OPTIONS = [
@@ -118,6 +120,8 @@ function SettingsContent() {
       "{title}\n\n👉 ताज़ा और महत्वपूर्ण खबरों के लिए चैनल सब्सक्राइब करें!\n#Shorts #News #Viral"
   );
   const [alertEmail, setAlertEmail] = useState(settings?.alertEmail || user?.email || '');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Direct YouTube Connect Modal (Settings)
   const [showYtConnectModal, setShowYtConnectModal] = useState(false);
@@ -1267,15 +1271,85 @@ function SettingsContent() {
               <label className="text-xs font-bold text-slate-700 block mb-1">
                 Account Error & Disconnect Alert Email
               </label>
-              <input
-                type="email"
-                value={alertEmail}
-                onChange={(e) => setAlertEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500"
-                placeholder="alerts@khabarmonkey.com"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Receive instant email if any social token expires or fails health check.
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="email"
+                  value={alertEmail}
+                  onChange={(e) => {
+                    setAlertEmail(e.target.value);
+                    if (testEmailStatus) setTestEmailStatus(null);
+                  }}
+                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] focus:bg-white text-xs text-slate-900 focus:outline-none focus:border-slate-500"
+                  placeholder="alerts@khabarmonkey.com"
+                />
+                <button
+                  type="button"
+                  disabled={isSendingTestEmail || !alertEmail.trim()}
+                  onClick={async () => {
+                    setIsSendingTestEmail(true);
+                    setTestEmailStatus(null);
+                    try {
+                      const res = await fetch('/api/alerts/test-email', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: alertEmail.trim() }),
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setTestEmailStatus({
+                          type: 'success',
+                          message: data.message || `Test email sent successfully to ${alertEmail.trim()}!`,
+                        });
+                      } else {
+                        setTestEmailStatus({
+                          type: 'error',
+                          message: data.error || 'Failed to send test email.',
+                        });
+                      }
+                    } catch (err: unknown) {
+                      setTestEmailStatus({
+                        type: 'error',
+                        message: err instanceof Error ? err.message : 'Network error sending test email.',
+                      });
+                    } finally {
+                      setIsSendingTestEmail(false);
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 transition-colors shrink-0"
+                >
+                  {isSendingTestEmail ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sending Test...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>Send Test Email</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {testEmailStatus && (
+                <div
+                  className={`mt-2 p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                    testEmailStatus.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {testEmailStatus.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{testEmailStatus.message}</span>
+                </div>
+              )}
+
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                Receive instant email if your YouTube channel, Facebook page, or any social token disconnects or expires.
               </p>
             </div>
           </div>
