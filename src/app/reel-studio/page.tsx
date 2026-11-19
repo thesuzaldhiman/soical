@@ -957,6 +957,7 @@ export default function ReelStudioPage() {
   const [isGeneratingReel, setIsGeneratingReel] = useState(false);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [generatedVideoSize, setGeneratedVideoSize] = useState<number | null>(null);
+  const [lastRenderedCardUrl, setLastRenderedCardUrl] = useState<string | null>(null);
 
   // ── Reel Player State ──
   const reelVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -975,17 +976,14 @@ export default function ReelStudioPage() {
       const vid = reelVideoRef.current;
       vid.defaultMuted = true;
       vid.muted = isMutedReel;
-      try {
-        vid.load();
-        vid
-          .play()
-          .then(() => setIsPlayingReel(true))
-          .catch(() => {
-            vid.muted = true;
-            setIsMutedReel(true);
-            vid.play().then(() => setIsPlayingReel(true)).catch(() => setIsPlayingReel(false));
-          });
-      } catch {}
+      vid
+        .play()
+        .then(() => setIsPlayingReel(true))
+        .catch(() => {
+          vid.muted = true;
+          setIsMutedReel(true);
+          vid.play().then(() => setIsPlayingReel(true)).catch(() => setIsPlayingReel(false));
+        });
     }
   }, [generatedVideoUrl]);
 
@@ -1603,6 +1601,7 @@ export default function ReelStudioPage() {
         highlightPhrase: genHighlight,
         featuredImageUrl: genPhotoUrl,
       });
+      setLastRenderedCardUrl(cardDataUrl);
 
       // Step 2: Call /api/video/generate to render high-quality MP4 with motion & music
       const res = await fetch('/api/video/generate', {
@@ -3656,6 +3655,8 @@ export default function ReelStudioPage() {
                     <video
                       ref={reelVideoRef}
                       key={generatedVideoUrl}
+                      src={generatedVideoUrl || undefined}
+                      poster={lastRenderedCardUrl || undefined}
                       controls={showNativeControls}
                       autoPlay
                       muted={isMutedReel}
@@ -3668,14 +3669,16 @@ export default function ReelStudioPage() {
                       }}
                       onCanPlay={(e) => {
                         const vid = e.currentTarget;
-                        vid
-                          .play()
-                          .then(() => setIsPlayingReel(true))
-                          .catch(() => {
-                            vid.muted = true;
-                            setIsMutedReel(true);
-                            vid.play().then(() => setIsPlayingReel(true)).catch(() => setIsPlayingReel(false));
-                          });
+                        if (vid.paused) {
+                          vid
+                            .play()
+                            .then(() => setIsPlayingReel(true))
+                            .catch(() => {
+                              vid.muted = true;
+                              setIsMutedReel(true);
+                              vid.play().then(() => setIsPlayingReel(true)).catch(() => setIsPlayingReel(false));
+                            });
+                        }
                       }}
                       onError={(e) => {
                         const err = e.currentTarget.error;
@@ -3694,7 +3697,7 @@ export default function ReelStudioPage() {
                         setVideoLoadError(false);
                       }}
                       onPause={() => setIsPlayingReel(false)}
-                      onClick={handleTogglePlayReel}
+                      onClick={showNativeControls ? undefined : handleTogglePlayReel}
                       className="w-full h-full object-cover cursor-pointer"
                     >
                       <source src={generatedVideoUrl} type="video/mp4" />
