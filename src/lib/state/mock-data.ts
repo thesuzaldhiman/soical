@@ -770,12 +770,15 @@ export const INITIAL_SIG_TEMPLATES: SigTemplate[] = [
     videoConfig: {
       enabled: true,
       durationSeconds: 15,
-      effect: 'breaking_jitter',
+      effect: 'subtle_float',
+      effects: ['subtle_float'],
+      motionIntensity: 20,
       musicCategory: 'breaking',
       musicUrl: '/uploads/audio/breaking_news_loop.mp3',
       musicName: '🔴 Breaking News Alert Loop',
       musicVolume: 100,
-      overlays: ['red_alert', 'breaking_banner'],
+      overlays: ['floating_dust'],
+      overlayIntensity: 40,
       targetPlatforms: ['facebook', 'instagram', 'youtube'],
     },
     featuredImageBox: {

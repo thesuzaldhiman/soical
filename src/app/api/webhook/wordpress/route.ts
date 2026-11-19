@@ -926,11 +926,15 @@ export async function POST(request: NextRequest) {
           const vConfig = templateToUse.videoConfig;
           const reelRes = await generateServerVideoReel({
             imageBase64: cardBase64,
+            canvasWidth: templateToUse.canvasWidth || 1080,
+            canvasHeight: templateToUse.canvasHeight || 1920,
             durationSeconds: vConfig?.durationSeconds || 15,
-            effect: vConfig?.effect || 'shake',
-            effects: vConfig?.effects || (vConfig?.effect ? [vConfig.effect] : ['shake']),
+            effect: vConfig?.effect || 'subtle_float',
+            effects: vConfig?.effects || (vConfig?.effect ? [vConfig.effect] : ['subtle_float']),
             effectDurationSeconds: vConfig?.effectDurationSeconds || vConfig?.durationSeconds || 15,
+            motionIntensity: vConfig?.motionIntensity ?? 20,
             overlays: vConfig?.overlays || [],
+            overlayIntensity: vConfig?.overlayIntensity ?? 50,
             musicUrl: vConfig?.musicUrl,
             musicVolume: vConfig?.musicVolume ?? 100,
           });

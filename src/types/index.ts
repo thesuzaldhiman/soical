@@ -225,31 +225,43 @@ export interface Post {
 
 export type VideoMotionEffect =
   | 'none'
-  | 'shake'
-  | 'glitter'
-  | 'zoom_in'
-  | 'zoom_out'
-  | 'pulse'
+  | 'subtle_float' // Very gentle, slow breathing camera motion (ultra-smooth)
+  | 'micro_jitter' // Extremely gentle micro handheld camera tremble (text stays 100% crisp)
+  | 'smooth_sway' // Gentle slow horizontal cinematic sway
+  | 'vertical_drift' // Very subtle vertical gentle bob
+  | 'pulse_shake' // Gentle rhythmic heartbeat pulse with micro-vibration
+  | 'shake' // Mild camera impact shake (toned down for legibility)
+  | 'breaking_jitter' // Flash alert jitter (toned down for legibility)
+  | 'zoom_in' // Smooth Ken Burns slow zoom in
+  | 'zoom_out' // Smooth Ken Burns slow zoom out
   | 'pan_left'
   | 'pan_right'
-  | 'breaking_jitter';
+  | 'pulse'
+  | 'glitter';
 
 export type VideoOverlayType =
   | 'none'
-  | 'breaking_banner'
-  | 'audio_wave'
-  | 'film_grain'
-  | 'vignette'
-  | 'particles'
-  | 'red_alert';
+  | 'particle_snow' // Soft falling snowflakes
+  | 'floating_dust' // Cinematic floating atmospheric dust motes & light specks
+  | 'glitter_sparkle' // Sparkling diamond / golden stars shimmering
+  | 'bokeh_lights' // Soft glowing floating bokeh orbs
+  | 'fire_embers' // Gentle rising glowing embers / sparks
+  | 'particles' // Ambient light particles (backward compatibility)
+  | 'vignette' // Cinematic corner vignette
+  | 'film_grain' // Vintage 35mm grain
+  | 'breaking_banner' // Legacy
+  | 'audio_wave' // Legacy
+  | 'red_alert'; // Legacy
 
 export interface SigTemplateVideoConfig {
   enabled?: boolean;
   durationSeconds?: number; // e.g. custom duration in seconds (5-90s)
   effect?: VideoMotionEffect; // single effect (legacy fallback)
-  effects?: VideoMotionEffect[]; // NEW: Multiple simultaneous motion animation styles!
+  effects?: VideoMotionEffect[]; // Multiple simultaneous motion animation styles!
   effectDurationSeconds?: number; // Custom duration in seconds for animation effects to run
+  motionIntensity?: number; // 5 to 100 (%) - default 20% (Subtle & Readable)
   overlays?: VideoOverlayType[]; // Multiple overlays can be selected!
+  overlayIntensity?: number; // 10 to 100 (%) - default 50% (Balanced)
   musicUrl?: string; // audio file or URL
   musicName?: string;
   musicCategory?: 'breaking' | 'cricket' | 'devotional' | 'crime' | 'viral' | 'custom';

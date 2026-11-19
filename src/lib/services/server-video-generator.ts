@@ -208,11 +208,15 @@ export interface GenerateVideoReelOptions {
   imageBase64?: string;
   imageFilePath?: string;
   imageUrl?: string;
+  canvasWidth?: number; // custom canvas width (default 1080)
+  canvasHeight?: number; // custom canvas height (default 1920)
   durationSeconds?: number; // total custom duration in seconds (5 to 90)
   effect?: VideoMotionEffect; // single effect (legacy fallback)
   effects?: VideoMotionEffect[]; // Multiple selected motion animation styles!
   effectDurationSeconds?: number; // custom duration for animations to run
+  motionIntensity?: number; // 5 to 100 (%) - default 20% (Subtle & Readable)
   overlays?: VideoOverlayType[]; // Multiple overlays can be selected!
+  overlayIntensity?: number; // 10 to 100 (%) - default 50%
   musicUrl?: string; // e.g. "/uploads/audio/track.mp3" or remote URL
   musicVolume?: number; // 0 to 100 (default 100)
   outputFilename?: string;
@@ -300,11 +304,15 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     imageBase64,
     imageFilePath,
     imageUrl,
+    canvasWidth = 1080,
+    canvasHeight = 1920,
     durationSeconds = 15,
-    effect = 'shake',
+    effect = 'subtle_float',
     effects,
     effectDurationSeconds,
+    motionIntensity = 20,
     overlays = [],
+    overlayIntensity = 50,
     musicUrl,
     musicVolume = 100,
     outputFilename,
@@ -318,6 +326,20 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     duration,
     Math.max(2, Number(effectDurationSeconds) || duration)
   );
+
+  // Target canvas dimensions (must be even for libx264)
+  const rawW = Number(canvasWidth) || 1080;
+  const rawH = Number(canvasHeight) || 1920;
+  const targetW = Math.max(320, Math.round(rawW / 2) * 2);
+  const targetH = Math.max(320, Math.round(rawH / 2) * 2);
+
+  // Motion Intensity: 5 to 100 (%) - default 20% (Subtle & Readable)
+  const mIntensity = Math.max(5, Math.min(100, Number(motionIntensity) || 20));
+  const intensityRatio = mIntensity / 100; // 0.05 to 1.0 (default 0.20)
+
+  // Overlay Intensity: 10 to 100 (%) - default 50%
+  const oIntensity = Math.max(10, Math.min(100, Number(overlayIntensity) || 50));
+  const ovIntensityRatio = oIntensity / 100; // 0.1 to 1.0 (default 0.50)
 
   // Determine active effects list (supports multi-selection!)
   let activeEffects: VideoMotionEffect[] = [];
@@ -360,11 +382,15 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   const publicVideoUrl = `/uploads/videos/${finalFilename}`;
 
   // 4. Build Combined Multi-Motion Video Filter Chain
-  // All output targets vertical 1080x1920 at 30 fps
   const fps = 30;
   const totalFrames = duration * fps;
   const animFrames = Math.max(1, Math.round(animDuration * fps));
 
+  const hasSubtleFloat = activeEffects.includes('subtle_float');
+  const hasMicroJitter = activeEffects.includes('micro_jitter');
+  const hasSmoothSway = activeEffects.includes('smooth_sway');
+  const hasVerticalDrift = activeEffects.includes('vertical_drift');
+  const hasPulseShake = activeEffects.includes('pulse_shake');
   const hasShake = activeEffects.includes('shake');
   const hasJitter = activeEffects.includes('breaking_jitter');
   const hasPanLeft = activeEffects.includes('pan_left');
@@ -376,74 +402,154 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
 
   const filterChain: string[] = [];
 
+  // Motion margin padding (2% to 5% based on intensity)
+  const padRatio = Math.max(0.02, Math.min(0.06, 0.02 + 0.03 * intensityRatio));
+  const padX = Math.round((targetW * padRatio) / 2) * 2;
+  const padY = Math.round((targetH * padRatio) / 2) * 2;
+  const scaledW = targetW + padX * 2;
+  const scaledH = targetH + padY * 2;
+
+  const needsScaleUp =
+    hasSubtleFloat ||
+    hasMicroJitter ||
+    hasSmoothSway ||
+    hasVerticalDrift ||
+    hasPulseShake ||
+    hasShake ||
+    hasJitter;
+
   // Step A: Base Scale & Crop
-  if (hasShake || hasJitter) {
-    filterChain.push('scale=1140:2020:force_original_aspect_ratio=increase');
-    if (hasJitter) {
+  if (needsScaleUp) {
+    filterChain.push(`scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase`);
+
+    if (hasMicroJitter) {
+      // Handheld camera micro-tremble: displacement ~1-2.5px, slow frequency, 100% readable text
+      const ampX = (1.5 * intensityRatio).toFixed(2);
+      const ampY = (1.8 * intensityRatio).toFixed(2);
       filterChain.push(
-        `crop=1080:1920:'30+18*sin(n*1.2)*if(lt(n,${animFrames}),1,0)':'50+18*cos(n*1.4)*if(lt(n,${animFrames}),1,0)'`
+        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.35)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.42)*if(lt(n,${animFrames}),1,0)'`
+      );
+    } else if (hasSubtleFloat) {
+      // Slow gentle floating/breathing: displacement ~2.5-4px, very slow frequency
+      const ampX = (2.5 * intensityRatio).toFixed(2);
+      const ampY = (3.0 * intensityRatio).toFixed(2);
+      filterChain.push(
+        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.12)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.10)*if(lt(n,${animFrames}),1,0)'`
+      );
+    } else if (hasSmoothSway) {
+      // Horizontal cinematic pan sway
+      const ampX = Math.max(4, Math.round(padX * 0.7 * intensityRatio));
+      filterChain.push(
+        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(2*PI*n/(${fps}*4))*if(lt(n,${animFrames}),1,0)':'${padY}'`
+      );
+    } else if (hasVerticalDrift) {
+      // Vertical gentle bob
+      const ampY = Math.max(4, Math.round(padY * 0.7 * intensityRatio));
+      filterChain.push(
+        `crop=${targetW}:${targetH}:'${padX}':'${padY}+${ampY}*sin(2*PI*n/(${fps}*5))*if(lt(n,${animFrames}),1,0)'`
+      );
+    } else if (hasJitter) {
+      // Alert strobe jitter (scaled down so headline is readable)
+      const ampX = Math.max(2, Math.round(5 * intensityRatio));
+      const ampY = Math.max(2, Math.round(6 * intensityRatio));
+      filterChain.push(
+        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.6)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.7)*if(lt(n,${animFrames}),1,0)'`
       );
       filterChain.push(
-        `eq=brightness='0.08*if(lt(mod(n,45),6)*lt(n,${animFrames}),1,0)'`
+        `eq=brightness='${(0.04 * intensityRatio).toFixed(3)}*if(lt(mod(n,45),5)*lt(n,${animFrames}),1,0)'`
       );
-    } else {
+    } else if (hasShake) {
+      // Mild impact camera shake (scaled down so headline is readable)
+      const ampX = Math.max(2, Math.round(4.5 * intensityRatio));
+      const ampY = Math.max(2, Math.round(4.5 * intensityRatio));
       filterChain.push(
-        `crop=1080:1920:'30+15*sin(n*0.75)*if(lt(mod(n,75),28)*lt(n,${animFrames}),1,0.05)':'50+15*cos(n*0.85)*if(lt(mod(n,75),28)*lt(n,${animFrames}),1,0.05)'`
+        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.35)*if(lt(mod(n,60),20)*lt(n,${animFrames}),1,0.05)':'${padY}+${ampY}*cos(n*0.4)*if(lt(mod(n,60),20)*lt(n,${animFrames}),1,0.05)'`
+      );
+    } else if (hasPulseShake) {
+      const ampX = (1.5 * intensityRatio).toFixed(2);
+      const ampY = (1.5 * intensityRatio).toFixed(2);
+      filterChain.push(
+        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.3)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.3)*if(lt(n,${animFrames}),1,0)'`
       );
     }
   } else if (hasPanLeft) {
-    filterChain.push('scale=1280:1920:force_original_aspect_ratio=increase');
+    const panW = targetW + Math.round(targetW * 0.15);
+    filterChain.push(`scale=${panW}:${targetH}:force_original_aspect_ratio=increase`);
     filterChain.push(
-      `crop=1080:1920:'(1280-1080)*if(lt(n,${animFrames}),1-n/${animFrames},0)':0`
+      `crop=${targetW}:${targetH}:'(${panW}-${targetW})*if(lt(n,${animFrames}),1-n/${animFrames},0)':0`
     );
   } else if (hasPanRight) {
-    filterChain.push('scale=1280:1920:force_original_aspect_ratio=increase');
+    const panW = targetW + Math.round(targetW * 0.15);
+    filterChain.push(`scale=${panW}:${targetH}:force_original_aspect_ratio=increase`);
     filterChain.push(
-      `crop=1080:1920:'(1280-1080)*if(lt(n,${animFrames}),n/${animFrames},1)':0`
+      `crop=${targetW}:${targetH}:'(${panW}-${targetW})*if(lt(n,${animFrames}),n/${animFrames},1)':0`
     );
   } else {
     filterChain.push(
-      'scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black'
+      `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black`
     );
   }
 
   // Step B: Zoom / Pan / Breathing Pulse (Spatial Animation)
   if (hasZoomIn) {
+    const zoomRate = (0.0003 + 0.0006 * intensityRatio).toFixed(5);
+    const maxZ = (1.04 + 0.08 * intensityRatio).toFixed(3);
     filterChain.push(
-      `zoompan=z='if(lt(on,${animFrames}),min(zoom+0.0012,1.15),1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+      `zoompan=z='if(lt(on,${animFrames}),min(zoom+${zoomRate},${maxZ}),${maxZ})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${targetW}x${targetH}:fps=${fps}`
     );
   } else if (hasZoomOut) {
+    const zoomRate = (0.0003 + 0.0006 * intensityRatio).toFixed(5);
+    const maxZ = (1.05 + 0.08 * intensityRatio).toFixed(3);
     filterChain.push(
-      `zoompan=z='if(lt(on,${animFrames}),if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012)),1.001)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+      `zoompan=z='if(lt(on,${animFrames}),if(lte(zoom,1.0),${maxZ},max(1.001,zoom-${zoomRate})),1.001)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${targetW}x${targetH}:fps=${fps}`
     );
-  } else if (hasPulse) {
+  } else if (hasPulse || hasPulseShake) {
+    const pulseAmp = (0.015 * intensityRatio).toFixed(3);
     filterChain.push(
-      `zoompan=z='if(lt(on,${animFrames}),1.04+0.04*sin(2*PI*(on/${fps})*0.8),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=1080x1920:fps=${fps}`
+      `zoompan=z='if(lt(on,${animFrames}),1.01+${pulseAmp}*sin(2*PI*(on/${fps})*0.8),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${targetW}x${targetH}:fps=${fps}`
     );
   }
 
   // Step C: Glitter (Ambient Shimmer Pulses)
   if (hasGlitter) {
     filterChain.push(
-      `eq=brightness='0.07*sin(2*PI*t*1.4)':saturation='1.0+0.16*cos(2*PI*t*1.4)':enable='between(t,0,${animDuration})'`
+      `eq=brightness='${(0.04 * intensityRatio).toFixed(3)}*sin(2*PI*t*1.4)':saturation='1.0+${(0.12 * intensityRatio).toFixed(3)}*cos(2*PI*t*1.4)':enable='between(t,0,${animDuration})'`
     );
   }
 
-  // Step D: Apply Selectable Visual Overlays
+  // Step D: Apply Atmospheric Visual Overlays (snow, dust, glitter, bokeh, embers)
   if (Array.isArray(overlays) && overlays.length > 0) {
     for (const ov of overlays) {
       if (ov === 'vignette') {
         filterChain.push('vignette=PI/4');
       } else if (ov === 'film_grain') {
-        filterChain.push('noise=alls=12:allf=t+u');
-      } else if (ov === 'red_alert') {
+        const grainLevel = Math.max(3, Math.round(5 + 10 * ovIntensityRatio));
+        filterChain.push(`noise=alls=${grainLevel}:allf=t+u`);
+      } else if (ov === 'particle_snow') {
+        // Delicate soft snow shimmer pulse
         filterChain.push(
-          'drawbox=x=0:y=0:w=iw:h=16:color=red@0.9:t=fill,drawbox=x=0:y=ih-16:w=iw:h=16:color=red@0.9:t=fill'
+          `eq=brightness='${(0.03 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.2)':saturation='1.0+${(0.06 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.2)'`
         );
-      } else if (ov === 'breaking_banner') {
-        filterChain.push('drawbox=x=20:y=ih-140:w=iw-40:h=75:color=red@0.88:t=fill');
-      } else if (ov === 'particles') {
-        filterChain.push(`eq=brightness='0.04*sin(2*PI*t*1.8)':saturation='1.0+0.12*cos(2*PI*t*1.8)'`);
+      } else if (ov === 'floating_dust' || ov === 'particles') {
+        // Atmospheric floating dust with subtle ambient grain
+        const dustGrain = Math.max(2, Math.round(3 + 6 * ovIntensityRatio));
+        filterChain.push(`noise=alls=${dustGrain}:allf=t+u`);
+        filterChain.push(`eq=brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.9)'`);
+      } else if (ov === 'glitter_sparkle') {
+        // Diamond / gold sparkle shimmer
+        filterChain.push(
+          `eq=brightness='${(0.045 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.6)':saturation='1.0+${(0.15 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.6)'`
+        );
+      } else if (ov === 'bokeh_lights') {
+        // Soft glowing ambient bokeh breathing warmth
+        filterChain.push(
+          `eq=brightness='${(0.04 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)':saturation='1.0+${(0.10 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)'`
+        );
+      } else if (ov === 'fire_embers') {
+        // Warm glowing embers hue pulse
+        filterChain.push(
+          `eq=gamma_r='1.0+${(0.08 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)':brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)'`
+        );
       }
     }
   }
@@ -517,7 +623,6 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     '44100',
     '-ac',
     '2',
-    '-shortest',
     '-movflags',
     '+faststart',
     finalFilePath
@@ -539,6 +644,9 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     const altPublicHtmlDirs = [
       path.join(process.cwd(), 'public_html', 'uploads', 'videos'),
       path.join(process.cwd(), '..', 'public_html', 'uploads', 'videos'),
+      path.join(process.cwd(), '..', '..', 'public_html', 'uploads', 'videos'),
+      path.join(process.cwd(), '..', '..', '..', '..', 'public_html', 'uploads', 'videos'),
+      '/home/u941411339/domains/game.khabarmonkey.com/public_html/uploads/videos',
     ];
     for (const altDir of altPublicHtmlDirs) {
       try {

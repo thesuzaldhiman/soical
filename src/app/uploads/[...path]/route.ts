@@ -36,6 +36,17 @@ export async function OPTIONS() {
   });
 }
 
+export async function HEAD(
+  request: NextRequest,
+  context: { params: Promise<{ path: string[] }> }
+) {
+  const getRes = await GET(request, context);
+  return new NextResponse(null, {
+    status: getRes.status,
+    headers: getRes.headers,
+  });
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> }

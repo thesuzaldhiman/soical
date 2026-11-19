@@ -33,6 +33,7 @@ import {
   Type,
   ImageIcon,
   Move,
+  ExternalLink,
   Minus,
   ZoomIn,
   ZoomOut,
@@ -54,28 +55,74 @@ const MOTION_EFFECTS: Array<{
   badge: string;
   badgeColor: string;
   description: string;
+  isNew?: boolean;
 }> = [
   {
+    id: 'subtle_float',
+    name: 'Gentle Breathing Drift',
+    icon: '🍃',
+    badge: 'Ultra Smooth',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    description: 'Slow, peaceful breathing float. Leaves news headlines 100% crisp, stable and readable.',
+    isNew: true,
+  },
+  {
+    id: 'micro_jitter',
+    name: 'Micro Handheld Tremble',
+    icon: '📱',
+    badge: 'Handheld Cam',
+    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
+    description: 'Extremely gentle micro-camera movement (1-2px). Gives an authentic organic camera feel without text blurring.',
+    isNew: true,
+  },
+  {
+    id: 'smooth_sway',
+    name: 'Smooth Cinematic Sway',
+    icon: '↔️',
+    badge: 'Cinematic Drift',
+    badgeColor: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    description: 'Slow horizontal camera pan swaying gently back and forth.',
+    isNew: true,
+  },
+  {
+    id: 'vertical_drift',
+    name: 'Vertical Floating Bob',
+    icon: '↕️',
+    badge: 'Gentle Float',
+    badgeColor: 'bg-sky-50 text-sky-700 border-sky-200',
+    description: 'Very slow vertical bobbing motion, like a soft breathing camera crane.',
+    isNew: true,
+  },
+  {
+    id: 'pulse_shake',
+    name: 'Rhythmic Heartbeat Pulse',
+    icon: '💓',
+    badge: 'Rhythmic Alert',
+    badgeColor: 'bg-pink-50 text-pink-700 border-pink-200',
+    description: 'Gentle heartbeat breathing pulse with subtle micro-shake to hook attention.',
+    isNew: true,
+  },
+  {
     id: 'shake',
-    name: 'Camera Shake (Impact)',
+    name: 'Mild Camera Shake',
     icon: '⚡',
     badge: 'Breaking News',
-    badgeColor: 'bg-red-50 text-red-700 border-red-200',
-    description: 'Subtle high-impact vibration jitter. Perfect for breaking news, crime, and urgent announcements.',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+    description: 'Calibrated impact shake (calm amplitude). Alert vibe while keeping headlines readable.',
   },
   {
     id: 'breaking_jitter',
-    name: 'Breaking News Flash Jitter',
+    name: 'Alert Flash Jitter',
     icon: '💥',
     badge: 'Urgent Alert',
     badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
-    description: 'Rapid strobe camera jitter with periodic brightness flash for major breaking headlines.',
+    description: 'Subtle alert strobe jitter with periodic brightness flash for major news.',
   },
   {
     id: 'zoom_in',
     name: 'Slow Zoom In',
     icon: '🔍',
-    badge: 'Dramatic Focus',
+    badge: 'Ken Burns',
     badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     description: 'Cinematic Ken Burns slow zoom into the center of the news card.',
   },
@@ -88,36 +135,12 @@ const MOTION_EFFECTS: Array<{
     description: 'Slow zoom out starting close and smoothly revealing the entire news card.',
   },
   {
-    id: 'pan_left',
-    name: 'Dynamic Pan Left',
-    icon: '◀️',
-    badge: 'Cinematic Pan',
-    badgeColor: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-    description: 'Smooth horizontal camera drift from right to left across the card.',
-  },
-  {
-    id: 'pan_right',
-    name: 'Dynamic Pan Right',
-    icon: '▶️',
-    badge: 'Cinematic Pan',
-    badgeColor: 'bg-sky-50 text-sky-700 border-sky-200',
-    description: 'Smooth horizontal camera drift from left to right across the card.',
-  },
-  {
     id: 'glitter',
-    name: 'Glitter & Sparkles',
+    name: 'Ambient Light Shimmer',
     icon: '✨',
-    badge: 'Devotional / Mandir',
-    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
-    description: 'Warm shimmering light pulses and sparkling glow. Ideal for temples, festivals, and cultural news.',
-  },
-  {
-    id: 'pulse',
-    name: 'Subtle Breathing Pulse',
-    icon: '💓',
-    badge: 'Rhythmic Alert',
-    badgeColor: 'bg-pink-50 text-pink-700 border-pink-200',
-    description: 'Gentle rhythmic breathing scale pulse that keeps viewer attention locked.',
+    badge: 'Warm Shimmer',
+    badgeColor: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+    description: 'Warm shimmering light pulses and sparkling glow for festive & cultural news.',
   },
   {
     id: 'none',
@@ -129,7 +152,7 @@ const MOTION_EFFECTS: Array<{
   },
 ];
 
-// ── Multi-select Video Overlays ──
+// ── Multi-select Video Overlays (Atmospheric Particles, Dust, Snow, Glitter) ──
 const VIDEO_OVERLAYS: Array<{
   id: VideoOverlayType;
   name: string;
@@ -139,20 +162,44 @@ const VIDEO_OVERLAYS: Array<{
   description: string;
 }> = [
   {
-    id: 'breaking_banner',
-    name: 'Breaking News Red Ticker',
-    icon: '🔴',
-    badge: 'Red Ticker',
-    badgeColor: 'bg-red-50 text-red-700 border-red-200',
-    description: 'Solid red lower-third alert ticker bar across the reel.',
+    id: 'particle_snow',
+    name: 'Delicate Snow Flakes',
+    icon: '❄️',
+    badge: 'Winter / Calm',
+    badgeColor: 'bg-sky-50 text-sky-700 border-sky-200',
+    description: 'Soft falling white snowflakes with gentle horizontal drift.',
   },
   {
-    id: 'red_alert',
-    name: 'Red Alert Flashing Borders',
-    icon: '🚨',
-    badge: 'Emergency Border',
-    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
-    description: 'Pulsing red hazard strobe stripes on the top and bottom borders.',
+    id: 'floating_dust',
+    name: 'Cinematic Floating Dust',
+    icon: '✨',
+    badge: 'Atmospheric Dust',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+    description: 'Cinematic floating dust motes & gentle micro light particles.',
+  },
+  {
+    id: 'glitter_sparkle',
+    name: 'Golden Star Sparkles',
+    icon: '⭐',
+    badge: 'Diamond Sparkle',
+    badgeColor: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+    description: 'Sparkling diamond and golden stars shimmering across the card.',
+  },
+  {
+    id: 'bokeh_lights',
+    name: 'Floating Bokeh Orbs',
+    icon: '🔮',
+    badge: 'Glowing Bokeh',
+    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
+    description: 'Soft glowing ambient translucent light orbs drifting upward.',
+  },
+  {
+    id: 'fire_embers',
+    name: 'Warm Glowing Embers',
+    icon: '🔥',
+    badge: 'Rising Embers',
+    badgeColor: 'bg-orange-50 text-orange-700 border-orange-200',
+    description: 'Warm rising sparks and glowing embers with orange-red warmth.',
   },
   {
     id: 'vignette',
@@ -164,19 +211,11 @@ const VIDEO_OVERLAYS: Array<{
   },
   {
     id: 'film_grain',
-    name: 'Vintage Film Grain',
+    name: 'Vintage 35mm Film Grain',
     icon: '🎞️',
-    badge: 'Film Texture',
-    badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
+    badge: 'Cinema Texture',
+    badgeColor: 'bg-stone-50 text-stone-700 border-stone-200',
     description: 'Subtle high-end 35mm motion film noise for an authentic cinema look.',
-  },
-  {
-    id: 'particles',
-    name: 'Shimmering Light Leaks',
-    icon: '✨',
-    badge: 'Light Glow',
-    badgeColor: 'bg-yellow-50 text-yellow-800 border-yellow-200',
-    description: 'Gentle ambient warmth and light particles, ideal for devotional & festive reels.',
   },
 ];
 
@@ -351,8 +390,15 @@ export default function ReelStudioPage() {
     activeTemplate.videoConfig?.durationSeconds || 15
   );
   const [selectedOverlays, setSelectedOverlays] = useState<VideoOverlayType[]>(
-    activeTemplate.videoConfig?.overlays || ['vignette']
+    activeTemplate.videoConfig?.overlays || ['floating_dust']
   );
+  const [motionIntensity, setMotionIntensity] = useState<number>(
+    activeTemplate.videoConfig?.motionIntensity ?? 20
+  );
+  const [overlayIntensity, setOverlayIntensity] = useState<number>(
+    activeTemplate.videoConfig?.overlayIntensity ?? 50
+  );
+  const [isLiveMotionPlaying, setIsLiveMotionPlaying] = useState<boolean>(true);
   const [musicUrl, setMusicUrl] = useState<string>(
     activeTemplate.videoConfig?.musicUrl || '/uploads/audio/breaking_news_beat.mp3'
   );
@@ -389,6 +435,26 @@ export default function ReelStudioPage() {
   const [reelCurrentTime, setReelCurrentTime] = useState(0);
   const [reelTotalDuration, setReelTotalDuration] = useState(0);
   const [showNativeControls, setShowNativeControls] = useState(false);
+
+  // Auto-init and load reel video element whenever a new video reel is generated
+  useEffect(() => {
+    if (reelVideoRef.current && generatedVideoUrl) {
+      const vid = reelVideoRef.current;
+      vid.defaultMuted = true;
+      vid.muted = isMutedReel;
+      try {
+        vid.load();
+        vid
+          .play()
+          .then(() => setIsPlayingReel(true))
+          .catch(() => {
+            vid.muted = true;
+            setIsMutedReel(true);
+            vid.play().then(() => setIsPlayingReel(true)).catch(() => setIsPlayingReel(false));
+          });
+      } catch {}
+    }
+  }, [generatedVideoUrl]);
 
   // ── New Reel Template Modal ──
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -458,7 +524,9 @@ export default function ReelStudioPage() {
       setEffect(vConf.effect || effs[0] || 'shake');
       setDuration(vConf.durationSeconds || 15);
       setEffectDuration(vConf.effectDurationSeconds || vConf.durationSeconds || 15);
-      setSelectedOverlays(vConf.overlays || ['vignette']);
+      setSelectedOverlays(vConf.overlays || ['floating_dust']);
+      setMotionIntensity(vConf.motionIntensity ?? 20);
+      setOverlayIntensity(vConf.overlayIntensity ?? 50);
       setMusicUrl(vConf.musicUrl || '/uploads/audio/breaking_news_beat.mp3');
       setMusicName(vConf.musicName || 'Breaking News Beat');
       setMusicVolume(vConf.musicVolume ?? 100);
@@ -791,10 +859,12 @@ export default function ReelStudioPage() {
       videoConfig: {
         enabled: true,
         durationSeconds: duration,
-        effect: selectedEffects[0] || effect || 'shake',
+        effect: selectedEffects[0] || effect || 'subtle_float',
         effects: selectedEffects,
         effectDurationSeconds: effectDuration,
+        motionIntensity,
         overlays: selectedOverlays,
+        overlayIntensity,
         musicUrl,
         musicName,
         musicVolume,
@@ -827,10 +897,12 @@ export default function ReelStudioPage() {
       videoConfig: {
         enabled: true,
         durationSeconds: duration,
-        effect: selectedEffects[0] || effect || 'shake',
+        effect: selectedEffects[0] || effect || 'subtle_float',
         effects: selectedEffects,
         effectDurationSeconds: effectDuration,
+        motionIntensity,
         overlays: selectedOverlays,
+        overlayIntensity,
         musicUrl,
         musicName,
         musicVolume,
@@ -1005,12 +1077,16 @@ export default function ReelStudioPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: cardDataUrl,
+          canvasWidth,
+          canvasHeight,
           duration,
           durationSeconds: duration,
-          effect: selectedEffects[0] || effect || 'shake',
+          effect: selectedEffects[0] || effect || 'subtle_float',
           effects: selectedEffects,
           effectDurationSeconds: effectDuration,
+          motionIntensity,
           overlays: selectedOverlays,
+          overlayIntensity,
           musicUrl,
           musicVolume,
           outputFilename: `reel_${activeTemplate.id}_${Date.now()}`,
@@ -2797,7 +2873,6 @@ export default function ReelStudioPage() {
                     <video
                       ref={reelVideoRef}
                       key={generatedVideoUrl}
-                      src={generatedVideoUrl}
                       controls={showNativeControls}
                       autoPlay
                       muted={isMutedReel}
@@ -2834,7 +2909,10 @@ export default function ReelStudioPage() {
                       onPause={() => setIsPlayingReel(false)}
                       onClick={handleTogglePlayReel}
                       className="w-full h-full object-cover cursor-pointer"
-                    />
+                    >
+                      <source src={generatedVideoUrl} type="video/mp4" />
+                      Your browser does not support HTML5 video.
+                    </video>
 
                     {/* Center Big Play Button Overlay (when paused) */}
                     {!isPlayingReel && !showNativeControls && (
@@ -2938,6 +3016,17 @@ export default function ReelStudioPage() {
                   </div>
 
                   <div className="flex items-center gap-2 w-full">
+                    <a
+                      href={generatedVideoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                      title="Open full video in a new browser tab"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open Tab</span>
+                    </a>
+
                     <a
                       href={generatedVideoUrl}
                       download={`reel_${Date.now()}.mp4`}
