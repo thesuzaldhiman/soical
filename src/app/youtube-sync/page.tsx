@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
