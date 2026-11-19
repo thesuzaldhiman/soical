@@ -359,6 +359,8 @@ export interface TestPostExecutionResult {
   ruleId: string;
   ruleName: string;
   channelTitle: string;
+  postId?: string;
+  savedToLibrary: boolean;
   video: {
     id: string;
     title: string;
@@ -374,7 +376,7 @@ export interface TestPostExecutionResult {
     pageId: string;
     pageName: string;
     platform: string;
-    status: 'success' | 'failed';
+    status: 'success' | 'failed' | 'draft';
     postUrl?: string;
     error?: string;
   }>;
@@ -508,40 +510,43 @@ export async function executeYouTubeRuleTestPost(
 
   // Step 6: Format caption & comment
   const captionText = buildVideoCaption(chosenVideo.title, chosenVideo.description, rule);
-  const firstComment = rule.linkInComment ? `Original Source: ${chosenVideo.watchUrl}` : undefined;
 
-  // Step 7: Dispatch to Facebook Target Pages
-  const publishTargets = destinationPages.map((dp) => ({
-    id: dp.id,
-    name: dp.name,
-    platform: dp.platform,
-    accessToken: dp.accessToken,
-    pageId: dp.pageId || dp.id,
-  }));
-
+  // Step 7: Create Draft Entry in Post Library (Do NOT publish directly to Facebook right now)
+  const draftPostId = `post_yt_${chosenVideo.id}_${Date.now()}`;
   console.log(
-    `[YouTube Test Post] Publishing "${chosenVideo.title}" to ${publishTargets.length} target(s)...`
+    `[YouTube Test Post] Saving "${chosenVideo.title}" directly to Post Library as Draft (ID: ${draftPostId})...`
   );
 
-  const dispatchResults = await dispatchToTargets({
+  const targetsInfo = destinationPages.map((dp) => ({
+    pageId: dp.id,
+    pageName: dp.name,
+    platform: dp.platform,
+    status: 'draft' as const,
+  }));
+
+  const newPostRecord: Post = {
+    id: draftPostId,
+    workspaceId: 'ws_default',
     postType: 'video',
     title: chosenVideo.title,
     message: captionText,
     mediaUrl: dlResult.publicUrl,
-    commentText: firstComment,
-    targets: publishTargets as PublishTarget[],
-  });
+    thumbnailUrl: chosenVideo.thumbnailUrl,
+    linkUrl: chosenVideo.watchUrl,
+    pageIds: destinationPages.map((dp) => dp.id),
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    results: destinationPages.map((dp) => ({
+      pageId: dp.id,
+      pageName: dp.name,
+      platform: dp.platform as any,
+      status: 'draft',
+      timestamp: new Date().toISOString(),
+    })),
+  };
 
-  const publishedTargets = (dispatchResults || []).map((dr: any) => ({
-    pageId: dr.pageId,
-    pageName: dr.pageName,
-    platform: dr.platform,
-    status: dr.status as 'success' | 'failed',
-    postUrl: dr.postUrl,
-    error: dr.error,
-  }));
-
-  const anySuccess = publishedTargets.some((pt) => pt.status === 'success');
+  userPosts.unshift(newPostRecord);
 
   // Step 8: Log & Database Record
   const logId = `ytlog_test_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -555,40 +560,16 @@ export async function executeYouTubeRuleTestPost(
     thumbnailUrl: chosenVideo.thumbnailUrl,
     isShort: chosenVideo.isShort,
     isTest: true,
-    status: anySuccess ? 'published' : 'failed',
-    publishedTargets,
+    status: 'draft_saved',
+    publishedTargets: targetsInfo,
     downloadedFilePath: dlResult.localFilePath,
     fileSizeBytes: dlResult.fileSizeBytes,
     createdAt: new Date().toISOString(),
   };
 
-  // Create post entry in Post Library
-  const newPostRecord: Post = {
-    id: `post_yt_test_${chosenVideo.id}_${Date.now()}`,
-    workspaceId: 'ws_default',
-    postType: 'video',
-    title: `[Test] ${chosenVideo.title}`,
-    message: captionText,
-    mediaUrl: dlResult.publicUrl,
-    pageIds: destinationPages.map((dp) => dp.id),
-    status: anySuccess ? 'published' : 'failed',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    publishedAt: anySuccess ? new Date().toISOString() : undefined,
-    results: (dispatchResults || []).map((dr: any) => ({
-      pageId: dr.pageId,
-      pageName: dr.pageName,
-      platform: dr.platform,
-      status: dr.status,
-      postUrl: dr.postUrl,
-      error: dr.error,
-      timestamp: new Date().toISOString(),
-    })),
-  };
-  userPosts.unshift(newPostRecord);
   allUserLogs.unshift(syncLog);
 
-  // Update processedVideoIds so future tests and regular syncs pick the NEXT video!
+  // Update processedVideoIds so future tests pick the NEXT video!
   const processedSet = new Set(rule.processedVideoIds || []);
   processedSet.add(chosenVideo.id);
   const updatedProcessedIds = Array.from(processedSet).slice(-200);
@@ -597,9 +578,9 @@ export async function executeYouTubeRuleTestPost(
     ...rule,
     processedVideoIds: updatedProcessedIds,
     lastTestVideoIndex: rule.lastTestVideoIndex ?? 0,
-    totalSyncedCount: (rule.totalSyncedCount || 0) + (anySuccess ? 1 : 0),
+    totalSyncedCount: (rule.totalSyncedCount || 0) + 1,
     lastCheckedAt: new Date().toISOString(),
-    lastProcessedAt: anySuccess ? new Date().toISOString() : rule.lastProcessedAt,
+    lastProcessedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
@@ -616,10 +597,12 @@ export async function executeYouTubeRuleTestPost(
   );
 
   return {
-    success: anySuccess,
+    success: true,
     ruleId: rule.id,
     ruleName: rule.name,
     channelTitle: rule.channelTitle,
+    postId: draftPostId,
+    savedToLibrary: true,
     video: {
       id: chosenVideo.id,
       title: chosenVideo.title,
@@ -631,10 +614,8 @@ export async function executeYouTubeRuleTestPost(
       publicUrl: dlResult.publicUrl,
       fileSizeBytes: dlResult.fileSizeBytes,
     },
-    targets: publishedTargets,
+    targets: targetsInfo,
     log: syncLog,
-    note: anySuccess
-      ? `Successfully posted test video "${chosenVideo.title}" to Facebook!`
-      : 'Failed posting to Facebook targets.',
+    note: `वीडियो सफलतापूर्वक डाउनलोड हो चुकी है और आपकी Post Library में Draft के रूप में सेव कर दी गई है!`,
   };
 }

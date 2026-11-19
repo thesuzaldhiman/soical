@@ -593,7 +593,7 @@ function LibraryContent() {
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={post.mediaUrl || post.thumbnailUrl}
+                          src={post.postType === 'video' ? (post.thumbnailUrl || post.mediaUrl) : (post.mediaUrl || post.thumbnailUrl)}
                           alt="Post preview"
                           onError={(e) => {
                             if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {
@@ -787,7 +787,7 @@ function LibraryContent() {
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={post.mediaUrl || post.thumbnailUrl}
+                              src={post.thumbnailUrl || post.mediaUrl}
                               alt="Video preview"
                               onError={(e) => {
                                 if (post.thumbnailUrl && e.currentTarget.src !== post.thumbnailUrl) {

@@ -1,12 +1,65 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import { execFile } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
 let cachedYtDlpPath: string | null = null;
+
+const COMPATIBLE_YTDLP_VERSION = '2025.10.14';
+const COMPATIBLE_DOWNLOAD_URL = `https://github.com/yt-dlp/yt-dlp/releases/download/${COMPATIBLE_YTDLP_VERSION}/yt-dlp`;
+
+/**
+ * Tests if a candidate yt-dlp binary is compatible with available Python runtime
+ */
+function isBinaryCompatible(binPath: string): boolean {
+  try {
+    if (!fs.existsSync(binPath) || fs.statSync(binPath).size < 1000000) return false;
+    const pythonCandidates = [
+      'python3',
+      '/usr/bin/python3',
+      '/usr/local/bin/python3',
+      '/opt/alt/python311/bin/python3',
+      '/opt/alt/python312/bin/python3',
+      'python',
+    ];
+    for (const py of pythonCandidates) {
+      try {
+        const out = execFileSync(py, [binPath, '--version'], {
+          timeout: 4000,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (out && out.trim().length > 0) return true;
+      } catch (err: any) {
+        const stderr = (err?.stderr || err?.message || '').toString();
+        if (stderr.includes('unsupported version of Python')) {
+          console.warn(`[server-youtube-downloader] Binary at ${binPath} rejected: unsupported Python version`);
+          return false;
+        }
+      }
+    }
+
+    // Try direct execution as fallback
+    try {
+      const out = execFileSync(binPath, ['--version'], {
+        timeout: 4000,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      if (out && out.trim().length > 0) return true;
+    } catch (err: any) {
+      const stderr = (err?.stderr || err?.message || '').toString();
+      if (stderr.includes('unsupported version of Python')) return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Downloads a standalone executable to target destination with redirects
@@ -60,28 +113,36 @@ async function downloadBinaryTo(url: string, dest: string): Promise<boolean> {
 }
 
 /**
- * Resolves the path to the yt-dlp executable
+ * Resolves the path to the Python 3.9-compatible yt-dlp executable
  */
 export async function getYtDlpPath(): Promise<string> {
-  if (cachedYtDlpPath && fs.existsSync(cachedYtDlpPath)) {
+  if (cachedYtDlpPath && fs.existsSync(cachedYtDlpPath) && isBinaryCompatible(cachedYtDlpPath)) {
     return cachedYtDlpPath;
   }
 
   const binaryName = 'yt-dlp';
+  // Check build directory first, then fallback locations
   const candidatePaths = [
-    path.join('/tmp', binaryName),
     path.join(process.cwd(), 'bin', binaryName),
     path.join(process.cwd(), 'public', 'bin', binaryName),
     path.join(__dirname, '..', '..', '..', 'bin', binaryName),
     path.join(__dirname, '..', '..', '..', 'public', 'bin', binaryName),
+    path.join('/tmp', binaryName),
   ];
 
   for (const p of candidatePaths) {
     try {
       if (fs.existsSync(p) && fs.statSync(p).size > 1000000) {
-        try { fs.chmodSync(p, 0o755); } catch {}
-        cachedYtDlpPath = p;
-        return p;
+        if (isBinaryCompatible(p)) {
+          try { fs.chmodSync(p, 0o755); } catch {}
+          cachedYtDlpPath = p;
+          return p;
+        } else {
+          // If in /tmp, remove incompatible binary
+          if (p.startsWith('/tmp')) {
+            try { fs.unlinkSync(p); } catch {}
+          }
+        }
       }
     } catch {}
   }
@@ -89,19 +150,25 @@ export async function getYtDlpPath(): Promise<string> {
   // Common Linux system binaries
   const commonLinuxPaths = ['/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'];
   for (const p of commonLinuxPaths) {
-    if (fs.existsSync(p)) {
+    if (fs.existsSync(p) && isBinaryCompatible(p)) {
       cachedYtDlpPath = p;
       return p;
     }
   }
 
-  // Dynamic on-demand download fallback (universal standalone python zipapp)
-  const downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+  // Dynamic on-demand download fallback (universal standalone Python 3.9 compatible zipapp)
+  const tmpDest = path.join(process.cwd(), 'bin', binaryName);
+  const fallbackTmpDest = path.join('/tmp', binaryName);
 
-  const tmpDest = path.join('/tmp', binaryName);
-  console.log(`[server-youtube-downloader] Downloading yt-dlp on-demand to ${tmpDest}...`);
-  const ok = await downloadBinaryTo(downloadUrl, tmpDest);
-  if (ok && fs.existsSync(tmpDest)) {
+  console.log(`[server-youtube-downloader] Downloading Python 3.9-compatible yt-dlp on-demand to ${tmpDest}...`);
+  let ok = await downloadBinaryTo(COMPATIBLE_DOWNLOAD_URL, tmpDest);
+  if (!ok) {
+    ok = await downloadBinaryTo(COMPATIBLE_DOWNLOAD_URL, fallbackTmpDest);
+    if (ok && fs.existsSync(fallbackTmpDest)) {
+      cachedYtDlpPath = fallbackTmpDest;
+      return fallbackTmpDest;
+    }
+  } else if (fs.existsSync(tmpDest)) {
     cachedYtDlpPath = tmpDest;
     return tmpDest;
   }
@@ -400,18 +467,31 @@ export async function downloadYouTubeVideo(
     let executed = false;
     let lastError: Error | null = null;
 
-    // Attempt 1: Run via python3 (preferred on Linux/Cloud to avoid ELF shared library restrictions)
-    try {
-      console.log(`[YouTube Downloader] Attempting execution via python3 for ${cleanId}...`);
-      await execFileAsync('python3', [ytdlpBin, ...args], {
-        timeout: 180000,
-        maxBuffer: 10 * 1024 * 1024,
-        env: customEnv,
-      });
-      executed = true;
-    } catch (pyErr) {
-      console.warn('[YouTube Downloader] python3 execution failed or not found, falling back to direct binary:', (pyErr as any)?.message);
-      lastError = pyErr instanceof Error ? pyErr : new Error(String(pyErr));
+    // Attempt 1: Run via available python3 executables (CloudLinux / CentOS / cPanel / AlmaLinux)
+    const pythonCandidates = [
+      'python3',
+      '/usr/bin/python3',
+      '/usr/local/bin/python3',
+      '/opt/alt/python311/bin/python3',
+      '/opt/alt/python312/bin/python3',
+      'python',
+    ];
+
+    for (const py of pythonCandidates) {
+      if (executed) break;
+      try {
+        console.log(`[YouTube Downloader] Attempting execution via ${py} for ${cleanId}...`);
+        await execFileAsync(py, [ytdlpBin, ...args], {
+          timeout: 180000,
+          maxBuffer: 15 * 1024 * 1024,
+          env: customEnv,
+        });
+        executed = true;
+      } catch (pyErr: any) {
+        const msg = (pyErr?.stderr || pyErr?.message || '').toString();
+        console.warn(`[YouTube Downloader] ${py} execution note:`, msg.substring(0, 150));
+        lastError = pyErr instanceof Error ? pyErr : new Error(String(pyErr));
+      }
     }
 
     // Attempt 2: Direct binary execution with non-tmp TMPDIR
@@ -419,7 +499,7 @@ export async function downloadYouTubeVideo(
       console.log(`[YouTube Downloader] Attempting direct binary execution for ${cleanId}...`);
       await execFileAsync(ytdlpBin, args, {
         timeout: 180000,
-        maxBuffer: 10 * 1024 * 1024,
+        maxBuffer: 15 * 1024 * 1024,
         env: customEnv,
       });
       executed = true;

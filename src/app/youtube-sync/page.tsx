@@ -78,7 +78,7 @@ export default function YouTubeSyncPage() {
 
   const [ruleName, setRuleName] = useState('');
   const [filterType, setFilterType] = useState<YouTubeContentFilter>('shorts_only');
-  const [publishMode, setPublishMode] = useState<YouTubePublishMode>('auto_publish');
+  const [publishMode, setPublishMode] = useState<YouTubePublishMode>('save_as_draft');
   const [targetPageIds, setTargetPageIds] = useState<string[]>([]);
   const [includeDescription, setIncludeDescription] = useState(true);
   const [customHashtags, setCustomHashtags] = useState('#news #trending #viral');
@@ -306,28 +306,34 @@ export default function YouTubeSyncPage() {
   const handleExecuteTest = async (ruleId: string, pageId?: string) => {
     setTestStep('running');
     setTestingRuleId(ruleId);
-    setTestStatusMsg('1/3: Channel feed se fresh video select ho raha hai...');
+    setTestStatusMsg('1/3: Channel feed se fresh video select ho rahi hai...');
 
     const timer = setTimeout(() => {
-      setTestStatusMsg('2/3: High-quality MP4 server par download ho raha hai (yt-dlp)...');
-    }, 3000);
+      setTestStatusMsg('2/3: High-quality MP4 server par download ho rahi hai (yt-dlp)...');
+    }, 2500);
+
+    const timer2 = setTimeout(() => {
+      setTestStatusMsg('3/3: Video Post Library me draft ke taur par save ho rahi hai...');
+    }, 6000);
 
     try {
       const targetPage = pageId || testSelectedPageId;
       const data = await triggerYouTubeTestPost(ruleId, { targetPageId: targetPage });
       clearTimeout(timer);
+      clearTimeout(timer2);
 
       if (data && data.success && data.testResult) {
         setTestStep('success');
         setTestResultData(data.testResult);
-        setTestStatusMsg(`Success! "${data.testResult.video?.title}" Facebook page par successfully post ho gayi!`);
+        setTestStatusMsg(`Success! "${data.testResult.video?.title}" आपकी Post Library me draft ke taur par save ho gayi hai!`);
         await refreshYouTubeRules();
       } else {
         setTestStep('error');
-        setTestStatusMsg(data?.error || data?.testResult?.error || 'Test post failed. Please check server logs.');
+        setTestStatusMsg(data?.error || data?.testResult?.error || 'Test download failed. Please check server logs.');
       }
     } catch (err: unknown) {
       clearTimeout(timer);
+      clearTimeout(timer2);
       setTestStep('error');
       setTestStatusMsg(err instanceof Error ? err.message : 'Network error executing test post');
     } finally {
@@ -664,16 +670,16 @@ export default function YouTubeSyncPage() {
                       {/* Action Buttons */}
                       <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-1.5">
-                          {/* Test Post Button: Picks a new video every time */}
+                          {/* Test Post Button: Picks a new video every time and adds to Library */}
                           <button
                             type="button"
                             onClick={() => handleOpenTestModal(rule)}
                             disabled={testingRuleId === rule.id || isRunning}
                             className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                            title="Send a fresh video from this channel to Facebook (Auto-rotates to a new video every time)"
+                            title="Download the next fresh video from this channel into Post Library as draft (Auto-rotates to a new video every time)"
                           >
                             <FlaskConical className="w-3.5 h-3.5 text-purple-600" />
-                            <span>Test Post</span>
+                            <span>Test to Library</span>
                           </button>
 
                           {/* Live Sync Now Button */}
@@ -868,7 +874,7 @@ export default function YouTubeSyncPage() {
                   </div>
                   <div>
                     <h3 className="font-black text-sm text-slate-900">
-                      Test Post from YouTube Channel to Facebook
+                      Test Video Download &amp; Save to Post Library
                     </h3>
                     <p className="text-[11px] text-slate-400">
                       Channel: <strong className="text-slate-700">{testModalRule.channelTitle}</strong>
@@ -891,10 +897,10 @@ export default function YouTubeSyncPage() {
                 <Sparkles className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
                   <span className="font-extrabold text-purple-900 block">
-                    ⚡ Auto-Rotation Enabled:
+                    ⚡ Auto-Rotation &amp; Post Library Integration:
                   </span>
                   <p className="text-[11px] text-purple-800 leading-relaxed">
-                    हर बार टेस्ट बटन दबाने पर इस चैनल से <strong>एक बिल्कुल नई (Fresh) वीडियो</strong> डाउनलोड होगी और आपके सिलेक्टेड Facebook Page पर पब्लिश होगी। पुरानी टेस्ट की हुई वीडियो दोबारा रिपीट नहीं होगी!
+                    हर बार टेस्ट बटन दबाने पर इस चैनल से <strong>एक बिल्कुल नई (Fresh) वीडियो</strong> डाउनलोड होकर सीधे आपकी <strong>Post Library</strong> में Draft के रूप में सेव हो जाएगी। फिर आप Library से जब चाहें 1-क्लिक में Facebook पर पोस्ट कर सकते हैं!
                   </p>
                 </div>
               </div>
@@ -938,8 +944,8 @@ export default function YouTubeSyncPage() {
               {/* Target Facebook Page Selector */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span>Destination Facebook Page:</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Video will be posted to this page</span>
+                  <span>Pre-selected Target Facebook Page:</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Will be pre-filled on the Draft in Library</span>
                 </label>
                 <select
                   value={testSelectedPageId}
@@ -969,7 +975,7 @@ export default function YouTubeSyncPage() {
                   <div className="space-y-0.5">
                     <span>{testStatusMsg}</span>
                     <p className="text-[10px] text-purple-700 font-normal">
-                      Server downloading via yt-dlp &amp; uploading to Facebook Graph API...
+                      Server downloading via yt-dlp &amp; saving to Post Library...
                     </p>
                   </div>
                 </div>
@@ -981,7 +987,7 @@ export default function YouTubeSyncPage() {
                   <div className="space-y-0.5">
                     <span>Error: {testStatusMsg}</span>
                     <p className="text-[10px] text-rose-700 font-normal">
-                      Please verify that your Facebook Page access token is valid and the YouTube channel has public videos.
+                      Please verify that your server has Python and FFmpeg installed and the YouTube video is publicly accessible.
                     </p>
                   </div>
                 </div>
@@ -991,8 +997,12 @@ export default function YouTubeSyncPage() {
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3 animate-fade-in">
                   <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-xs">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <span>Test Video Successfully Posted to Facebook!</span>
+                    <span>🎉 Video Successfully Downloaded &amp; Saved to Post Library!</span>
                   </div>
+
+                  <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                    यह वीडियो सफलतापूर्वक आपके सर्वर पर डाउनलोड हो गई है और आपकी <strong>Post Library</strong> में Draft के रूप में सेव कर दी गई है।
+                  </p>
 
                   {/* Video Details Card */}
                   <div className="bg-white rounded-xl border border-emerald-200 p-3 flex items-start gap-3">
@@ -1017,27 +1027,22 @@ export default function YouTubeSyncPage() {
                         {testResultData.video?.fileSizeBytes && (
                           <span>{(testResultData.video.fileSizeBytes / 1024 / 1024).toFixed(1)} MB</span>
                         )}
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-700 font-bold">
+                          ✓ In Post Library
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Action Link to Live FB Post */}
+                  {/* Action Link to Post Library */}
                   <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
-                    {testResultData.targets?.[0]?.postUrl ? (
-                      <a
-                        href={testResultData.targets[0].postUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs"
-                      >
-                        <span>View Live on Facebook</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    ) : (
-                      <span className="text-[11px] text-emerald-700 font-semibold">
-                        ✓ Dispatched to Page successfully
-                      </span>
-                    )}
+                    <Link
+                      href="/library?status=draft"
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>📂 Open Post Library</span>
+                    </Link>
 
                     <button
                       type="button"
@@ -1072,12 +1077,12 @@ export default function YouTubeSyncPage() {
                     {testStep === 'running' ? (
                       <>
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Sending to Facebook...</span>
+                        <span>Downloading &amp; Saving to Library...</span>
                       </>
                     ) : (
                       <>
                         <FlaskConical className="w-3.5 h-3.5" />
-                        <span>Send Test Video to Facebook</span>
+                        <span>Download &amp; Save to Post Library</span>
                       </>
                     )}
                   </button>
@@ -1261,8 +1266,8 @@ export default function YouTubeSyncPage() {
                       onChange={(e) => setPublishMode(e.target.value as YouTubePublishMode)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 bg-[#F8F9FD] font-semibold"
                     >
+                      <option value="save_as_draft">📋 Save to Post Library for Review (Draft) - Recommended</option>
                       <option value="auto_publish">⚡ Direct Auto-Publish (Live to Facebook)</option>
-                      <option value="save_as_draft">📋 Save to Post Library for Review (Draft)</option>
                     </select>
                   </div>
                 </div>

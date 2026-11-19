@@ -491,7 +491,7 @@ export interface YouTubeSyncLog {
     pageId: string;
     pageName: string;
     platform: string;
-    status: 'success' | 'failed';
+    status: 'success' | 'failed' | 'draft';
     postUrl?: string;
     error?: string;
   }>;
