@@ -37,6 +37,7 @@ async function downloadFile(url, dest) {
 }
 
 async function main() {
+  const platform = process.platform;
   const binaryName = 'yt-dlp';
   // Use universal standalone python zipapp (runs directly on all platforms with python3, no PyInstaller tmp extraction)
   const downloadUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
