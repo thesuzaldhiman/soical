@@ -2807,7 +2807,9 @@ export default function ReelStudioPage() {
                       onLoadedMetadata={(e) => {
                         const vid = e.currentTarget;
                         setReelTotalDuration(vid.duration || 0);
-                        if (vid.currentTime === 0) vid.currentTime = 0.05;
+                      }}
+                      onCanPlay={(e) => {
+                        const vid = e.currentTarget;
                         vid
                           .play()
                           .then(() => setIsPlayingReel(true))
@@ -2816,6 +2818,10 @@ export default function ReelStudioPage() {
                             setIsMutedReel(true);
                             vid.play().then(() => setIsPlayingReel(true)).catch(() => setIsPlayingReel(false));
                           });
+                      }}
+                      onError={(e) => {
+                        const err = e.currentTarget.error;
+                        console.warn('[ReelStudio] Video player error:', err?.code, err?.message);
                       }}
                       onTimeUpdate={(e) => {
                         const vid = e.currentTarget;

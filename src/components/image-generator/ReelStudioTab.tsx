@@ -689,10 +689,14 @@ export function ReelStudioTab({
               <div className="relative w-full h-full rounded-[28px] overflow-hidden bg-slate-950 flex items-center justify-center">
                 {generatedVideoUrl ? (
                   <video
+                    key={generatedVideoUrl}
                     src={generatedVideoUrl}
                     controls
                     autoPlay
+                    muted
                     loop
+                    playsInline
+                    preload="auto"
                     className="w-full h-full object-cover"
                   />
                 ) : (

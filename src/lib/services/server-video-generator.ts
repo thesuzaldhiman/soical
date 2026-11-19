@@ -373,7 +373,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     );
   } else {
     filterChain.push(
-      'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2'
+      'scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black'
     );
   }
 
@@ -420,15 +420,28 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
 
   const videoFilter = filterChain.join(',');
 
-  // 5. Build FFmpeg Arguments
-  const args: string[] = ['-y', '-loop', '1', '-i', inputImage];
+  // 5. Build FFmpeg Arguments (with -nostats & -loglevel error to prevent maxBuffer stderr overflow)
+  const args: string[] = [
+    '-nostats',
+    '-loglevel',
+    'error',
+    '-y',
+    '-loop',
+    '1',
+    '-framerate',
+    '30',
+    '-i',
+    inputImage,
+  ];
 
   const volRatio = Math.max(0.05, Math.min(1.0, (musicVolume || 100) / 100));
 
   if (inputMusic && fs.existsSync(inputMusic)) {
-    // Music provided: Trim to duration, scale volume, and apply smooth 1.5s audio fade-out
+    // Music provided: Loop music if shorter than duration, trim to duration, scale volume, and apply smooth 1.5s audio fade-out
     const fadeStart = Math.max(0, duration - 1.5);
     args.push(
+      '-stream_loop',
+      '-1',
       '-i',
       inputMusic,
       '-filter_complex',
@@ -459,15 +472,17 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     '-c:v',
     'libx264',
     '-profile:v',
-    'main',
+    'high',
     '-level',
-    '4.0',
+    '4.1',
     '-pix_fmt',
     'yuv420p',
     '-preset',
-    'fast',
+    'veryfast',
     '-crf',
     '23',
+    '-r',
+    '30',
     '-t',
     String(duration),
     '-c:a',
@@ -487,7 +502,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   console.log(`[server-video-generator] Spawning ffmpeg from '${ffmpegBin}': effect=${effect}, duration=${duration}s, hasMusic=${!!inputMusic}`);
 
   try {
-    await execFileAsync(ffmpegBin, args, { timeout: 60000 });
+    await execFileAsync(ffmpegBin, args, { timeout: 120000, maxBuffer: 50 * 1024 * 1024 });
 
     if (!fs.existsSync(finalFilePath)) {
       throw new Error('FFmpeg completed but output file was not created.');

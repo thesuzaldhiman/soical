@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { Readable } from 'stream';
 import { getMediaFromDb, saveMediaToDb } from '@/lib/db/mysql';
 
 const MIME_MAP: Record<string, string> = {
@@ -106,11 +105,43 @@ export async function GET(
 
     // Handle from DB buffer if file write failed
     if (!foundPath && dbBuffer) {
+      const totalSize = dbBuffer.length;
+      const range = request.headers.get('range');
+
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+
+        if (start >= totalSize || end >= totalSize || start > end) {
+          return new NextResponse('Requested range not satisfiable', {
+            status: 416,
+            headers: {
+              'Content-Range': `bytes */${totalSize}`,
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
+
+        const chunk = dbBuffer.subarray(start, end + 1);
+        return new NextResponse(new Uint8Array(chunk), {
+          status: 206,
+          headers: {
+            'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': String(chunk.length),
+            'Content-Type': mimeType,
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=86400',
+          },
+        });
+      }
+
       return new NextResponse(new Uint8Array(dbBuffer), {
         status: 200,
         headers: {
           'Content-Type': mimeType,
-          'Content-Length': String(dbBuffer.length),
+          'Content-Length': String(totalSize),
           'Accept-Ranges': 'bytes',
           'Access-Control-Allow-Origin': '*',
           'Cache-Control': 'public, max-age=31536000, immutable',
@@ -124,13 +155,13 @@ export async function GET(
       const totalSize = stats.size;
       const range = request.headers.get('range');
 
-      // Video & Audio HTTP Range Streaming (Required for Seeking and Safari playback)
+      // Video & Audio HTTP Range Streaming (Required for Seeking, Safari & Chrome smooth playback)
       if (range) {
         const parts = range.replace(/bytes=/, '').split('-');
         const start = parseInt(parts[0], 10);
         const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
 
-        if (start >= totalSize || end >= totalSize) {
+        if (start >= totalSize || end >= totalSize || start > end) {
           return new NextResponse('Requested range not satisfiable', {
             status: 416,
             headers: {
@@ -141,10 +172,15 @@ export async function GET(
         }
 
         const chunkSize = end - start + 1;
-        const fileStream = fs.createReadStream(foundPath, { start, end });
-        const webStream = Readable.toWeb(fileStream) as unknown as ReadableStream;
+        const chunkBuffer = Buffer.alloc(chunkSize);
+        const fd = fs.openSync(foundPath, 'r');
+        try {
+          fs.readSync(fd, chunkBuffer, 0, chunkSize, start);
+        } finally {
+          fs.closeSync(fd);
+        }
 
-        return new NextResponse(webStream, {
+        return new NextResponse(new Uint8Array(chunkBuffer), {
           status: 206,
           headers: {
             'Content-Range': `bytes ${start}-${end}/${totalSize}`,
