@@ -125,6 +125,7 @@ interface AppContextType {
   retryPost: (postId: string) => void;
   approvePost: (postId: string) => Promise<void> | void;
   deletePost: (postId: string, options?: { deleteFromFacebook?: boolean }) => Promise<{ success: boolean; message?: string }> | void;
+  deletePosts: (postIds: string[], options?: { deleteFromFacebook?: boolean }) => Promise<{ success: boolean; message?: string; deletedCount?: number }>;
   logs: LogEntry[];
   deleteLog: (logId: string) => Promise<{ success: boolean }>;
   clearAllLogs: () => Promise<{ success: boolean }>;
@@ -280,6 +281,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   retryPost: noop,
   approvePost: noop,
   deletePost: noop,
+  deletePosts: async () => ({ success: true, deletedCount: 0 }),
   logs: [],
   deleteLog: async () => ({ success: true }),
   clearAllLogs: async () => ({ success: true }),
@@ -2324,6 +2326,77 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return { success: true };
   };
 
+  const deletePosts = async (
+    postIds: string[],
+    options?: { deleteFromFacebook?: boolean }
+  ): Promise<{ success: boolean; message?: string; deletedCount?: number }> => {
+    if (!postIds || postIds.length === 0) return { success: true, deletedCount: 0 };
+    const deleteSet = new Set(postIds);
+
+    // Optional: Delete from Facebook Graph API if requested
+    if (options?.deleteFromFacebook) {
+      const postsToDelete = posts.filter((p) => deleteSet.has(p.id));
+      for (const p of postsToDelete) {
+        const fbResults = (p.results || []).filter((r) => r.platform === 'facebook' && r.externalPostId);
+        for (const res of fbResults) {
+          const matchingPage = pages.find((pg) => pg.id === res.pageId || pg.pageId === res.pageId);
+          try {
+            await fetch('/api/facebook/posts', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                externalPostId: res.externalPostId,
+                pageId: matchingPage?.pageId || matchingPage?.id || res.pageId,
+                accessToken: matchingPage?.accessToken,
+              }),
+            });
+          } catch {}
+        }
+      }
+    }
+
+    // Remove all from local React state
+    const remainingPosts = postsRef.current.filter((p) => !deleteSet.has(p.id));
+    postsRef.current = remainingPosts;
+    setPosts(remainingPosts);
+    setPostPerformances((prev) => prev.filter((perf) => !deleteSet.has(perf.postId)));
+
+    const cleanEmail = (user?.email || 'suzaldhiman@gmail.com').toLowerCase().trim();
+
+    // Clean from localStorage across all keys
+    const storageKey = getStorageKeyForEmail(cleanEmail);
+    const keysToClean = [storageKey, 'sap_saas_live_v1', 'sap_saas_app_state_v2'];
+    keysToClean.forEach((key) => {
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed.posts)) {
+            parsed.posts = parsed.posts.filter((p: any) => !deleteSet.has(p.id));
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
+        }
+      } catch {}
+    });
+
+    // Delete in bulk from MySQL database immediately AND sync remaining posts
+    try {
+      await fetch('/api/posts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          postIds: Array.from(deleteSet),
+        }),
+      });
+      syncToCloud(cleanEmail, { posts: remainingPosts }, user);
+    } catch (dbErr) {
+      console.warn('[deletePosts] Error deleting posts from MySQL:', dbErr);
+    }
+
+    return { success: true, deletedCount: deleteSet.size };
+  };
+
   const resolveMetaAppName = useCallback(
     (metaAppId?: string, fallbackName?: string): string => {
       const allApps = settings?.metaApps || [];
@@ -3844,6 +3917,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         retryPost,
         approvePost,
         deletePost,
+        deletePosts,
         logs,
         deleteLog,
         clearAllLogs,

@@ -72,6 +72,7 @@ function LibraryContent() {
     retryPost,
     approvePost,
     deletePost,
+    deletePosts,
     refreshPosts,
     syncPostInsights,
     isQueueProcessing,
@@ -95,6 +96,11 @@ function LibraryContent() {
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [approvingPostId, setApprovingPostId] = useState<string | null>(null);
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+
+  // Multi-selection & Bulk Deletion State
+  const [selectedPostIds, setSelectedPostIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
 
   // Helper to reliably find performance metrics for a post
   const getPostPerf = useCallback((post: Post) => {
@@ -317,6 +323,78 @@ function LibraryContent() {
       return matchesTab && matchesPlatform && matchesSearch;
     });
   }, [posts, activeTab, platformFilter, searchQuery, pages]);
+
+  // Clear selected posts when switching tabs or platform filter
+  useEffect(() => {
+    setSelectedPostIds(new Set());
+  }, [activeTab, platformFilter]);
+
+  const isAllSelected = useMemo(() => {
+    if (filteredPosts.length === 0) return false;
+    return filteredPosts.every((p) => selectedPostIds.has(p.id));
+  }, [filteredPosts, selectedPostIds]);
+
+  const isSomeSelected = useMemo(() => {
+    if (isAllSelected) return false;
+    return filteredPosts.some((p) => selectedPostIds.has(p.id));
+  }, [filteredPosts, selectedPostIds, isAllSelected]);
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedPostIds(new Set());
+    } else {
+      setSelectedPostIds(new Set(filteredPosts.map((p) => p.id)));
+    }
+  };
+
+  const handleToggleSelectPost = (postId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedPostIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) {
+        next.delete(postId);
+      } else {
+        next.add(postId);
+      }
+      return next;
+    });
+  };
+
+  const hasPublishedFbPostsInSelection = useMemo(() => {
+    return posts.some(
+      (p) =>
+        selectedPostIds.has(p.id) &&
+        p.status === 'published' &&
+        p.results?.some((r) => r.platform === 'facebook' && r.externalPostId)
+    );
+  }, [posts, selectedPostIds]);
+
+  const handleBulkDeleteConfirm = async (deleteFromFacebook: boolean) => {
+    if (selectedPostIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedPostIds);
+      const res = await deletePosts(idsToDelete, { deleteFromFacebook });
+      if (res.success) {
+        setActionSuccessMessage(
+          `Successfully removed ${res.deletedCount || idsToDelete.length} post${
+            idsToDelete.length > 1 ? 's' : ''
+          }${deleteFromFacebook ? ' (including Facebook)' : ''}!`
+        );
+      } else {
+        setActionSuccessMessage(res.message || 'Posts removed from Library.');
+      }
+      setTimeout(() => setActionSuccessMessage(null), 5000);
+      setSelectedPostIds(new Set());
+      setIsBulkDeleteModalOpen(false);
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      setActionSuccessMessage('Failed to delete selected posts.');
+      setTimeout(() => setActionSuccessMessage(null), 5000);
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   const tabCounts = {
     all: posts.length,
@@ -554,6 +632,53 @@ function LibraryContent() {
         </div>
       </div>
 
+      {/* Selection Control Bar */}
+      {filteredPosts.length > 0 && (
+        <div className="flex items-center justify-between gap-3 bg-white px-4 py-3 rounded-2xl border border-[#EEF1F6] shadow-2xs">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = isSomeSelected;
+                }}
+                onChange={handleToggleSelectAll}
+                className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer accent-slate-900"
+              />
+              <span className="text-xs font-bold text-slate-800">
+                Select All {activeTab === 'all' ? 'Posts' : activeTab === 'draft' ? 'Drafts' : `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Posts`} ({filteredPosts.length})
+              </span>
+            </label>
+            {selectedPostIds.size > 0 && (
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-900 text-white">
+                {selectedPostIds.size} of {filteredPosts.length} selected
+              </span>
+            )}
+          </div>
+
+          {selectedPostIds.size > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPostIds(new Set())}
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 px-2.5 py-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Clear Selection
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedPostIds.size})</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Posts Display: List View vs Grid View */}
       {filteredPosts.length === 0 ? (
         <div className="bg-white rounded-2xl border border-[#EEF1F6] p-12 text-center space-y-2">
@@ -579,12 +704,17 @@ function LibraryContent() {
           {filteredPosts.map((post) => {
             const isApproving = approvingPostId === post.id;
             const perf = getPostPerf(post);
+            const isSelected = selectedPostIds.has(post.id);
 
             return (
               <div
                 key={post.id}
                 onClick={() => setSelectedPost(post)}
-                className="bg-white rounded-2xl border border-[#EEF1F6] overflow-hidden shadow-2xs hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
+                className={`rounded-2xl border ${
+                  isSelected
+                    ? 'bg-slate-50/50 border-slate-900 ring-2 ring-slate-900 shadow-md'
+                    : 'bg-white border-[#EEF1F6] hover:border-slate-300 shadow-2xs hover:shadow-md'
+                } overflow-hidden transition-all flex flex-col justify-between cursor-pointer group relative`}
               >
                 <div>
                   {/* Media Thumbnail Container */}
@@ -617,8 +747,22 @@ function LibraryContent() {
                       </div>
                     )}
 
-                    {/* Status Badge in Top Left */}
-                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                    {/* Status Badge & Checkbox in Top Left */}
+                    <div
+                      className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10"
+                      onClick={(e) => handleToggleSelectPost(post.id, e)}
+                    >
+                      <div
+                        className={`w-5 h-5 rounded-md flex items-center justify-center cursor-pointer transition-all border shadow-xs ${
+                          isSelected
+                            ? 'bg-slate-900 border-slate-900 text-white'
+                            : 'bg-black/60 hover:bg-black/80 border-white/40 text-transparent'
+                        }`}
+                        title={isSelected ? 'Deselect post' : 'Select post'}
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3] text-white" />
+                      </div>
+
                       <span
                         className={`text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-xs backdrop-blur-md ${statusBadge(
                           post.status
@@ -770,16 +914,38 @@ function LibraryContent() {
           {filteredPosts.map((post) => {
             const isApproving = approvingPostId === post.id;
             const perf = getPostPerf(post);
+            const isSelected = selectedPostIds.has(post.id);
 
             return (
               <div
                 key={post.id}
                 onClick={() => setSelectedPost(post)}
-                className="bg-white rounded-2xl border border-[#EEF1F6] p-4 sm:p-5 shadow-2xs hover:border-slate-300 hover:shadow-xs transition-all space-y-3 cursor-pointer group"
+                className={`rounded-2xl border p-4 sm:p-5 transition-all space-y-3 cursor-pointer group ${
+                  isSelected
+                    ? 'bg-slate-50/80 border-slate-900 ring-2 ring-slate-900 shadow-xs'
+                    : 'bg-white border-[#EEF1F6] shadow-2xs hover:border-slate-300 hover:shadow-xs'
+                }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  {/* Left: Thumbnail & Message */}
-                  <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                  {/* Left: Checkbox + Thumbnail & Message */}
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    {/* Multi-selection Checkbox */}
+                    <div
+                      className="pt-2 sm:pt-2.5 shrink-0"
+                      onClick={(e) => handleToggleSelectPost(post.id, e)}
+                    >
+                      <div
+                        className={`w-5 h-5 rounded-md flex items-center justify-center cursor-pointer transition-all border ${
+                          isSelected
+                            ? 'bg-slate-900 border-slate-900 text-white'
+                            : 'bg-white hover:bg-slate-100 border-slate-300 text-transparent'
+                        }`}
+                        title={isSelected ? 'Deselect post' : 'Select post'}
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3] text-white" />
+                      </div>
+                    </div>
+
                     {/* Media Thumbnail Container */}
                     {post.mediaUrl || post.thumbnailUrl ? (
                       <div className="w-24 h-18 sm:w-28 sm:h-20 rounded-xl overflow-hidden bg-slate-950 border border-slate-200 relative group/media shrink-0 flex items-center justify-center shadow-2xs">
@@ -1186,6 +1352,99 @@ function LibraryContent() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* BULK DELETION CONFIRMATION MODAL                                          */}
+      {/* ========================================================================= */}
+      {isBulkDeleteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
+          onClick={() => !isBulkDeleting && setIsBulkDeleteModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-[#EEF1F6] shadow-2xl max-w-md w-full p-6 space-y-4 animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <Trash2 className="w-6 h-6 stroke-[2.2]" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-extrabold text-base text-slate-900">
+                Delete {selectedPostIds.size} Selected Post{selectedPostIds.size > 1 ? 's' : ''}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Choose how you want to delete these {selectedPostIds.size} posts.
+              </p>
+            </div>
+
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 font-medium leading-relaxed">
+              <strong>Notice:</strong> &quot;Remove from Library Only&quot; will cleanly delete these posts from your app database and library, while keeping any live published posts on Facebook/channels safe and untouched.
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={() => handleBulkDeleteConfirm(false)}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-60"
+              >
+                {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>Remove {selectedPostIds.size} Posts from Library Only (Safe)</span>
+              </button>
+
+              {hasPublishedFbPostsInSelection && (
+                <button
+                  type="button"
+                  disabled={isBulkDeleting}
+                  onClick={() => handleBulkDeleteConfirm(true)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-60"
+                >
+                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  <span>Also Delete Published Posts from Facebook</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={() => setIsBulkDeleteModalOpen(false)}
+                className="w-full py-2 px-4 rounded-xl bg-[#F8F9FD] hover:bg-slate-200 text-slate-600 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Bottom Action Bar */}
+      {selectedPostIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-800 flex items-center gap-4 animate-scale-up">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#FF007A] animate-pulse" />
+            <span className="text-xs font-bold">
+              {selectedPostIds.size} post{selectedPostIds.size > 1 ? 's' : ''} selected
+            </span>
+          </div>
+          <div className="h-4 w-px bg-slate-700" />
+          <button
+            type="button"
+            onClick={() => setSelectedPostIds(new Set())}
+            className="text-xs text-slate-300 hover:text-white font-medium cursor-pointer"
+          >
+            Deselect
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsBulkDeleteModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete Selected</span>
+          </button>
         </div>
       )}
     </div>
