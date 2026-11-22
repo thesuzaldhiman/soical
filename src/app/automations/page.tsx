@@ -168,7 +168,12 @@ function AutomationsContent() {
   const [linkInComment, setLinkInComment] = useState(true);
   const [maxItems, setMaxItems] = useState(2);
   const [intervalMinutes, setIntervalMinutes] = useState(15);
-  const [postStatus, setPostStatus] = useState<'published' | 'draft'>('published');
+  const [postStatus, setPostStatus] = useState<'published' | 'draft' | 'drip_queue'>('published');
+  const [dripIntervalMin, setDripIntervalMin] = useState<number>(27);
+  const [dripIntervalMax, setDripIntervalMax] = useState<number>(33);
+  const [enableNightSleep, setEnableNightSleep] = useState<boolean>(true);
+  const [activeHoursStart, setActiveHoursStart] = useState<string>('07:00');
+  const [activeHoursEnd, setActiveHoursEnd] = useState<string>('23:00');
 
   // Auto-sync missing categories when opening Website to FB modal
   React.useEffect(() => {
@@ -301,7 +306,12 @@ function AutomationsContent() {
     setAutoGenerateImage(auto.autoGenerateImage ?? true);
     setSelectedSigTemplateId(auto.sigTemplateId || sigTemplates[0]?.id || 'tmpl_1');
     setLinkInComment(auto.linkInComment ?? true);
-    setPostStatus(auto.postStatus || 'published');
+    setPostStatus((auto.publishingMode || auto.postStatus || 'published') as any);
+    setDripIntervalMin(auto.dripIntervalMinMinutes ?? 27);
+    setDripIntervalMax(auto.dripIntervalMaxMinutes ?? 33);
+    setEnableNightSleep(auto.enableNightSleep !== false);
+    setActiveHoursStart(auto.activeHoursStart || '07:00');
+    setActiveHoursEnd(auto.activeHoursEnd || '23:00');
     setMaxItems(auto.maxItemsPerRun || 2);
     setPreviewItems([]);
     setPreviewError(null);
@@ -358,6 +368,12 @@ function AutomationsContent() {
           sigTemplateId: selectedSigTemplateId,
           linkInComment,
           postStatus,
+          publishingMode: postStatus,
+          dripIntervalMinMinutes: Number(dripIntervalMin) || 27,
+          dripIntervalMaxMinutes: Number(dripIntervalMax) || 33,
+          enableNightSleep,
+          activeHoursStart: activeHoursStart || '07:00',
+          activeHoursEnd: activeHoursEnd || '23:00',
           maxItemsPerRun: maxItems,
         });
         setTestFeedSuccess(`Website to FB rule "${finalName}" updated successfully!`);
@@ -378,6 +394,12 @@ function AutomationsContent() {
           sigTemplateId: selectedSigTemplateId,
           linkInComment,
           postStatus,
+          publishingMode: postStatus,
+          dripIntervalMinMinutes: Number(dripIntervalMin) || 27,
+          dripIntervalMaxMinutes: Number(dripIntervalMax) || 33,
+          enableNightSleep,
+          activeHoursStart: activeHoursStart || '07:00',
+          activeHoursEnd: activeHoursEnd || '23:00',
           maxItemsPerRun: maxItems,
         });
         setTestFeedSuccess(`Website to FB rule "${finalName}" activated! Ready for auto-dispatch.`);
@@ -406,6 +428,12 @@ function AutomationsContent() {
         sigTemplateId: selectedSigTemplateId,
         linkInComment,
         postStatus,
+        publishingMode: postStatus,
+        dripIntervalMinMinutes: Number(dripIntervalMin) || 27,
+        dripIntervalMaxMinutes: Number(dripIntervalMax) || 33,
+        enableNightSleep,
+        activeHoursStart: activeHoursStart || '07:00',
+        activeHoursEnd: activeHoursEnd || '23:00',
         maxItemsPerRun: maxItems,
       });
       setTestFeedSuccess(`Feed "${feedName.trim()}" successfully updated!`);
@@ -422,6 +450,12 @@ function AutomationsContent() {
         sigTemplateId: selectedSigTemplateId,
         linkInComment,
         postStatus,
+        publishingMode: postStatus,
+        dripIntervalMinMinutes: Number(dripIntervalMin) || 27,
+        dripIntervalMaxMinutes: Number(dripIntervalMax) || 33,
+        enableNightSleep,
+        activeHoursStart: activeHoursStart || '07:00',
+        activeHoursEnd: activeHoursEnd || '23:00',
         maxItemsPerRun: maxItems,
         processedGuids: [],
       });
@@ -983,12 +1017,18 @@ function AutomationsContent() {
 
                             <span
                               className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
-                                auto.postStatus === 'draft'
+                                auto.publishingMode === 'drip_queue' || auto.postStatus === 'drip_queue'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : auto.postStatus === 'draft'
                                   ? 'bg-purple-50 text-purple-700 border-purple-200'
                                   : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               }`}
                             >
-                              {auto.postStatus === 'draft' ? '📝 Draft Mode' : '⚡ Auto-Publish'}
+                              {auto.publishingMode === 'drip_queue' || auto.postStatus === 'drip_queue'
+                                ? `⏳ Drip Queue (${auto.dripIntervalMinMinutes || 27}–${auto.dripIntervalMaxMinutes || 33}m)`
+                                : auto.postStatus === 'draft'
+                                ? '📝 Draft Mode'
+                                : '⚡ Auto-Publish'}
                             </span>
                           </div>
                         </div>
@@ -1546,25 +1586,158 @@ function AutomationsContent() {
                       </label>
                     </div>
 
-                    <div className="pt-2 border-t border-[#EEF1F6] grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Publishing Action (Mode)
-                        </label>
-                        <select
-                          value={postStatus}
-                          onChange={(e) => setPostStatus(e.target.value as any)}
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-400"
-                        >
-                          <option value="published">⚡ Auto-Publish Live (Direct to FB)</option>
-                          <option value="draft">📝 Save as Draft (Approval Queue in Library)</option>
-                        </select>
-                        <p className="text-[10px] text-slate-500 mt-1">
-                          {postStatus === 'published'
-                            ? 'WordPress se naya post aate hi turant Facebook pages par live publish ho jayega.'
-                            : 'AI template card image generate hogi aur Post Library me draft banke review/schedule ke liye aayegi.'}
-                        </p>
+                    <div className="pt-2 border-t border-[#EEF1F6] space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            Publishing Action (Mode)
+                          </label>
+                          <select
+                            value={postStatus}
+                            onChange={(e) => setPostStatus(e.target.value as any)}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-400"
+                          >
+                            <option value="published">⚡ Auto-Publish Live (Immediate)</option>
+                            <option value="drip_queue">⏳ Smart Drip Queue (Auto-Interval Schedule)</option>
+                            <option value="draft">📝 Save as Draft (Approval Queue in Library)</option>
+                          </select>
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            {postStatus === 'published' && 'WordPress se naya post aate hi turant Facebook pages par live publish ho jayega.'}
+                            {postStatus === 'drip_queue' && `Incoming posts turant publish hone ke bajaye ${dripIntervalMin}–${dripIntervalMax} min ke random gap par queue hokar lagti jayengi.`}
+                            {postStatus === 'draft' && 'AI template card image generate hogi aur Post Library me draft banke review ke liye aayegi.'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            Automation Rule Name
+                          </label>
+                          <input
+                            type="text"
+                            value={feedName}
+                            onChange={(e) => setFeedName(e.target.value)}
+                            placeholder={`${activeWpAccount?.name || 'WordPress'} [${selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory}] ➔ Facebook`}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 focus:outline-none focus:border-blue-400"
+                          />
+                        </div>
                       </div>
+
+                      {/* ── SMART DRIP QUEUE SETTINGS CARD ── */}
+                      {postStatus === 'drip_queue' && (
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-white border border-blue-200/90 shadow-2xs space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
+                                ⏳
+                              </span>
+                              <div>
+                                <h4 className="text-xs font-extrabold text-blue-950">
+                                  Smart Drip Queue Settings
+                                </h4>
+                                <p className="text-[10px] text-blue-700 font-medium">
+                                  Sequential rolling slots with natural anti-spam random timing
+                                </p>
+                              </div>
+                            </div>
+
+                            <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-100/80 px-2.5 py-0.5 rounded-full border border-blue-200">
+                              Gap: {dripIntervalMin}–{dripIntervalMax} min
+                            </span>
+                          </div>
+
+                          {/* Interval Min - Max inputs */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                                Minimum Interval (Min Minutes)
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={360}
+                                  value={dripIntervalMin}
+                                  onChange={(e) => setDripIntervalMin(Math.max(1, parseInt(e.target.value) || 1))}
+                                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-400"
+                                />
+                                <span className="absolute right-3 top-1.5 text-[11px] font-semibold text-slate-400 pointer-events-none">
+                                  min
+                                </span>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                                Maximum Interval (Max Minutes)
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min={dripIntervalMin}
+                                  max={720}
+                                  value={dripIntervalMax}
+                                  onChange={(e) => setDripIntervalMax(Math.max(dripIntervalMin, parseInt(e.target.value) || dripIntervalMin))}
+                                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-400"
+                                />
+                                <span className="absolute right-3 top-1.5 text-[11px] font-semibold text-slate-400 pointer-events-none">
+                                  min
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <p className="text-[10px] text-slate-500 italic">
+                            💡 Har nayi aane wali post pichli scheduled post ke {dripIntervalMin} se {dripIntervalMax} minute ke beech random time par agle slot me lagti jayegi.
+                          </p>
+
+                          {/* Night Sleep & Active Hours */}
+                          <div className="pt-2 border-t border-blue-100 flex flex-col gap-2.5">
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={enableNightSleep}
+                                onChange={(e) => setEnableNightSleep(e.target.checked)}
+                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                              />
+                              <span className="text-xs font-bold text-slate-800">
+                                🌙 Enable Night Sleep (रात के समय ऑटो-पॉज़)
+                              </span>
+                            </label>
+
+                            {enableNightSleep && (
+                              <div className="pl-6 grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-600 block mb-0.5">
+                                    Active Start Time (सुबह शुरू)
+                                  </label>
+                                  <input
+                                    type="time"
+                                    value={activeHoursStart}
+                                    onChange={(e) => setActiveHoursStart(e.target.value)}
+                                    className="w-full px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-600 block mb-0.5">
+                                    Active End Time (रात विराम)
+                                  </label>
+                                  <input
+                                    type="time"
+                                    value={activeHoursEnd}
+                                    onChange={(e) => setActiveHoursEnd(e.target.value)}
+                                    className="w-full px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800"
+                                  />
+                                </div>
+
+                                <p className="col-span-full text-[10px] text-blue-800 font-medium">
+                                  😴 {activeHoursEnd} ke baad aane wali posts agle din subah {activeHoursStart} baje se agle slots me lagengi.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 block mb-1">
@@ -1836,6 +2009,7 @@ function AutomationsContent() {
                         className="w-full px-2.5 py-1.5 rounded-lg border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-semibold text-slate-800"
                       >
                         <option value="published">⚡ Auto-Publish Live</option>
+                        <option value="drip_queue">⏳ Smart Drip Queue</option>
                         <option value="draft">📝 Save as Draft</option>
                       </select>
                     </div>

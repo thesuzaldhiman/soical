@@ -422,7 +422,13 @@ export interface AutomationFeed {
   commentTemplate?: string;
   pageIntervalMinSeconds?: number;
   pageIntervalMaxSeconds?: number;
-  postStatus?: 'published' | 'draft';
+  postStatus?: 'published' | 'draft' | 'drip_queue';
+  publishingMode?: 'published' | 'draft' | 'drip_queue';
+  dripIntervalMinMinutes?: number; // e.g. 27
+  dripIntervalMaxMinutes?: number; // e.g. 33
+  enableNightSleep?: boolean; // Pause queuing during night hours
+  activeHoursStart?: string; // e.g. "07:00"
+  activeHoursEnd?: string; // e.g. "23:00"
   processedGuids?: string[]; // Deduplication history
   lastDispatchedTitle?: string;
   maxItemsPerRun?: number;

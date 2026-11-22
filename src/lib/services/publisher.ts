@@ -534,9 +534,18 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
           const postUrl = `https://facebook.com/${postId}`;
 
           // First comment auto-post with cluster propagation & ID candidate fallback
-          const commentTargetIds = Array.from(
-            new Set([fbResData.id, fbResData.post_id].filter(Boolean) as string[])
-          );
+          // For Facebook Page posts, comments work best on:
+          // 1. `fbResData.post_id` (e.g. `pageId_storyId` or feed story ID)
+          // 2. `${pageId}_${fbResData.id}` if id doesn't have pageId prefix
+          // 3. `fbResData.id` (photo or video object node)
+          // 4. If post_id has an underscore, also try the right part (isolated story ID)
+          const rawCandidates: (string | undefined)[] = [
+            fbResData.post_id,
+            pageId && fbResData.id && !String(fbResData.id).includes('_') ? `${pageId}_${fbResData.id}` : undefined,
+            fbResData.id,
+            fbResData.post_id && String(fbResData.post_id).includes('_') ? String(fbResData.post_id).split('_')[1] : undefined,
+          ];
+          const commentTargetIds = Array.from(new Set(rawCandidates.filter(Boolean) as string[]));
 
           let commentRes: { success: boolean; commentId?: string; error?: string } | undefined;
           if (commentText && commentTargetIds.length > 0) {

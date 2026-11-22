@@ -104,6 +104,95 @@ function saveLocalPosts(posts: Post[]) {
   }
 }
 
+interface DripSlotOptions {
+  existingPosts: Post[];
+  targetPageIds: string[];
+  minMinutes?: number;
+  maxMinutes?: number;
+  enableNightSleep?: boolean;
+  activeHoursStart?: string;
+  activeHoursEnd?: string;
+}
+
+function calculateNextDripSlot(options: DripSlotOptions): {
+  scheduledAt: Date;
+  intervalMinutes: number;
+  shiftedForNight: boolean;
+} {
+  const minMin = Math.max(1, Number(options.minMinutes) || 27);
+  const maxMin = Math.max(minMin, Number(options.maxMinutes) || 33);
+  const randIntervalMinutes = Math.floor(Math.random() * (maxMin - minMin + 1)) + minMin;
+
+  const now = Date.now();
+  const targetPageSet = new Set(options.targetPageIds || []);
+
+  // 1. Find the latest scheduled post in the future for any of these target pages
+  let latestScheduledMs = 0;
+  if (Array.isArray(options.existingPosts)) {
+    for (const p of options.existingPosts) {
+      if (p.status !== 'scheduled' || !p.scheduledAt) continue;
+      const postPageIds = Array.isArray(p.pageIds) ? p.pageIds : [];
+      const hasOverlap = targetPageSet.size === 0 || postPageIds.some((pid) => targetPageSet.has(pid));
+      if (!hasOverlap) continue;
+
+      const schedMs = new Date(p.scheduledAt).getTime();
+      if (!isNaN(schedMs) && schedMs > latestScheduledMs) {
+        latestScheduledMs = schedMs;
+      }
+    }
+  }
+
+  // 2. Calculate candidate slot timestamp
+  let candidateMs = 0;
+  if (latestScheduledMs > now) {
+    candidateMs = latestScheduledMs + randIntervalMinutes * 60 * 1000;
+  } else {
+    candidateMs = now + randIntervalMinutes * 60 * 1000;
+  }
+
+  let shiftedForNight = false;
+
+  // 3. Handle Night Sleep / Active Hours (Indian Standard Time: UTC+5:30)
+  if (options.enableNightSleep !== false) {
+    const startStr = options.activeHoursStart || '07:00';
+    const endStr = options.activeHoursEnd || '23:00';
+
+    const [startH, startM] = startStr.split(':').map((v) => parseInt(v, 10) || 0);
+    const [endH, endM] = endStr.split(':').map((v) => parseInt(v, 10) || 0);
+
+    const startMinuteOfDay = startH * 60 + startM;
+    const endMinuteOfDay = endH * 60 + endM;
+
+    // Convert candidateMs to IST Date components (UTC + 5.5 hours)
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const istTime = new Date(candidateMs + IST_OFFSET_MS);
+
+    const istHour = istTime.getUTCHours();
+    const istMinute = istTime.getUTCMinutes();
+    const candidateMinuteOfDay = istHour * 60 + istMinute;
+
+    if (candidateMinuteOfDay >= endMinuteOfDay || candidateMinuteOfDay < startMinuteOfDay) {
+      shiftedForNight = true;
+      const jitterMs = Math.floor(Math.random() * 6) * 60 * 1000; // 0-5 mins natural human jitter
+
+      if (candidateMinuteOfDay >= endMinuteOfDay) {
+        // Shift to tomorrow's active start time
+        istTime.setUTCDate(istTime.getUTCDate() + 1);
+      }
+      istTime.setUTCHours(startH, startM, 0, 0);
+
+      // Convert back from IST to UTC ms
+      candidateMs = istTime.getTime() - IST_OFFSET_MS + jitterMs;
+    }
+  }
+
+  return {
+    scheduledAt: new Date(candidateMs),
+    intervalMinutes: randIntervalMinutes,
+    shiftedForNight,
+  };
+}
+
 async function persistPosts(newPosts: Post[], email: string = 'suzaldhiman@gmail.com') {
   const sanitizedNewPosts = newPosts.map((p) => sanitizePostMedia(p));
   const localCurrent = getLocalPosts();
@@ -583,6 +672,7 @@ export async function POST(request: NextRequest) {
     const allCategories: PageCategory[] = userState.categories || [];
     const allAutomations: AutomationFeed[] = (userState as any).automations || [];
     const allSigTemplates: SigTemplate[] = userState.sigTemplates || INITIAL_SIG_TEMPLATES;
+    const allPosts: Post[] = userState.posts || [];
 
     const postCategories = categories.map((c: string) => c.toLowerCase().trim());
 
@@ -593,6 +683,7 @@ export async function POST(request: NextRequest) {
     let addFirstComment = true;
     let matchedRuleName = '';
     let isDraftMode = false;
+    let isDripQueueMode = false;
     let selectedSigTemplateId: string | undefined = undefined;
     let matchingRule: AutomationFeed | undefined = undefined;
 
@@ -636,10 +727,13 @@ export async function POST(request: NextRequest) {
         dispatchFormat = matchingRule.format || (matchingRule.autoGenerateImage ? 'ai_image' : 'featured_image');
         enableMultiTitles = matchingRule.enableMultiTitle !== false;
         addFirstComment = matchingRule.linkInComment ?? true;
-        isDraftMode = matchingRule.postStatus === 'draft';
+        isDraftMode = matchingRule.postStatus === 'draft' || matchingRule.publishingMode === 'draft';
         if (payload.test === true || payload.is_test === true || payload.draft === true || payload.status === 'draft') {
           isDraftMode = true;
         }
+        isDripQueueMode =
+          !isDraftMode &&
+          (matchingRule.postStatus === 'drip_queue' || matchingRule.publishingMode === 'drip_queue');
         selectedSigTemplateId = matchingRule.sigTemplateId;
 
         if (Array.isArray(matchingRule.targetPageIds) && matchingRule.targetPageIds.length > 0) {
@@ -1067,6 +1161,85 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // ── SMART DRIP QUEUE MODE ──
+      // Dynamic rolling interval (e.g. 27–33 min random gap) with Night Sleep active hours protection
+      if (isDripQueueMode) {
+        const slotInfo = calculateNextDripSlot({
+          existingPosts: [...allPosts, ...pagePostsToPersist],
+          targetPageIds: [page.id],
+          minMinutes: matchingRule?.dripIntervalMinMinutes ?? 27,
+          maxMinutes: matchingRule?.dripIntervalMaxMinutes ?? 33,
+          enableNightSleep: matchingRule?.enableNightSleep !== false,
+          activeHoursStart: matchingRule?.activeHoursStart || '07:00',
+          activeHoursEnd: matchingRule?.activeHoursEnd || '23:00',
+        });
+
+        // If multi-page staggering is configured (i > 0), stagger across pages
+        let finalSlotTime = slotInfo.scheduledAt;
+        if (i > 0 && intervalMaxSeconds > 0) {
+          const randDelaySec =
+            Math.floor(
+              Math.random() * (Math.max(intervalMinSeconds, intervalMaxSeconds) - intervalMinSeconds + 1)
+            ) + intervalMinSeconds;
+          finalSlotTime = new Date(finalSlotTime.getTime() + randDelaySec * 1000);
+        }
+
+        const scheduledAtIso = finalSlotTime.toISOString();
+
+        const dripPost: Post = {
+          id: `post_wp_drip_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`,
+          workspaceId: 'ws_default',
+          postType: postTypeToSend,
+          title: assignedTitle,
+          message,
+          mediaUrl: mediaToSend || undefined,
+          thumbnailUrl: mediaToSend || imageUrl || undefined,
+          featuredImageUrl: imageUrl || undefined,
+          isAiGenerated: dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel',
+          sigTemplateId: selectedSigTemplateId || templateToUse?.id,
+          linkUrl: linkToSend || undefined,
+          commentText: commentText || undefined,
+          pageIds: [page.id], // Strictly isolated to this page!
+          status: 'scheduled',
+          scheduledAt: scheduledAtIso,
+          intervalMinSeconds: (matchingRule?.dripIntervalMinMinutes ?? 27) * 60,
+          intervalMaxSeconds: (matchingRule?.dripIntervalMaxMinutes ?? 33) * 60,
+          results: [
+            {
+              pageId: page.id,
+              platform: page.platform as any,
+              pageName: page.name,
+              status: 'scheduled',
+              titleUsed: assignedTitle,
+              subtitleUsed: assignedSubtitle,
+              mediaUrl: mediaToSend,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        pagePostsToPersist.push(dripPost);
+        dispatchResults.push({
+          pageId: page.id,
+          pageName: page.name,
+          platform: page.platform,
+          titleUsed: assignedTitle,
+          subtitleUsed: assignedSubtitle,
+          titleIndex: i + 1,
+          isUniqueVariation: !isFallbackDefaultImage,
+          isFallbackDefaultImage,
+          mediaUrl: mediaToSend,
+          status: 'scheduled',
+          scheduledAt: scheduledAtIso,
+          dripIntervalMinutes: slotInfo.intervalMinutes,
+          shiftedForNight: slotInfo.shiftedForNight,
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
       // MULTI-PAGE STAGGERED INTERVAL:
       // If i > 0 and intervalMaxSeconds > 0, schedule this page in MySQL queue rather than immediate synchronous dispatch
       if (i > 0 && intervalMaxSeconds > 0) {
@@ -1264,18 +1437,22 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      dispatched: !isDraftMode,
+      dispatched: !isDraftMode && !isDripQueueMode,
       isDraft: isDraftMode,
+      isDripQueue: isDripQueueMode,
       ruleMatched: matchedRuleName,
       dispatchFormat,
       message: isDraftMode
         ? `Ingested and saved as Draft in Post Library for review/schedule with AI Card image (${matchedRuleName}).`
+        : isDripQueueMode
+        ? `Ingested & queued into Smart Drip Schedule (${dispatchResults[0]?.dripIntervalMinutes || 30}m interval) for ${targetPages.length} pages (${matchedRuleName}).`
         : `Ingested & dispatched to ${targetPages.length} pages (${matchedRuleName}) with ${Math.max(1, incomingVariations.length, rawSocialTitles.length)} title variations.`,
       mainTitle,
       totalVariations: Math.max(1, incomingVariations.length, rawSocialTitles.length),
       assignedPagesCount: targetPages.length,
       firstCommentEnabled: addFirstComment,
       dispatchedCount: dispatchResults.filter((r) => r.status === 'success').length,
+      queuedCount: dispatchResults.filter((r) => r.status === 'scheduled').length,
       results: dispatchResults,
       queuedAt: new Date().toISOString(),
     });
