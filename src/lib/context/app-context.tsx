@@ -1993,6 +1993,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     dispatchingQueueIdsRef.current.add(postId);
 
+    const cleanUserEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
+
+    // 1. ATOMIC CLOUD LOCK: Try to lock this post in MySQL before dispatching to Facebook!
+    // If the server cron already processed or is processing it, this lock fails (409 Conflict), preventing double post!
+    try {
+      const lockRes = await fetch('/api/posts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanUserEmail,
+          postId,
+          expectedStatus: 'scheduled',
+          updates: { status: 'publishing' },
+        }),
+      });
+
+      if (!lockRes.ok) {
+        const lockData = await lockRes.json().catch(() => ({}));
+        if (lockRes.status === 409 || lockData.locked) {
+          console.warn(`[Client Queue] Post ${postId} already locked/dispatched by server cron. Skipping client dispatch.`);
+          // Sync local status
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId ? { ...p, status: lockData.currentStatus || 'published' } : p
+            )
+          );
+          dispatchingQueueIdsRef.current.delete(postId);
+          return false;
+        }
+      }
+    } catch (lockErr) {
+      console.warn('[Client Queue] Lock verification network error, continuing with local lock:', lockErr);
+    }
+
     // Immediately mark status as 'publishing' in UI
     setPosts((prev) =>
       prev.map((p) => (p.id === postId ? { ...p, status: 'publishing' } : p))

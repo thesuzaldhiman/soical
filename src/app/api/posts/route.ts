@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { postId, updates } = body;
+    const { postId, updates, expectedStatus } = body;
     const email = resolveEmail(request, body.email);
 
     if (!postId) {
@@ -146,6 +146,24 @@ export async function PATCH(request: NextRequest) {
     let postFound = false;
     let updatedPost: Post | null = null;
     const sanitizedUpdates = updates ? sanitizePostMedia(updates) : {};
+
+    const targetPost = currentPosts.find((p) => p.id === postId);
+    if (!targetPost) {
+      return NextResponse.json({ success: false, error: `Post ${postId} not found` }, { status: 404 });
+    }
+
+    // Strict Lock Check: If expectedStatus is specified and does not match, reject to prevent race condition!
+    if (expectedStatus && targetPost.status !== expectedStatus) {
+      return NextResponse.json(
+        {
+          success: false,
+          locked: true,
+          error: `Post status is already "${targetPost.status}", expected "${expectedStatus}". Dispatch locked by another runner.`,
+          currentStatus: targetPost.status,
+        },
+        { status: 409 }
+      );
+    }
 
     const newPosts = currentPosts.map((p) => {
       if (p.id === postId) {

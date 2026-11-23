@@ -182,6 +182,17 @@ async function handleProcessQueue(request: NextRequest) {
           continue;
         }
 
+        // IMMEDIATELY MARK STATUS AS 'publishing' in DB row so concurrent browser tab checks see it as non-scheduled
+        posts[i] = {
+          ...post,
+          status: 'publishing',
+          updatedAt: new Date().toISOString(),
+        };
+        await pool.query(
+          'UPDATE app_user_data SET posts = ?, updated_at = NOW() WHERE email = ?',
+          [JSON.stringify(posts), email]
+        ).catch(() => {});
+
         const targetsPayload: PublishTarget[] = finalTargets.map((pg: any) => ({
           id: pg.id,
           platform: pg.platform,
