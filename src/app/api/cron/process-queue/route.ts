@@ -95,13 +95,48 @@ async function handleProcessQueue(request: NextRequest) {
 
       let userModified = false;
 
-      // Find due scheduled posts
+      // Track last published/dispatched time per target page in this run or historically
+      // to guarantee minimum gap (e.g. 25 minutes) between posts on the exact same page
+      const pageLastPublishedMs = new Map<string, number>();
+
+      // Pre-populate pageLastPublishedMs with the latest published timestamp for each page
+      for (const p of posts) {
+        if (p.status === 'published' && p.publishedAt) {
+          const pubMs = new Date(p.publishedAt).getTime();
+          if (!isNaN(pubMs)) {
+            const pids: string[] = Array.isArray(p.pageIds) ? p.pageIds : [];
+            for (const pid of pids) {
+              if (!pageLastPublishedMs.has(pid) || pubMs > (pageLastPublishedMs.get(pid) || 0)) {
+                pageLastPublishedMs.set(pid, pubMs);
+              }
+            }
+          }
+        }
+      }
+
+      // Sort posts chronologically by scheduledAt so oldest due posts get processed first
+      // We collect due post indices
+      const dueIndices: number[] = [];
       for (let i = 0; i < posts.length; i++) {
         const post = posts[i];
         if (post.status !== 'scheduled' || !post.scheduledAt) continue;
-
         const scheduledTime = new Date(post.scheduledAt).getTime();
-        if (isNaN(scheduledTime) || scheduledTime > now) continue;
+        if (!isNaN(scheduledTime) && scheduledTime <= now) {
+          dueIndices.push(i);
+        }
+      }
+
+      // Sort due indices by scheduledAt ascending
+      dueIndices.sort((a, b) => {
+        const timeA = new Date(posts[a].scheduledAt).getTime();
+        const timeB = new Date(posts[b].scheduledAt).getTime();
+        return timeA - timeB;
+      });
+
+      // Find due scheduled posts
+      for (const i of dueIndices) {
+        const post = posts[i];
+        if (post.status !== 'scheduled') continue;
 
         // Due post found! Dispatch it strictly to intended target page(s)
         const targetPages = Array.isArray(pages)
@@ -115,6 +150,37 @@ async function handleProcessQueue(request: NextRequest) {
         }
 
         const finalTargets = targetPages.length > 0 ? targetPages : (Array.isArray(pages) && (!post.pageIds || post.pageIds.length === 0) ? pages : []);
+        const targetIds: string[] = finalTargets.map((pg: any) => pg.id || pg.pageId);
+
+        // --- ANTI-BURST PER-PAGE RATE LIMITING ---
+        // Minimum gap between posts on the exact same page is 20 minutes (1200000 ms)
+        // If another post was published to this page recently (or within this cron batch),
+        // we reschedule this backlogged post to next available rolling slot instead of flooding!
+        const MIN_PAGE_GAP_MS = 20 * 60 * 1000;
+        let isThrottled = false;
+        let maxRecentPubMs = 0;
+
+        for (const pid of targetIds) {
+          const lastPub = pageLastPublishedMs.get(pid);
+          if (lastPub && (now - lastPub) < MIN_PAGE_GAP_MS) {
+            isThrottled = true;
+            if (lastPub > maxRecentPubMs) maxRecentPubMs = lastPub;
+          }
+        }
+
+        if (isThrottled) {
+          // Reschedule this post into the future (25-30 mins after the last publish or now)
+          const rescheduleDelayMin = Math.floor(Math.random() * 6) + 25; // 25 to 30 mins
+          const newScheduledMs = Math.max(now, maxRecentPubMs) + rescheduleDelayMin * 60 * 1000;
+          posts[i] = {
+            ...post,
+            scheduledAt: new Date(newScheduledMs).toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          userModified = true;
+          console.log(`[Process Queue] Anti-Burst Throttle: Post "${post.title?.slice(0, 30)}" rescheduled to ${posts[i].scheduledAt} to prevent back-to-back spam.`);
+          continue;
+        }
 
         const targetsPayload: PublishTarget[] = finalTargets.map((pg: any) => ({
           id: pg.id,
@@ -162,6 +228,12 @@ async function handleProcessQueue(request: NextRequest) {
           };
 
           if (isSuccess) {
+            // Update pageLastPublishedMs for each target page so subsequent posts in this loop are throttled!
+            const publishedMs = new Date(nowIso).getTime();
+            for (const pid of targetIds) {
+              pageLastPublishedMs.set(pid, publishedMs);
+            }
+
             workspace.monthlyPostsUsed = (workspace.monthlyPostsUsed || 0) + 1;
 
             // Generate performance metrics

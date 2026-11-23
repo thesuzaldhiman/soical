@@ -750,6 +750,50 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // STRICT ANTI-SPAM & DEDUPLICATION PROTECTION:
+    // If an identical article (same incoming URL or identical title) already exists in posts within the last 48 hours,
+    // skip it to prevent double-posting due to repeated webhooks, article updates, or retries!
+    const normalizedNewTitle = mainTitle.trim().toLowerCase();
+    const candidateLink = (payload.shortlink || permalink || payload.link || payload.url || '').trim().toLowerCase();
+    const isDuplicateIncoming = allPosts.some((existing) => {
+      const existingTitle = (existing.title || '').trim().toLowerCase();
+      const existingLink = (existing.linkUrl || existing.commentText || '').toLowerCase();
+      
+      const linkMatch =
+        candidateLink &&
+        candidateLink.length > 10 &&
+        existingLink.includes(candidateLink);
+
+      // Check title similarity or match
+      const titleMatch =
+        normalizedNewTitle &&
+        existingTitle &&
+        (existingTitle === normalizedNewTitle ||
+         (normalizedNewTitle.length > 20 && existingTitle.startsWith(normalizedNewTitle.slice(0, 30))));
+
+      if (linkMatch || titleMatch) {
+        // Only consider duplicate if created within last 48 hours
+        const createdMs = new Date(existing.createdAt).getTime();
+        if (!isNaN(createdMs) && Date.now() - createdMs < 48 * 60 * 60 * 1000) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (isDuplicateIncoming) {
+      console.log(
+        `[WP Webhook] Post "${mainTitle}" was SKIPPED because it was already ingested into the system recently. Duplicate webhook prevented.`
+      );
+      return NextResponse.json({
+        success: true,
+        dispatched: false,
+        skipped: true,
+        reason: 'duplicate_article_recently_ingested',
+        message: `Post "${mainTitle}" was skipped because an identical article is already queued or published.`,
+      });
+    }
+
     // STRICT ANTI-SPAM PROTECTION:
     // If NO active Website to FB automation rule matched, STOP! DO NOT POST OR SAVE DRAFTS!
     if (targetPages.length === 0) {
