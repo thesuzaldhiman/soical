@@ -519,6 +519,15 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
 
   // Step D: Apply Atmospheric Visual Overlays (snow, dust, glitter, bokeh, embers)
   if (Array.isArray(overlays) && overlays.length > 0) {
+    // Resolve font for drawing real vector particle shapes (stars, dots, circles)
+    const fontCandidates = [
+      path.join(process.cwd(), 'public', 'fonts', 'Poppins-Bold.ttf'),
+      path.join(process.cwd(), 'social-auto-poster-app', 'public', 'fonts', 'Poppins-Bold.ttf'),
+      '/System/Library/Fonts/Supplemental/Arial.ttf',
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    ];
+    let resolvedFont = fontCandidates.find((f) => fs.existsSync(f)) || '';
+
     for (const ov of overlays) {
       if (ov === 'vignette') {
         filterChain.push('vignette=PI/4');
@@ -530,26 +539,147 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
         filterChain.push(
           `eq=brightness='${(0.03 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.2)':saturation='1.0+${(0.06 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.2)'`
         );
+        if (resolvedFont) {
+          const snowPoints = [
+            { bx: 150, by: 80, vy: 140, size: 26, drift: 20 },
+            { bx: 380, by: 250, vy: 170, size: 22, drift: -25 },
+            { bx: 620, by: 60, vy: 130, size: 30, drift: 18 },
+            { bx: 840, by: 320, vy: 160, size: 24, drift: -22 },
+            { bx: 250, by: 550, vy: 180, size: 20, drift: 25 },
+            { bx: 720, by: 700, vy: 150, size: 28, drift: -30 },
+            { bx: 180, by: 950, vy: 165, size: 24, drift: 20 },
+            { bx: 540, by: 1100, vy: 175, size: 22, drift: -18 },
+            { bx: 880, by: 1250, vy: 145, size: 32, drift: 26 },
+            { bx: 320, by: 1400, vy: 185, size: 20, drift: -24 },
+            { bx: 760, by: 1550, vy: 155, size: 26, drift: 22 },
+            { bx: 450, by: 1750, vy: 160, size: 24, drift: -20 },
+          ];
+          for (const sp of snowPoints) {
+            const yExpr = `'mod(${sp.by}+t*${sp.vy},${targetH + 120})-60'`;
+            const xExpr = `'${sp.bx}+${sp.drift}*sin(t*1.4)'`;
+            const alphaExpr = `'0.35+${(0.45 * ovIntensityRatio).toFixed(2)}*sin(t*1.2)'`;
+            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
+            filterChain.push(
+              `drawtext=${fontParam}text='•':fontsize=${sp.size}:fontcolor=white:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
+            );
+          }
+        }
       } else if (ov === 'floating_dust' || ov === 'particles') {
         // Atmospheric floating dust with subtle ambient grain
         const dustGrain = Math.max(2, Math.round(3 + 6 * ovIntensityRatio));
         filterChain.push(`noise=alls=${dustGrain}:allf=t+u`);
         filterChain.push(`eq=brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.9)'`);
+        if (resolvedFont) {
+          const dustPoints = [
+            { bx: 200, by: 1800, vy: 70, size: 16, color: '#FBBF24', drift: 30 },
+            { bx: 420, by: 1650, vy: 85, size: 14, color: '#E2E8F0', drift: -25 },
+            { bx: 680, by: 1750, vy: 75, size: 18, color: '#FBBF24', drift: 35 },
+            { bx: 860, by: 1600, vy: 90, size: 14, color: '#E2E8F0', drift: -30 },
+            { bx: 310, by: 1300, vy: 80, size: 16, color: '#FBBF24', drift: 22 },
+            { bx: 740, by: 1200, vy: 70, size: 15, color: '#E2E8F0', drift: -26 },
+            { bx: 160, by: 900, vy: 85, size: 18, color: '#FBBF24', drift: 28 },
+            { bx: 580, by: 800, vy: 75, size: 14, color: '#E2E8F0', drift: -20 },
+            { bx: 840, by: 600, vy: 80, size: 16, color: '#FBBF24', drift: 25 },
+            { bx: 360, by: 450, vy: 90, size: 14, color: '#E2E8F0', drift: -24 },
+          ];
+          for (const dp of dustPoints) {
+            const yExpr = `'${targetH}-mod(${dp.by}+t*${dp.vy},${targetH + 150})'`;
+            const xExpr = `'${dp.bx}+${dp.drift}*sin(t*1.1)'`;
+            const alphaExpr = `'0.25+${(0.4 * ovIntensityRatio).toFixed(2)}*sin(t*1.8)'`;
+            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
+            filterChain.push(
+              `drawtext=${fontParam}text='•':fontsize=${dp.size}:fontcolor=${dp.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
+            );
+          }
+        }
       } else if (ov === 'glitter_sparkle') {
-        // Diamond / gold sparkle shimmer
+        // ── Diamond / Gold Sparkle Shimmer (Real 4-point golden star sparkles across screen) ──
         filterChain.push(
           `eq=brightness='${(0.045 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.6)':saturation='1.0+${(0.15 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.6)'`
         );
+        const sparklePoints = [
+          { bx: 140, by: 220, size: 44, color: 'gold', speed: 1.8, phase: 0.2, driftX: 12, driftY: 8 },
+          { bx: 880, by: 280, size: 52, color: 'yellow', speed: 2.2, phase: 1.4, driftX: -15, driftY: 10 },
+          { bx: 520, by: 160, size: 38, color: 'white', speed: 1.4, phase: 2.1, driftX: 8, driftY: -12 },
+          { bx: 280, by: 580, size: 48, color: 'yellow', speed: 2.5, phase: 0.8, driftX: -10, driftY: 14 },
+          { bx: 840, by: 680, size: 42, color: 'gold', speed: 1.9, phase: 3.0, driftX: 14, driftY: -8 },
+          { bx: 120, by: 920, size: 50, color: 'white', speed: 2.1, phase: 2.5, driftX: -12, driftY: 11 },
+          { bx: 920, by: 1080, size: 46, color: 'yellow', speed: 1.6, phase: 4.2, driftX: 10, driftY: -10 },
+          { bx: 500, by: 1220, size: 40, color: 'gold', speed: 2.3, phase: 1.1, driftX: -8, driftY: 12 },
+          { bx: 220, by: 1440, size: 54, color: 'yellow', speed: 1.7, phase: 3.7, driftX: 15, driftY: -14 },
+          { bx: 780, by: 1520, size: 44, color: 'white', speed: 2.4, phase: 0.5, driftX: -14, driftY: 8 },
+          { bx: 540, by: 820, size: 56, color: 'gold', speed: 2.0, phase: 2.8, driftX: 11, driftY: 15 },
+          { bx: 360, by: 1720, size: 42, color: 'yellow', speed: 1.5, phase: 4.8, driftX: -10, driftY: -9 },
+          { bx: 860, by: 1760, size: 48, color: 'gold', speed: 2.2, phase: 1.9, driftX: 12, driftY: 10 },
+          { bx: 180, by: 400, size: 36, color: 'white', speed: 2.6, phase: 3.3, driftX: -9, driftY: -11 },
+          { bx: 680, by: 440, size: 50, color: 'yellow', speed: 1.8, phase: 5.1, driftX: 13, driftY: 13 },
+          { bx: 420, by: 340, size: 40, color: 'gold', speed: 2.1, phase: 0.9, driftX: -11, driftY: 7 },
+          { bx: 720, by: 950, size: 46, color: 'white', speed: 1.7, phase: 2.4, driftX: 9, driftY: -13 },
+          { bx: 310, by: 1150, size: 44, color: 'yellow', speed: 2.3, phase: 3.9, driftX: -12, driftY: 10 },
+        ];
+        for (const sp of sparklePoints) {
+          const minSize = Math.max(14, Math.round(sp.size * 0.55));
+          const sizeDiff = Math.max(8, Math.round(sp.size * 0.45 * ovIntensityRatio));
+          const maxAlpha = (0.95 * ovIntensityRatio).toFixed(2);
+          const xExpr = `'${sp.bx}+${sp.driftX}*sin(t*${(sp.speed * 0.6).toFixed(2)})'`;
+          const yExpr = `'${sp.by}+${sp.driftY}*cos(t*${(sp.speed * 0.6).toFixed(2)})'`;
+          const sizeExpr = `'${minSize}+${sizeDiff}*sin(2*PI*t*${sp.speed}+${sp.phase})'`;
+          const alphaExpr = `'max(0,min(${maxAlpha},0.5+0.5*sin(2*PI*t*${sp.speed}+${sp.phase})))'`;
+          const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
+          filterChain.push(
+            `drawtext=${fontParam}text='✦':fontsize=${sizeExpr}:fontcolor=${sp.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
+          );
+        }
       } else if (ov === 'bokeh_lights') {
         // Soft glowing ambient bokeh breathing warmth
         filterChain.push(
           `eq=brightness='${(0.04 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)':saturation='1.0+${(0.10 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)'`
         );
+        if (resolvedFont) {
+          const bokehPoints = [
+            { bx: 250, by: 1700, vy: 50, size: 70, color: 'purple' },
+            { bx: 750, by: 1800, vy: 60, size: 85, color: 'gold' },
+            { bx: 480, by: 1400, vy: 45, size: 95, color: 'pink' },
+            { bx: 150, by: 900, vy: 55, size: 75, color: 'yellow' },
+            { bx: 850, by: 800, vy: 65, size: 80, color: 'purple' },
+            { bx: 520, by: 500, vy: 40, size: 90, color: 'gold' },
+          ];
+          for (const bp of bokehPoints) {
+            const yExpr = `'${targetH}-mod(${bp.by}+t*${bp.vy},${targetH + 200})'`;
+            const xExpr = `'${bp.bx}+35*sin(t*0.8)'`;
+            const alphaExpr = `'${(0.18 * ovIntensityRatio).toFixed(2)}+${(0.1 * ovIntensityRatio).toFixed(2)}*sin(t*1.2)'`;
+            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
+            filterChain.push(
+              `drawtext=${fontParam}text='●':fontsize=${bp.size}:fontcolor=${bp.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
+            );
+          }
+        }
       } else if (ov === 'fire_embers') {
         // Warm glowing embers hue pulse
         filterChain.push(
           `eq=gamma_r='1.0+${(0.08 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)':brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)'`
         );
+        if (resolvedFont) {
+          const emberPoints = [
+            { bx: 180, by: 1800, vy: 260, size: 26, color: '#F97316', drift: 35 },
+            { bx: 380, by: 1700, vy: 310, size: 22, color: '#EF4444', drift: -40 },
+            { bx: 600, by: 1900, vy: 280, size: 28, color: '#F97316', drift: 30 },
+            { bx: 820, by: 1750, vy: 250, size: 20, color: '#FB923C', drift: -35 },
+            { bx: 480, by: 1600, vy: 290, size: 24, color: '#EF4444', drift: 25 },
+            { bx: 720, by: 1850, vy: 270, size: 26, color: '#F97316', drift: -30 },
+            { bx: 260, by: 1650, vy: 320, size: 20, color: '#FB923C', drift: 40 },
+            { bx: 900, by: 1780, vy: 260, size: 24, color: '#EF4444', drift: -25 },
+          ];
+          for (const ep of emberPoints) {
+            const yExpr = `'${targetH}-mod(${ep.by}+t*${ep.vy},${targetH + 200})'`;
+            const xExpr = `'${ep.bx}+${ep.drift}*sin(t*2.2)'`;
+            const alphaExpr = `'0.35+${(0.45 * ovIntensityRatio).toFixed(2)}*sin(t*3.5)'`;
+            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
+            filterChain.push(
+              `drawtext=${fontParam}text='•':fontsize=${ep.size}:fontcolor=${ep.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
+            );
+          }
+        }
       }
     }
   }
