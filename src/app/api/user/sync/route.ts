@@ -60,11 +60,13 @@ export async function GET(request: NextRequest) {
 
     const rawPosts = parseJson(row.posts) || [];
     const rawTemplates = parseJson(row.sig_templates) || [];
+    const rawReelTemplates = parseJson(row.reel_templates) || [];
     const rawPerformances = parseJson(row.post_performances) || [];
     const rawLogs = parseJson(row.logs) || [];
 
     const sanitizedPosts = sanitizeDeepMedia(rawPosts);
     const sanitizedTemplates = sanitizeDeepMedia(rawTemplates);
+    const sanitizedReelTemplates = sanitizeDeepMedia(rawReelTemplates);
     const sanitizedPerformances = sanitizeDeepMedia(rawPerformances);
     // Keep latest 150 logs to prevent infinite bloat
     const sanitizedLogs = sanitizeDeepMedia(Array.isArray(rawLogs) ? rawLogs.slice(0, 150) : []);
@@ -72,17 +74,19 @@ export async function GET(request: NextRequest) {
     const hadBase64 =
       JSON.stringify(sanitizedPosts).length !== JSON.stringify(rawPosts).length ||
       JSON.stringify(sanitizedTemplates).length !== JSON.stringify(rawTemplates).length ||
+      JSON.stringify(sanitizedReelTemplates).length !== JSON.stringify(rawReelTemplates).length ||
       JSON.stringify(sanitizedPerformances).length !== JSON.stringify(rawPerformances).length ||
       JSON.stringify(sanitizedLogs).length !== JSON.stringify(rawLogs).length;
 
     if (hadBase64) {
       pool.query(
         `UPDATE app_user_data 
-         SET posts = ?, sig_templates = ?, post_performances = ?, logs = ?, updated_at = NOW() 
+         SET posts = ?, sig_templates = ?, reel_templates = ?, post_performances = ?, logs = ?, updated_at = NOW() 
          WHERE email = ?`,
         [
           JSON.stringify(sanitizedPosts),
           JSON.stringify(sanitizedTemplates),
+          JSON.stringify(sanitizedReelTemplates),
           JSON.stringify(sanitizedPerformances),
           JSON.stringify(sanitizedLogs),
           email,
@@ -117,6 +121,7 @@ export async function GET(request: NextRequest) {
       categories: parseJson(row.categories),
       posts: sanitizedPosts,
       sigTemplates: sanitizedTemplates,
+      reelTemplates: sanitizedReelTemplates,
       pageAnalytics: parseJson(row.page_analytics) || {},
       postPerformances: sanitizedPerformances,
       postComments: parseJson(row.post_comments) || [],
@@ -253,13 +258,20 @@ export async function POST(request: NextRequest) {
         finalCategories = payload.categories;
       }
 
-      // --- 4. SIGNATURE TEMPLATES SAFETY & AUTHORITATIVE UPDATE ---
+      // --- 4. SIGNATURE & REEL TEMPLATES SAFETY & AUTHORITATIVE UPDATE ---
       const dbTemplates: any[] = existingRow ? parseField(existingRow.sig_templates, []) : [];
       let finalTemplates: any[] = dbTemplates;
       if (Array.isArray(payload.sigTemplates)) {
         finalTemplates = payload.sigTemplates;
       }
       finalTemplates = sanitizeDeepMedia(finalTemplates);
+
+      const dbReelTemplates: any[] = existingRow ? parseField(existingRow.reel_templates, []) : [];
+      let finalReelTemplates: any[] = dbReelTemplates;
+      if (Array.isArray(payload.reelTemplates)) {
+        finalReelTemplates = payload.reelTemplates;
+      }
+      finalReelTemplates = sanitizeDeepMedia(finalReelTemplates);
 
       // --- 5. PAGES & ACCOUNTS SAFETY ---
       const dbPages: any[] = existingRow ? parseField(existingRow.pages, []) : [];
@@ -335,41 +347,82 @@ export async function POST(request: NextRequest) {
         payload.postPerformances || parseField(existingRow?.post_performances, [])
       );
 
-      await pool.query(
-        `INSERT INTO app_user_data (
-          email, workspace, accounts, pages, categories, posts,
-          sig_templates, page_analytics, post_performances, post_comments,
-          automations, settings, logs
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          workspace = VALUES(workspace),
-          accounts = VALUES(accounts),
-          pages = VALUES(pages),
-          categories = VALUES(categories),
-          posts = VALUES(posts),
-          sig_templates = VALUES(sig_templates),
-          page_analytics = VALUES(page_analytics),
-          post_performances = VALUES(post_performances),
-          post_comments = VALUES(post_comments),
-          automations = VALUES(automations),
-          settings = VALUES(settings),
-          logs = VALUES(logs)`,
-        [
-          email,
-          toJson(finalWorkspace),
-          toJson(finalAccounts),
-          toJson(finalPages),
-          toJson(finalCategories),
-          toJson(finalPosts),
-          toJson(finalTemplates),
-          toJson(payload.pageAnalytics || existingRow?.page_analytics || {}),
-          toJson(finalPerformances),
-          toJson(payload.postComments || existingRow?.post_comments || []),
-          toJson(finalAutomations),
-          toJson(finalSettings),
-          toJson(finalLogs),
-        ]
-      );
+      try {
+        await pool.query(
+          `INSERT INTO app_user_data (
+            email, workspace, accounts, pages, categories, posts,
+            sig_templates, reel_templates, page_analytics, post_performances, post_comments,
+            automations, settings, logs
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            workspace = VALUES(workspace),
+            accounts = VALUES(accounts),
+            pages = VALUES(pages),
+            categories = VALUES(categories),
+            posts = VALUES(posts),
+            sig_templates = VALUES(sig_templates),
+            reel_templates = VALUES(reel_templates),
+            page_analytics = VALUES(page_analytics),
+            post_performances = VALUES(post_performances),
+            post_comments = VALUES(post_comments),
+            automations = VALUES(automations),
+            settings = VALUES(settings),
+            logs = VALUES(logs)`,
+          [
+            email,
+            toJson(finalWorkspace),
+            toJson(finalAccounts),
+            toJson(finalPages),
+            toJson(finalCategories),
+            toJson(finalPosts),
+            toJson(finalTemplates),
+            toJson(finalReelTemplates),
+            toJson(payload.pageAnalytics || existingRow?.page_analytics || {}),
+            toJson(finalPerformances),
+            toJson(payload.postComments || existingRow?.post_comments || []),
+            toJson(finalAutomations),
+            toJson(finalSettings),
+            toJson(finalLogs),
+          ]
+        );
+      } catch (insertErr) {
+        // Fallback without reel_templates if column not yet added
+        await pool.query(
+          `INSERT INTO app_user_data (
+            email, workspace, accounts, pages, categories, posts,
+            sig_templates, page_analytics, post_performances, post_comments,
+            automations, settings, logs
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            workspace = VALUES(workspace),
+            accounts = VALUES(accounts),
+            pages = VALUES(pages),
+            categories = VALUES(categories),
+            posts = VALUES(posts),
+            sig_templates = VALUES(sig_templates),
+            page_analytics = VALUES(page_analytics),
+            post_performances = VALUES(post_performances),
+            post_comments = VALUES(post_comments),
+            automations = VALUES(automations),
+            settings = VALUES(settings),
+            logs = VALUES(logs)`,
+          [
+            email,
+            toJson(finalWorkspace),
+            toJson(finalAccounts),
+            toJson(finalPages),
+            toJson(finalCategories),
+            toJson(finalPosts),
+            toJson(finalTemplates),
+            toJson(payload.pageAnalytics || existingRow?.page_analytics || {}),
+            toJson(finalPerformances),
+            toJson(payload.postComments || existingRow?.post_comments || []),
+            toJson(finalAutomations),
+            toJson(finalSettings),
+            toJson(finalLogs),
+          ]
+        );
+      }
 
       return NextResponse.json({
         success: true,

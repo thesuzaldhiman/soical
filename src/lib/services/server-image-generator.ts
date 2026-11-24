@@ -8,6 +8,7 @@ import { cleanHeadlineText } from '@/lib/utils/text-decoder';
 export interface GenerateCardOptions {
   headline: string;
   subtitle?: string;
+  highlightPhrase?: string;
   featuredImageUrl?: string;
   template?: SigTemplate | null;
   category?: string;

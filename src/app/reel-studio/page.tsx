@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { SigTemplate, VideoMotionEffect, VideoOverlayType } from '@/types';
-import { INITIAL_SIG_TEMPLATES } from '@/lib/state/mock-data';
+import { INITIAL_REEL_TEMPLATES } from '@/lib/state/mock-data';
 import { renderTemplateToCanvas } from '@/lib/services/image-compositor';
 
 function getAspectRatioLabel(w: number, h: number): string {
@@ -812,17 +812,10 @@ function ReelLiveMockupPreview({
 
 export default function ReelStudioPage() {
   const router = useRouter();
-  const { sigTemplates, saveSigTemplate, deleteSigTemplate } = useApp();
+  const { reelTemplates, saveReelTemplate, deleteReelTemplate } = useApp();
 
   // Active top-level tab: 'templates' | 'editor' | 'motion' | 'generator'
   const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'motion' | 'generator'>('templates');
-
-  // Filter templates strictly for Reel Studio (only templateType === 'reel')
-  const reelTemplates = useMemo(() => {
-    const matched = sigTemplates.filter((t) => t.templateType === 'reel');
-    if (matched.length > 0) return matched;
-    return INITIAL_SIG_TEMPLATES.filter((t) => t.templateType === 'reel');
-  }, [sigTemplates]);
 
   // Selected template id
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
@@ -840,7 +833,7 @@ export default function ReelStudioPage() {
     return (
       reelTemplates.find((t) => t.id === selectedTemplateId) ||
       reelTemplates[0] ||
-      INITIAL_SIG_TEMPLATES.find((t) => t.templateType === 'reel') || {
+      INITIAL_REEL_TEMPLATES[0] || {
         id: 'tmpl_reel_9x16',
         name: 'Vertical Reel & Shorts 1080x1920',
         templateType: 'reel',
@@ -1409,7 +1402,7 @@ export default function ReelStudioPage() {
         targetPlatforms: ['facebook', 'instagram', 'youtube'],
       },
     };
-    saveSigTemplate(updated);
+    saveReelTemplate(updated);
     setSaveMessage(`Reel template "${templateName}" saved to database!`);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
@@ -1447,7 +1440,7 @@ export default function ReelStudioPage() {
         targetPlatforms: ['facebook', 'instagram', 'youtube'],
       },
     };
-    saveSigTemplate(currentUpdated);
+    saveReelTemplate(currentUpdated);
     setSelectedTemplateId(newId);
   };
 
@@ -1462,7 +1455,7 @@ export default function ReelStudioPage() {
     );
     if (!confirmed) return;
 
-    deleteSigTemplate(templateId);
+    deleteReelTemplate(templateId);
     if (selectedTemplateId === templateId) {
       const remaining = reelTemplates.filter((t) => t.id !== templateId);
       if (remaining.length > 0) {
@@ -1528,7 +1521,7 @@ export default function ReelStudioPage() {
       },
     };
 
-    saveSigTemplate(newTemplate);
+    saveReelTemplate(newTemplate);
     setSelectedTemplateId(newId);
     setIsNewModalOpen(false);
     setActiveTab('editor');
@@ -1591,11 +1584,12 @@ export default function ReelStudioPage() {
     setGeneratedVideoUrl(null);
 
     try {
-      // Step 1: Render 9:16 Composite Card onto canvas
+      // Step 1: Render Composite Card onto canvas
       const offscreenCanvas = document.createElement('canvas');
       const currentDraftTemplate: SigTemplate = {
         ...activeTemplate,
         name: templateName,
+        templateType: 'reel',
         canvasWidth,
         canvasHeight,
         templateImageUrl,
@@ -1605,20 +1599,29 @@ export default function ReelStudioPage() {
         titleBox: tBox,
       };
 
-      const cardDataUrl = await renderTemplateToCanvas(offscreenCanvas, {
-        template: currentDraftTemplate,
-        headline: genHeadline,
-        highlightPhrase: genHighlight,
-        featuredImageUrl: genPhotoUrl,
-      });
-      setLastRenderedCardUrl(cardDataUrl);
+      let cardDataUrl = '';
+      try {
+        cardDataUrl = await renderTemplateToCanvas(offscreenCanvas, {
+          template: currentDraftTemplate,
+          headline: genHeadline,
+          highlightPhrase: genHighlight,
+          featuredImageUrl: genPhotoUrl,
+        });
+        setLastRenderedCardUrl(cardDataUrl);
+      } catch (canvasErr) {
+        console.warn('[Reel Studio] Client canvas render error, falling back to server-side compositor:', canvasErr);
+      }
 
       // Step 2: Call /api/video/generate to render high-quality MP4 with motion & music
       const res = await fetch('/api/video/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: cardDataUrl,
+          imageBase64: cardDataUrl || undefined,
+          template: currentDraftTemplate,
+          headline: genHeadline,
+          highlightPhrase: genHighlight,
+          featuredImageUrl: genPhotoUrl,
           canvasWidth,
           canvasHeight,
           duration,
@@ -1634,6 +1637,19 @@ export default function ReelStudioPage() {
           outputFilename: `reel_${activeTemplate.id}_${Date.now()}`,
         }),
       });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        let errMsg = `Server returned status ${res.status}`;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed.error) errMsg = parsed.error;
+        } catch {
+          if (errText) errMsg = errText.slice(0, 250);
+        }
+        alert(`Failed to render reel: ${errMsg}`);
+        return;
+      }
 
       const data = await res.json();
       if (data.success && data.videoUrl) {
@@ -2076,15 +2092,35 @@ export default function ReelStudioPage() {
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        const dataUrl = ev.target?.result as string;
-                        if (dataUrl) setTemplateImageUrl(dataUrl);
-                      };
-                      reader.readAsDataURL(file);
+                      try {
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        const r = await fetch('/api/upload', { method: 'POST', body: fd });
+                        const d = await r.json();
+                        if (d.success && d.url) {
+                          setTemplateImageUrl(d.url);
+                          setSaveMessage(`Frame overlay "${file.name}" uploaded successfully!`);
+                          setSaveSuccess(true);
+                          setTimeout(() => setSaveSuccess(false), 2500);
+                        } else {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => {
+                            const dataUrl = ev.target?.result as string;
+                            if (dataUrl) setTemplateImageUrl(dataUrl);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      } catch {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const dataUrl = ev.target?.result as string;
+                          if (dataUrl) setTemplateImageUrl(dataUrl);
+                        };
+                        reader.readAsDataURL(file);
+                      }
                     }
                   }}
                 />
@@ -3538,15 +3574,32 @@ export default function ReelStudioPage() {
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          const reader = new FileReader();
-                          reader.onload = (ev) => {
-                            const dataUrl = ev.target?.result as string;
-                            if (dataUrl) setGenPhotoUrl(dataUrl);
-                          };
-                          reader.readAsDataURL(file);
+                          try {
+                            const fd = new FormData();
+                            fd.append('file', file);
+                            const r = await fetch('/api/upload', { method: 'POST', body: fd });
+                            const d = await r.json();
+                            if (d.success && d.url) {
+                              setGenPhotoUrl(d.url);
+                            } else {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const dataUrl = ev.target?.result as string;
+                                if (dataUrl) setGenPhotoUrl(dataUrl);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          } catch {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              if (dataUrl) setGenPhotoUrl(dataUrl);
+                            };
+                            reader.readAsDataURL(file);
+                          }
                         }
                       }}
                     />
@@ -4039,14 +4092,39 @@ export default function ReelStudioPage() {
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    Transparent PNG Frame Overlay (Optional)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block">
+                      Transparent PNG Frame Overlay (Optional)
+                    </label>
+                    <label className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer flex items-center gap-1">
+                      <Upload className="w-3 h-3" />
+                      <span>Upload PNG</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              const fd = new FormData();
+                              fd.append('file', file);
+                              const r = await fetch('/api/upload', { method: 'POST', body: fd });
+                              const d = await r.json();
+                              if (d.success && d.url) {
+                                setNewTmplImageUrl(d.url);
+                              }
+                            } catch {}
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
                   <input
                     type="text"
                     value={newTmplImageUrl}
                     onChange={(e) => setNewTmplImageUrl(e.target.value)}
-                    placeholder="Paste PNG URL or leave blank to start with clean layout..."
+                    placeholder="Paste PNG URL or upload frame..."
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-[#F8F9FD] text-xs font-mono"
                   />
                 </div>

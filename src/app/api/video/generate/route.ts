@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
+import { generateServerCardImage } from '@/lib/services/server-image-generator';
 import { VideoMotionEffect, VideoOverlayType } from '@/types';
+
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,6 +11,10 @@ export async function POST(request: NextRequest) {
     const {
       imageUrl,
       imageBase64,
+      template,
+      headline,
+      highlightPhrase,
+      featuredImageUrl,
       canvasWidth,
       canvasHeight,
       duration = 15,
@@ -23,9 +30,28 @@ export async function POST(request: NextRequest) {
       outputFilename,
     } = body;
 
-    if (!imageUrl && !imageBase64) {
+    let finalImageBase64 = imageBase64;
+    let finalImageUrl = imageUrl;
+
+    if (!finalImageUrl && !finalImageBase64) {
+      if (template) {
+        try {
+          console.log('[API Video Generate] No imageBase64 received, generating server card via Sharp fallback...');
+          finalImageBase64 = await generateServerCardImage({
+            template,
+            headline: headline || template.name || 'Breaking News',
+            highlightPhrase,
+            featuredImageUrl: featuredImageUrl || template.templateImageUrl,
+          });
+        } catch (cardErr) {
+          console.warn('[API Video Generate] generateServerCardImage error:', cardErr);
+        }
+      }
+    }
+
+    if (!finalImageUrl && !finalImageBase64) {
       return NextResponse.json(
-        { success: false, error: 'Either imageUrl or imageBase64 is required.' },
+        { success: false, error: 'Either imageUrl, imageBase64, or a valid template is required.' },
         { status: 400 }
       );
     }
@@ -33,10 +59,10 @@ export async function POST(request: NextRequest) {
     const finalDuration = Number(durationSeconds || duration) || 15;
 
     const result = await generateServerVideoReel({
-      imageUrl,
-      imageBase64,
-      canvasWidth: Number(canvasWidth) || 1080,
-      canvasHeight: Number(canvasHeight) || 1920,
+      imageUrl: finalImageUrl,
+      imageBase64: finalImageBase64,
+      canvasWidth: Number(canvasWidth) || template?.canvasWidth || 1080,
+      canvasHeight: Number(canvasHeight) || template?.canvasHeight || 1920,
       durationSeconds: finalDuration,
       effect: (effect as VideoMotionEffect) || 'subtle_float',
       effects: Array.isArray(effects) ? (effects as VideoMotionEffect[]) : undefined,

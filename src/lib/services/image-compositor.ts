@@ -125,7 +125,25 @@ export async function renderTemplateToCanvas(
 
   renderHeadlineInsideBox(ctx, headline, highlightPhrase, tBox);
 
-  return canvas.toDataURL('image/png');
+  try {
+    return canvas.toDataURL('image/jpeg', 0.92);
+  } catch (err) {
+    console.warn('[image-compositor] toDataURL error (tainted canvas?), recovering with clean canvas:', err);
+    try {
+      const cleanCanvas = document.createElement('canvas');
+      cleanCanvas.width = width;
+      cleanCanvas.height = height;
+      const cleanCtx = cleanCanvas.getContext('2d');
+      if (cleanCtx) {
+        drawFallbackBackground(cleanCtx, width, height, template.backgroundColor);
+        renderHeadlineInsideBox(cleanCtx, headline, highlightPhrase, tBox);
+        return cleanCanvas.toDataURL('image/jpeg', 0.92);
+      }
+    } catch (fallbackErr) {
+      console.error('[image-compositor] Clean canvas fallback failed:', fallbackErr);
+    }
+    return canvas.toDataURL('image/png');
+  }
 }
 
 function drawFallbackBackground(ctx: CanvasRenderingContext2D, width: number, height: number, customBg?: string) {
@@ -145,7 +163,8 @@ function drawFallbackBackground(ctx: CanvasRenderingContext2D, width: number, he
 function loadImageAsync(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    if (!src.startsWith('data:')) {
+    // Only set crossOrigin for external http/https URLs, never for data: or local /uploads/...
+    if (src.startsWith('http://') || src.startsWith('https://')) {
       img.crossOrigin = 'anonymous';
     }
     img.onload = () => resolve(img);

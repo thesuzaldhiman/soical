@@ -36,6 +36,7 @@ import {
   INITIAL_CATEGORIES,
   INITIAL_POSTS,
   INITIAL_SIG_TEMPLATES,
+  INITIAL_REEL_TEMPLATES,
   INITIAL_ANALYTICS,
   INITIAL_AUTOMATIONS,
   INITIAL_SETTINGS,
@@ -60,6 +61,7 @@ interface AppContextType {
   categories: PageCategory[];
   posts: Post[];
   sigTemplates: SigTemplate[];
+  reelTemplates: SigTemplate[];
   analytics: AnalyticsMetric[];
   pageAnalytics: Record<string, PageAnalyticsSnapshot>;
   postPerformances: PostPerformanceMetric[];
@@ -137,6 +139,8 @@ interface AppContextType {
   deleteAutomation: (id: string) => void;
   saveSigTemplate: (template: SigTemplate) => void;
   deleteSigTemplate: (id: string) => void;
+  saveReelTemplate: (template: SigTemplate) => void;
+  deleteReelTemplate: (id: string) => void;
 
   // Real & Live Utilities
   isAuthenticated: boolean;
@@ -230,6 +234,7 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   categories: INITIAL_CATEGORIES,
   posts: INITIAL_POSTS,
   sigTemplates: INITIAL_SIG_TEMPLATES,
+  reelTemplates: INITIAL_REEL_TEMPLATES,
   analytics: INITIAL_ANALYTICS,
   pageAnalytics: INITIAL_PAGE_ANALYTICS,
   postPerformances: INITIAL_POST_PERFORMANCES,
@@ -293,6 +298,8 @@ export const FALLBACK_APP_CONTEXT: AppContextType = {
   deleteAutomation: noop,
   saveSigTemplate: noop,
   deleteSigTemplate: noop,
+  saveReelTemplate: noop,
+  deleteReelTemplate: noop,
   isAuthenticated: false,
   loginWithGoogle: noop,
   loginWithEmail: async () => ({ success: false, message: '' }),
@@ -421,6 +428,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [categories, setCategories] = useState<PageCategory[]>(INITIAL_CATEGORIES);
   const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
   const [sigTemplates, setSigTemplates] = useState<SigTemplate[]>(INITIAL_SIG_TEMPLATES);
+  const [reelTemplates, setReelTemplates] = useState<SigTemplate[]>(INITIAL_REEL_TEMPLATES);
   const [analytics] = useState<AnalyticsMetric[]>(INITIAL_ANALYTICS);
   const [pageAnalytics, setPageAnalytics] = useState<Record<string, PageAnalyticsSnapshot>>(INITIAL_PAGE_ANALYTICS);
   const [postPerformances, setPostPerformances] = useState<PostPerformanceMetric[]>(INITIAL_POST_PERFORMANCES);
@@ -539,6 +547,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCategories(INITIAL_CATEGORIES);
     setPosts([]);
     setSigTemplates(INITIAL_SIG_TEMPLATES);
+    setReelTemplates(INITIAL_REEL_TEMPLATES);
     setPageAnalytics({});
     setPostPerformances([]);
     setPostComments([]);
@@ -621,7 +630,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           if (parsed.categories) setCategories(parsed.categories);
           if (parsed.posts) setPosts(parsed.posts);
-          if (parsed.sigTemplates) setSigTemplates(parsed.sigTemplates);
+          if (parsed.sigTemplates && Array.isArray(parsed.sigTemplates)) {
+            const filteredSig = parsed.sigTemplates.filter((t: any) => t.templateType !== 'reel');
+            setSigTemplates(filteredSig.length > 0 ? filteredSig : INITIAL_SIG_TEMPLATES);
+          }
+          if (parsed.reelTemplates && Array.isArray(parsed.reelTemplates) && parsed.reelTemplates.length > 0) {
+            setReelTemplates(parsed.reelTemplates);
+          } else {
+            try {
+              const localReel = localStorage.getItem('sap_reel_templates');
+              if (localReel) {
+                const parsedLocal = JSON.parse(localReel);
+                if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+                  setReelTemplates(parsedLocal);
+                }
+              }
+            } catch {}
+          }
           if (parsed.pageAnalytics) setPageAnalytics(parsed.pageAnalytics);
           if (parsed.postPerformances) setPostPerformances(parsed.postPerformances);
           if (parsed.postComments) setPostComments(parsed.postComments);
@@ -662,6 +687,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setCategories(INITIAL_CATEGORIES);
         setPosts([]);
         setSigTemplates(INITIAL_SIG_TEMPLATES);
+    setReelTemplates(INITIAL_REEL_TEMPLATES);
         setPageAnalytics({});
         setPostPerformances([]);
         setPostComments([]);
@@ -807,7 +833,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(db.posts)) {
               setPosts(db.posts);
             }
-            if (Array.isArray(db.sigTemplates)) setSigTemplates(db.sigTemplates);
+            if (Array.isArray(db.sigTemplates)) {
+              const filteredDbSig = db.sigTemplates.filter((t: any) => t.templateType !== 'reel');
+              setSigTemplates(filteredDbSig.length > 0 ? filteredDbSig : INITIAL_SIG_TEMPLATES);
+            }
+            if (Array.isArray(db.reelTemplates) && db.reelTemplates.length > 0) {
+              setReelTemplates(db.reelTemplates);
+            }
             if (db.pageAnalytics && typeof db.pageAnalytics === 'object') setPageAnalytics(db.pageAnalytics);
             if (Array.isArray(db.postPerformances)) setPostPerformances(db.postPerformances);
             if (Array.isArray(db.postComments)) setPostComments(db.postComments);
@@ -1078,6 +1110,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       categories,
       posts,
       sigTemplates,
+      reelTemplates,
       pageAnalytics,
       postPerformances,
       postComments,
@@ -1106,6 +1139,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     categories,
     posts,
     sigTemplates,
+    reelTemplates,
     pageAnalytics,
     postPerformances,
     postComments,
@@ -2815,6 +2849,78 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const saveReelTemplate = (template: SigTemplate) => {
+    setReelTemplates((prev) => {
+      const templateToSave: SigTemplate = { ...template, templateType: 'reel' };
+      const idx = prev.findIndex((t) => t.id === templateToSave.id);
+      let updated: SigTemplate[];
+      if (idx >= 0) {
+        updated = [...prev];
+        if (templateToSave.isDefault) {
+          updated = updated.map((t) => (t.id === templateToSave.id ? templateToSave : { ...t, isDefault: false }));
+        } else {
+          updated[idx] = templateToSave;
+        }
+      } else {
+        if (templateToSave.isDefault) {
+          updated = [...prev.map((t) => ({ ...t, isDefault: false })), templateToSave];
+        } else {
+          updated = [...prev, templateToSave];
+        }
+      }
+
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.reelTemplates = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+          localStorage.setItem('sap_reel_templates', JSON.stringify(updated));
+        } catch {}
+      }
+
+      // Immediately sync to cloud so navigation doesn't lose reel template
+      syncToCloud(cleanEmail, { reelTemplates: updated }, user);
+
+      return updated;
+    });
+  };
+
+  const deleteReelTemplate = (id: string) => {
+    setReelTemplates((prev) => {
+      const updated = prev.filter((t) => t.id !== id);
+
+      const cleanEmail = (
+        user?.email ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+        'suzaldhiman@gmail.com'
+      ).toLowerCase().trim();
+
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const userKey = getStorageKeyForEmail(cleanEmail);
+          const stored = localStorage.getItem(userKey);
+          const parsed = stored ? JSON.parse(stored) : {};
+          parsed.reelTemplates = updated;
+          localStorage.setItem(userKey, JSON.stringify(parsed));
+          localStorage.setItem('sap_reel_templates', JSON.stringify(updated));
+        } catch {}
+      }
+
+      // Immediately sync deletion to cloud so MySQL DB removes the reel template permanently
+      syncToCloud(cleanEmail, { reelTemplates: updated }, user);
+
+      return updated;
+    });
+  };
+
   // ── YouTube Channel to Social Auto-Repurposer Functions ──
   const refreshYouTubeRules = useCallback(async () => {
     try {
@@ -3404,6 +3510,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCategories(INITIAL_CATEGORIES);
     setPosts([]);
     setSigTemplates(INITIAL_SIG_TEMPLATES);
+    setReelTemplates(INITIAL_REEL_TEMPLATES);
     setPageAnalytics({});
     setPostPerformances([]);
     setPostComments([]);
@@ -3927,6 +4034,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         categories,
         posts,
         sigTemplates,
+        reelTemplates,
         analytics,
         pageAnalytics,
         postPerformances,
@@ -3967,6 +4075,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteAutomation,
         saveSigTemplate,
         deleteSigTemplate,
+        saveReelTemplate,
+        deleteReelTemplate,
         isAuthenticated,
         loginWithGoogle,
         loginWithEmail,

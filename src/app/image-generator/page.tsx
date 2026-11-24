@@ -147,7 +147,7 @@ export default function ImageGeneratorPage() {
 
 function SocialImageGeneratorContent() {
   const router = useRouter();
-  const { sigTemplates, saveSigTemplate, deleteSigTemplate } = useApp();
+  const { sigTemplates, saveSigTemplate, deleteSigTemplate, reelTemplates, saveReelTemplate } = useApp();
 
   // Filter only image templates for Image Generator (exclude reel templates)
   const imageTemplates = useMemo(() => {
@@ -2328,11 +2328,11 @@ function SocialImageGeneratorContent() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'reels' && (
         <ReelStudioTab
-          sigTemplates={sigTemplates.filter((t) => t.templateType === 'reel')}
-          selectedTemplateId={selectedTemplateId}
+          sigTemplates={reelTemplates}
+          selectedTemplateId={reelTemplates[0]?.id || 'tmpl_reel_breaking'}
           onSelectTemplate={(id) => setSelectedTemplateId(id)}
           onSaveTemplate={(updatedTmpl) => {
-            saveSigTemplate(updatedTmpl);
+            saveReelTemplate(updatedTmpl);
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 2500);
           }}

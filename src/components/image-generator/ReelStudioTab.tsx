@@ -267,17 +267,34 @@ export function ReelStudioTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageUrl: imgSource,
+          template: currentTemplate,
+          headline: sampleHeadline || currentTemplate?.name || 'Breaking News',
           canvasWidth: currentTemplate?.canvasWidth || 1080,
           canvasHeight: currentTemplate?.canvasHeight || 1920,
           duration,
           durationSeconds: duration,
-          effect: selectedEffects[0] || effect || 'shake',
+          effect: selectedEffects[0] || effect || 'subtle_float',
           effects: selectedEffects,
           effectDurationSeconds: effectDuration,
+          overlays: currentTemplate?.videoConfig?.overlays || ['floating_dust', 'glitter_sparkle'],
+          overlayIntensity: currentTemplate?.videoConfig?.overlayIntensity || 40,
           musicUrl,
-          outputFilename: `preview_${currentTemplate.id}_${Date.now()}`,
+          outputFilename: `preview_${currentTemplate?.id || 'reel'}_${Date.now()}`,
         }),
       });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        let errMsg = `Server returned status ${res.status}`;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed.error) errMsg = parsed.error;
+        } catch {
+          if (errText) errMsg = errText.slice(0, 200);
+        }
+        alert(`Failed to render reel: ${errMsg}`);
+        return;
+      }
 
       const data = await res.json();
       if (data.success && data.videoUrl) {
