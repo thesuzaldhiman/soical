@@ -20,8 +20,8 @@ function runFfmpegSpawn(bin: string, args: string[], timeoutMs = 120000): Promis
 
     child.stderr?.on('data', (data) => {
       stderr += data.toString();
-      if (stderr.length > 8000) {
-        stderr = stderr.slice(-8000);
+      if (stderr.length > 16000) {
+        stderr = stderr.slice(-16000);
       }
     });
 
@@ -35,7 +35,10 @@ function runFfmpegSpawn(bin: string, args: string[], timeoutMs = 120000): Promis
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}: ${stderr.trim()}`));
+        const rawLines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
+        const errorLines = rawLines.filter((l) => /error|failed|invalid|no such|cannot|fault|aborted/i.test(l));
+        const meaningful = errorLines.length > 0 ? errorLines.slice(-3).join(' | ') : rawLines.slice(-2).join(' | ');
+        reject(new Error(`FFmpeg error (code ${code}): ${meaningful || 'Unknown conversion error'}`));
       }
     });
   });
@@ -518,16 +521,8 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   }
 
   // Step D: Apply Atmospheric Visual Overlays (snow, dust, glitter, bokeh, embers)
+  // Uses pure native FFmpeg drawbox & color filters (zero font/freetype dependency, 100% crash-proof across all OSs)
   if (Array.isArray(overlays) && overlays.length > 0) {
-    // Resolve font for drawing real vector particle shapes (stars, dots, circles)
-    const fontCandidates = [
-      path.join(process.cwd(), 'public', 'fonts', 'Poppins-Bold.ttf'),
-      path.join(process.cwd(), 'social-auto-poster-app', 'public', 'fonts', 'Poppins-Bold.ttf'),
-      '/System/Library/Fonts/Supplemental/Arial.ttf',
-      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-    ];
-    let resolvedFont = fontCandidates.find((f) => fs.existsSync(f)) || '';
-
     for (const ov of overlays) {
       if (ov === 'vignette') {
         filterChain.push('vignette=PI/4');
@@ -539,62 +534,56 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
         filterChain.push(
           `eq=brightness='${(0.03 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.2)':saturation='1.0+${(0.06 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.2)'`
         );
-        if (resolvedFont) {
-          const snowPoints = [
-            { rx: 0.14, ry: 0.04, vy: 140, size: 26, drift: 20 },
-            { rx: 0.35, ry: 0.13, vy: 170, size: 22, drift: -25 },
-            { rx: 0.57, ry: 0.03, vy: 130, size: 30, drift: 18 },
-            { rx: 0.78, ry: 0.17, vy: 160, size: 24, drift: -22 },
-            { rx: 0.23, ry: 0.29, vy: 180, size: 20, drift: 25 },
-            { rx: 0.67, ry: 0.36, vy: 150, size: 28, drift: -30 },
-            { rx: 0.17, ry: 0.49, vy: 165, size: 24, drift: 20 },
-            { rx: 0.50, ry: 0.57, vy: 175, size: 22, drift: -18 },
-            { rx: 0.81, ry: 0.65, vy: 145, size: 32, drift: 26 },
-            { rx: 0.30, ry: 0.73, vy: 185, size: 20, drift: -24 },
-            { rx: 0.70, ry: 0.81, vy: 155, size: 26, drift: 22 },
-            { rx: 0.42, ry: 0.91, vy: 160, size: 24, drift: -20 },
-          ];
-          for (const sp of snowPoints) {
-            const bx = Math.round(targetW * sp.rx);
-            const by = Math.round(targetH * sp.ry);
-            const yExpr = `'mod(${by}+t*${sp.vy},${targetH + 120})-60'`;
-            const xExpr = `'${bx}+${sp.drift}*sin(t*1.4)'`;
-            const alphaExpr = `'0.35+${(0.45 * ovIntensityRatio).toFixed(2)}*sin(t*1.2)'`;
-            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
-            filterChain.push(
-              `drawtext=${fontParam}text='•':fontsize=${sp.size}:fontcolor=white:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
-            );
-          }
+        const snowPoints = [
+          { rx: 0.14, ry: 0.04, vy: 140, size: 7, drift: 20 },
+          { rx: 0.35, ry: 0.13, vy: 170, size: 6, drift: -25 },
+          { rx: 0.57, ry: 0.03, vy: 130, size: 8, drift: 18 },
+          { rx: 0.78, ry: 0.17, vy: 160, size: 7, drift: -22 },
+          { rx: 0.23, ry: 0.29, vy: 180, size: 6, drift: 25 },
+          { rx: 0.67, ry: 0.36, vy: 150, size: 8, drift: -30 },
+          { rx: 0.17, ry: 0.49, vy: 165, size: 7, drift: 20 },
+          { rx: 0.50, ry: 0.57, vy: 175, size: 6, drift: -18 },
+          { rx: 0.81, ry: 0.65, vy: 145, size: 8, drift: 26 },
+          { rx: 0.30, ry: 0.73, vy: 185, size: 6, drift: -24 },
+          { rx: 0.70, ry: 0.81, vy: 155, size: 7, drift: 22 },
+          { rx: 0.42, ry: 0.91, vy: 160, size: 6, drift: -20 },
+        ];
+        for (const sp of snowPoints) {
+          const bx = Math.round(targetW * sp.rx);
+          const by = Math.round(targetH * sp.ry);
+          const dSign = sp.drift >= 0 ? '+' : '-';
+          const x = `${bx}${dSign}${Math.abs(sp.drift)}*sin(t*1.4)`;
+          const y = `mod(${by}+t*${sp.vy},${targetH + 120})-60`;
+          filterChain.push(
+            `drawbox=x='${x}':y='${y}':w=${sp.size}:h=${sp.size}:color=white@0.85:t=fill`
+          );
         }
       } else if (ov === 'floating_dust' || ov === 'particles') {
         // Atmospheric floating dust with subtle ambient grain
         const dustGrain = Math.max(2, Math.round(3 + 6 * ovIntensityRatio));
         filterChain.push(`noise=alls=${dustGrain}:allf=t+u`);
         filterChain.push(`eq=brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.9)'`);
-        if (resolvedFont) {
-          const dustPoints = [
-            { rx: 0.19, ry: 0.94, vy: 70, size: 16, color: '#FBBF24', drift: 30 },
-            { rx: 0.39, ry: 0.86, vy: 85, size: 14, color: '#E2E8F0', drift: -25 },
-            { rx: 0.63, ry: 0.91, vy: 75, size: 18, color: '#FBBF24', drift: 35 },
-            { rx: 0.80, ry: 0.83, vy: 90, size: 14, color: '#E2E8F0', drift: -30 },
-            { rx: 0.29, ry: 0.68, vy: 80, size: 16, color: '#FBBF24', drift: 22 },
-            { rx: 0.69, ry: 0.63, vy: 70, size: 15, color: '#E2E8F0', drift: -26 },
-            { rx: 0.15, ry: 0.47, vy: 85, size: 18, color: '#FBBF24', drift: 28 },
-            { rx: 0.54, ry: 0.42, vy: 75, size: 14, color: '#E2E8F0', drift: -20 },
-            { rx: 0.78, ry: 0.31, vy: 80, size: 16, color: '#FBBF24', drift: 25 },
-            { rx: 0.33, ry: 0.23, vy: 90, size: 14, color: '#E2E8F0', drift: -24 },
-          ];
-          for (const dp of dustPoints) {
-            const bx = Math.round(targetW * dp.rx);
-            const by = Math.round(targetH * dp.ry);
-            const yExpr = `'${targetH}-mod(${by}+t*${dp.vy},${targetH + 150})'`;
-            const xExpr = `'${bx}+${dp.drift}*sin(t*1.1)'`;
-            const alphaExpr = `'0.25+${(0.4 * ovIntensityRatio).toFixed(2)}*sin(t*1.8)'`;
-            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
-            filterChain.push(
-              `drawtext=${fontParam}text='•':fontsize=${dp.size}:fontcolor=${dp.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
-            );
-          }
+        const dustPoints = [
+          { rx: 0.19, ry: 0.94, vy: 70, size: 6, color: 'gold', drift: 30 },
+          { rx: 0.39, ry: 0.86, vy: 85, size: 5, color: 'white', drift: -25 },
+          { rx: 0.63, ry: 0.91, vy: 75, size: 7, color: 'gold', drift: 35 },
+          { rx: 0.80, ry: 0.83, vy: 90, size: 5, color: 'white', drift: -30 },
+          { rx: 0.29, ry: 0.68, vy: 80, size: 6, color: 'gold', drift: 22 },
+          { rx: 0.69, ry: 0.63, vy: 70, size: 5, color: 'white', drift: -26 },
+          { rx: 0.15, ry: 0.47, vy: 85, size: 7, color: 'gold', drift: 28 },
+          { rx: 0.54, ry: 0.42, vy: 75, size: 5, color: 'white', drift: -20 },
+          { rx: 0.78, ry: 0.31, vy: 80, size: 6, color: 'gold', drift: 25 },
+          { rx: 0.33, ry: 0.23, vy: 90, size: 5, color: 'white', drift: -24 },
+        ];
+        for (const dp of dustPoints) {
+          const bx = Math.round(targetW * dp.rx);
+          const by = Math.round(targetH * dp.ry);
+          const dSign = dp.drift >= 0 ? '+' : '-';
+          const x = `${bx}${dSign}${Math.abs(dp.drift)}*sin(t*1.1)`;
+          const y = `${targetH}-mod(${by}+t*${dp.vy},${targetH + 150})`;
+          filterChain.push(
+            `drawbox=x='${x}':y='${y}':w=${dp.size}:h=${dp.size}:color=${dp.color}@0.75:t=fill`
+          );
         }
       } else if (ov === 'glitter_sparkle') {
         // ── Diamond / Gold Sparkle Shimmer (Real 4-point golden star sparkles across screen) ──
@@ -602,38 +591,52 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
           `eq=brightness='${(0.045 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.6)':saturation='1.0+${(0.15 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.6)'`
         );
         const sparklePoints = [
-          { rx: 0.13, ry: 0.11, size: 44, color: 'gold', speed: 1.8, phase: 0.2, driftX: 12, driftY: 8 },
-          { rx: 0.81, ry: 0.15, size: 52, color: 'yellow', speed: 2.2, phase: 1.4, driftX: -15, driftY: 10 },
-          { rx: 0.48, ry: 0.08, size: 38, color: 'white', speed: 1.4, phase: 2.1, driftX: 8, driftY: -12 },
-          { rx: 0.26, ry: 0.30, size: 48, color: 'yellow', speed: 2.5, phase: 0.8, driftX: -10, driftY: 14 },
-          { rx: 0.78, ry: 0.35, size: 42, color: 'gold', speed: 1.9, phase: 3.0, driftX: 14, driftY: -8 },
-          { rx: 0.11, ry: 0.48, size: 50, color: 'white', speed: 2.1, phase: 2.5, driftX: -12, driftY: 11 },
-          { rx: 0.85, ry: 0.56, size: 46, color: 'yellow', speed: 1.6, phase: 4.2, driftX: 10, driftY: -10 },
-          { rx: 0.46, ry: 0.64, size: 40, color: 'gold', speed: 2.3, phase: 1.1, driftX: -8, driftY: 12 },
-          { rx: 0.20, ry: 0.75, size: 54, color: 'yellow', speed: 1.7, phase: 3.7, driftX: 15, driftY: -14 },
-          { rx: 0.72, ry: 0.79, size: 44, color: 'white', speed: 2.4, phase: 0.5, driftX: -14, driftY: 8 },
-          { rx: 0.50, ry: 0.43, size: 56, color: 'gold', speed: 2.0, phase: 2.8, driftX: 11, driftY: 15 },
-          { rx: 0.33, ry: 0.90, size: 42, color: 'yellow', speed: 1.5, phase: 4.8, driftX: -10, driftY: -9 },
-          { rx: 0.80, ry: 0.92, size: 48, color: 'gold', speed: 2.2, phase: 1.9, driftX: 12, driftY: 10 },
-          { rx: 0.17, ry: 0.21, size: 36, color: 'white', speed: 2.6, phase: 3.3, driftX: -9, driftY: -11 },
-          { rx: 0.63, ry: 0.23, size: 50, color: 'yellow', speed: 1.8, phase: 5.1, driftX: 13, driftY: 13 },
-          { rx: 0.39, ry: 0.18, size: 40, color: 'gold', speed: 2.1, phase: 0.9, driftX: -11, driftY: 7 },
-          { rx: 0.67, ry: 0.49, size: 46, color: 'white', speed: 1.7, phase: 2.4, driftX: 9, driftY: -13 },
-          { rx: 0.29, ry: 0.60, size: 44, color: 'yellow', speed: 2.3, phase: 3.9, driftX: -12, driftY: 10 },
+          { rx: 0.13, ry: 0.11, size: 36, color: 'gold', speed: 1.8, phase: 0.2, driftX: 12, driftY: 8 },
+          { rx: 0.81, ry: 0.15, size: 44, color: 'yellow', speed: 2.2, phase: 1.4, driftX: -15, driftY: 10 },
+          { rx: 0.48, ry: 0.08, size: 30, color: 'white', speed: 1.4, phase: 2.1, driftX: 8, driftY: -12 },
+          { rx: 0.26, ry: 0.30, size: 40, color: 'yellow', speed: 2.5, phase: 0.8, driftX: -10, driftY: 14 },
+          { rx: 0.78, ry: 0.35, size: 34, color: 'gold', speed: 1.9, phase: 3.0, driftX: 14, driftY: -8 },
+          { rx: 0.11, ry: 0.48, size: 42, color: 'white', speed: 2.1, phase: 2.5, driftX: -12, driftY: 11 },
+          { rx: 0.85, ry: 0.56, size: 38, color: 'yellow', speed: 1.6, phase: 4.2, driftX: 10, driftY: -10 },
+          { rx: 0.46, ry: 0.64, size: 32, color: 'gold', speed: 2.3, phase: 1.1, driftX: -8, driftY: 12 },
+          { rx: 0.20, ry: 0.75, size: 44, color: 'yellow', speed: 1.7, phase: 3.7, driftX: 15, driftY: -14 },
+          { rx: 0.72, ry: 0.79, size: 36, color: 'white', speed: 2.4, phase: 0.5, driftX: -14, driftY: 8 },
+          { rx: 0.50, ry: 0.43, size: 46, color: 'gold', speed: 2.0, phase: 2.8, driftX: 11, driftY: 15 },
+          { rx: 0.33, ry: 0.90, size: 34, color: 'yellow', speed: 1.5, phase: 4.8, driftX: -10, driftY: -9 },
+          { rx: 0.80, ry: 0.92, size: 40, color: 'gold', speed: 2.2, phase: 1.9, driftX: 12, driftY: 10 },
+          { rx: 0.17, ry: 0.21, size: 30, color: 'white', speed: 2.6, phase: 3.3, driftX: -9, driftY: -11 },
+          { rx: 0.63, ry: 0.23, size: 42, color: 'yellow', speed: 1.8, phase: 5.1, driftX: 13, driftY: 13 },
+          { rx: 0.39, ry: 0.18, size: 32, color: 'gold', speed: 2.1, phase: 0.9, driftX: -11, driftY: 7 },
+          { rx: 0.67, ry: 0.49, size: 38, color: 'white', speed: 1.7, phase: 2.4, driftX: 9, driftY: -13 },
+          { rx: 0.29, ry: 0.60, size: 36, color: 'yellow', speed: 2.3, phase: 3.9, driftX: -12, driftY: 10 },
         ];
         for (const sp of sparklePoints) {
           const bx = Math.round(targetW * sp.rx);
           const by = Math.round(targetH * sp.ry);
-          const minSize = Math.max(14, Math.round(sp.size * 0.55));
-          const sizeDiff = Math.max(8, Math.round(sp.size * 0.45 * ovIntensityRatio));
-          const maxAlpha = (0.95 * ovIntensityRatio).toFixed(2);
-          const xExpr = `'${bx}+${sp.driftX}*sin(t*${(sp.speed * 0.6).toFixed(2)})'`;
-          const yExpr = `'${by}+${sp.driftY}*cos(t*${(sp.speed * 0.6).toFixed(2)})'`;
-          const sizeExpr = `'${minSize}+${sizeDiff}*sin(2*PI*t*${sp.speed}+${sp.phase})'`;
-          const alphaExpr = `'max(0,min(${maxAlpha},0.5+0.5*sin(2*PI*t*${sp.speed}+${sp.phase})))'`;
-          const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
+          const half = Math.round(sp.size / 2);
+          const thick = Math.max(2, Math.round(sp.size * 0.14));
+          const halfThick = Math.round(thick / 2);
+          const en = `gt(sin(2*PI*t*${sp.speed}+${sp.phase}),0.15)`;
+          const dxSign = sp.driftX >= 0 ? '+' : '-';
+          const dySign = sp.driftY >= 0 ? '+' : '-';
+          const xH = `${bx - half}${dxSign}${Math.abs(sp.driftX)}*sin(t*${(sp.speed * 0.6).toFixed(2)})`;
+          const yH = `${by - halfThick}${dySign}${Math.abs(sp.driftY)}*cos(t*${(sp.speed * 0.6).toFixed(2)})`;
+          const xV = `${bx - halfThick}${dxSign}${Math.abs(sp.driftX)}*sin(t*${(sp.speed * 0.6).toFixed(2)})`;
+          const yV = `${by - half}${dySign}${Math.abs(sp.driftY)}*cos(t*${(sp.speed * 0.6).toFixed(2)})`;
+          const xC = `${bx - thick}${dxSign}${Math.abs(sp.driftX)}*sin(t*${(sp.speed * 0.6).toFixed(2)})`;
+          const yC = `${by - thick}${dySign}${Math.abs(sp.driftY)}*cos(t*${(sp.speed * 0.6).toFixed(2)})`;
+
+          // Horizontal flare
           filterChain.push(
-            `drawtext=${fontParam}text='✦':fontsize=${sizeExpr}:fontcolor=${sp.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
+            `drawbox=x='${xH}':y='${yH}':w=${sp.size}:h=${thick}:color=${sp.color}@0.85:t=fill:enable='${en}'`
+          );
+          // Vertical flare
+          filterChain.push(
+            `drawbox=x='${xV}':y='${yV}':w=${thick}:h=${sp.size}:color=${sp.color}@0.85:t=fill:enable='${en}'`
+          );
+          // Center diamond core
+          filterChain.push(
+            `drawbox=x='${xC}':y='${yC}':w=${thick * 2}:h=${thick * 2}:color=white@0.95:t=fill:enable='${en}'`
           );
         }
       } else if (ov === 'bokeh_lights') {
@@ -641,54 +644,47 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
         filterChain.push(
           `eq=brightness='${(0.04 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)':saturation='1.0+${(0.10 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)'`
         );
-        if (resolvedFont) {
-          const bokehPoints = [
-            { rx: 0.23, ry: 0.89, vy: 50, size: 70, color: 'purple' },
-            { rx: 0.69, ry: 0.94, vy: 60, size: 85, color: 'gold' },
-            { rx: 0.44, ry: 0.73, vy: 45, size: 95, color: 'pink' },
-            { rx: 0.14, ry: 0.47, vy: 55, size: 75, color: 'yellow' },
-            { rx: 0.79, ry: 0.42, vy: 65, size: 80, color: 'purple' },
-            { rx: 0.48, ry: 0.26, vy: 40, size: 90, color: 'gold' },
-          ];
-          for (const bp of bokehPoints) {
-            const bx = Math.round(targetW * bp.rx);
-            const by = Math.round(targetH * bp.ry);
-            const yExpr = `'${targetH}-mod(${by}+t*${bp.vy},${targetH + 200})'`;
-            const xExpr = `'${bx}+35*sin(t*0.8)'`;
-            const alphaExpr = `'${(0.18 * ovIntensityRatio).toFixed(2)}+${(0.1 * ovIntensityRatio).toFixed(2)}*sin(t*1.2)'`;
-            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
-            filterChain.push(
-              `drawtext=${fontParam}text='●':fontsize=${bp.size}:fontcolor=${bp.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
-            );
-          }
+        const bokehPoints = [
+          { rx: 0.23, ry: 0.89, vy: 50, size: 50, color: 'gold' },
+          { rx: 0.69, ry: 0.94, vy: 60, size: 60, color: 'purple' },
+          { rx: 0.44, ry: 0.73, vy: 45, size: 70, color: 'pink' },
+          { rx: 0.14, ry: 0.47, vy: 55, size: 55, color: 'yellow' },
+          { rx: 0.79, ry: 0.42, vy: 65, size: 60, color: 'purple' },
+          { rx: 0.48, ry: 0.26, vy: 40, size: 65, color: 'gold' },
+        ];
+        for (const bp of bokehPoints) {
+          const bx = Math.round(targetW * bp.rx);
+          const by = Math.round(targetH * bp.ry);
+          const y = `${targetH}-mod(${by}+t*${bp.vy},${targetH + 200})`;
+          const x = `${bx}+35*sin(t*0.8)`;
+          filterChain.push(
+            `drawbox=x='${x}':y='${y}':w=${bp.size}:h=${bp.size}:color=${bp.color}@0.15:t=fill`
+          );
         }
       } else if (ov === 'fire_embers') {
         // Warm glowing embers hue pulse
         filterChain.push(
           `eq=gamma_r='1.0+${(0.08 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)':brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)'`
         );
-        if (resolvedFont) {
-          const emberPoints = [
-            { rx: 0.17, ry: 0.94, vy: 260, size: 26, color: '#F97316', drift: 35 },
-            { rx: 0.35, ry: 0.89, vy: 310, size: 22, color: '#EF4444', drift: -40 },
-            { rx: 0.56, ry: 0.99, vy: 280, size: 28, color: '#F97316', drift: 30 },
-            { rx: 0.76, ry: 0.91, vy: 250, size: 20, color: '#FB923C', drift: -35 },
-            { rx: 0.44, ry: 0.83, vy: 290, size: 24, color: '#EF4444', drift: 25 },
-            { rx: 0.67, ry: 0.96, vy: 270, size: 26, color: '#F97316', drift: -30 },
-            { rx: 0.24, ry: 0.86, vy: 320, size: 20, color: '#FB923C', drift: 40 },
-            { rx: 0.83, ry: 0.93, vy: 260, size: 24, color: '#EF4444', drift: -25 },
-          ];
-          for (const ep of emberPoints) {
-            const bx = Math.round(targetW * ep.rx);
-            const by = Math.round(targetH * ep.ry);
-            const yExpr = `'${targetH}-mod(${by}+t*${ep.vy},${targetH + 200})'`;
-            const xExpr = `'${bx}+${ep.drift}*sin(t*2.2)'`;
-            const alphaExpr = `'0.35+${(0.45 * ovIntensityRatio).toFixed(2)}*sin(t*3.5)'`;
-            const fontParam = resolvedFont ? `fontfile='${resolvedFont}':` : '';
-            filterChain.push(
-              `drawtext=${fontParam}text='•':fontsize=${ep.size}:fontcolor=${ep.color}:alpha=${alphaExpr}:x=${xExpr}:y=${yExpr}`
-            );
-          }
+        const emberPoints = [
+          { rx: 0.17, ry: 0.94, vy: 260, size: 8, color: '#F97316', drift: 35 },
+          { rx: 0.35, ry: 0.89, vy: 310, size: 6, color: '#EF4444', drift: -40 },
+          { rx: 0.56, ry: 0.99, vy: 280, size: 9, color: '#F97316', drift: 30 },
+          { rx: 0.76, ry: 0.91, vy: 250, size: 7, color: '#FB923C', drift: -35 },
+          { rx: 0.44, ry: 0.83, vy: 290, size: 8, color: '#EF4444', drift: 25 },
+          { rx: 0.67, ry: 0.96, vy: 270, size: 8, color: '#F97316', drift: -30 },
+          { rx: 0.24, ry: 0.86, vy: 320, size: 6, color: '#FB923C', drift: 40 },
+          { rx: 0.83, ry: 0.93, vy: 260, size: 7, color: '#EF4444', drift: -25 },
+        ];
+        for (const ep of emberPoints) {
+          const bx = Math.round(targetW * ep.rx);
+          const by = Math.round(targetH * ep.ry);
+          const dSign = ep.drift >= 0 ? '+' : '-';
+          const x = `${bx}${dSign}${Math.abs(ep.drift)}*sin(t*2.5)`;
+          const y = `${targetH}-mod(${by}+t*${ep.vy},${targetH + 180})`;
+          filterChain.push(
+            `drawbox=x='${x}':y='${y}':w=${ep.size}:h=${ep.size}:color=${ep.color}@0.9:t=fill`
+          );
         }
       }
     }
@@ -775,7 +771,87 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   console.log(`[server-video-generator] Spawning ffmpeg from '${ffmpegBin}': effect=${effect}, duration=${duration}s, hasMusic=${!!inputMusic}`);
 
   try {
-    await runFfmpegSpawn(ffmpegBin, args, 120000);
+    try {
+      await runFfmpegSpawn(ffmpegBin, args, 120000);
+    } catch (primaryErr: unknown) {
+      const pMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+      console.warn(`[server-video-generator] Primary complex render warning: ${pMsg}. Running bulletproof clean fallback render...`);
+
+      // Fallback: Clean core motion video (scale, crop/pad to exact targetW x targetH, trim duration, and audio)
+      const fallbackArgs: string[] = [
+        '-nostats',
+        '-loglevel',
+        'error',
+        '-y',
+        '-loop',
+        '1',
+        '-framerate',
+        '30',
+        '-i',
+        inputImage,
+      ];
+
+      const fallbackFilter = `[0:v]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[v]`;
+
+      if (inputMusic && fs.existsSync(inputMusic)) {
+        const fadeStart = Math.max(0, duration - 1.5);
+        fallbackArgs.push(
+          '-stream_loop',
+          '-1',
+          '-i',
+          inputMusic,
+          '-filter_complex',
+          `${fallbackFilter};[1:a]atrim=0:${duration},asetpts=PTS-STARTPTS,volume=${volRatio.toFixed(2)},afade=t=out:st=${fadeStart}:d=1.5[a]`,
+          '-map',
+          '[v]',
+          '-map',
+          '[a]'
+        );
+      } else {
+        fallbackArgs.push(
+          '-f',
+          'lavfi',
+          '-i',
+          `anullsrc=channel_layout=stereo:sample_rate=44100:d=${duration}`,
+          '-filter_complex',
+          fallbackFilter,
+          '-map',
+          '[v]',
+          '-map',
+          '1:a'
+        );
+      }
+
+      fallbackArgs.push(
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '23',
+        '-r',
+        '30',
+        '-threads',
+        '2',
+        '-t',
+        String(duration),
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-ar',
+        '44100',
+        '-ac',
+        '2',
+        '-movflags',
+        '+faststart',
+        finalFilePath
+      );
+
+      await runFfmpegSpawn(ffmpegBin, fallbackArgs, 120000);
+    }
 
     if (!fs.existsSync(finalFilePath)) {
       throw new Error('FFmpeg completed but output file was not created.');
