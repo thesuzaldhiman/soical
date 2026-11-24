@@ -267,6 +267,8 @@ export function ReelStudioTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageUrl: imgSource,
+          canvasWidth: currentTemplate?.canvasWidth || 1080,
+          canvasHeight: currentTemplate?.canvasHeight || 1920,
           duration,
           durationSeconds: duration,
           effect: selectedEffects[0] || effect || 'shake',
@@ -678,7 +680,12 @@ export function ReelStudioTab({
         <div className="lg:col-span-5 flex flex-col items-center">
           <div className="sticky top-6 w-full max-w-[340px] space-y-3">
             {/* Phone Frame */}
-            <div className="relative aspect-[9/16] w-full rounded-[38px] bg-black p-3.5 shadow-2xl border-4 border-slate-800 ring-1 ring-slate-700 flex flex-col justify-between overflow-hidden">
+            <div
+              className="relative w-full rounded-[38px] bg-black p-3.5 shadow-2xl border-4 border-slate-800 ring-1 ring-slate-700 flex flex-col justify-between overflow-hidden"
+              style={{
+                aspectRatio: `${currentTemplate?.canvasWidth || 1080} / ${currentTemplate?.canvasHeight || 1920}`,
+              }}
+            >
               {/* iPhone Notch */}
               <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-4.5 bg-black rounded-full z-20 flex items-center justify-center">
                 <div className="w-2.5 h-2.5 rounded-full bg-slate-900 mr-2" />
@@ -697,7 +704,7 @@ export function ReelStudioTab({
                     loop
                     playsInline
                     preload="auto"
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain bg-black"
                   />
                 ) : (
                   <div className="relative w-full h-full flex flex-col items-center justify-center p-4 text-center">

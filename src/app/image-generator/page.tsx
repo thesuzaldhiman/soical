@@ -149,27 +149,34 @@ function SocialImageGeneratorContent() {
   const router = useRouter();
   const { sigTemplates, saveSigTemplate, deleteSigTemplate } = useApp();
 
+  // Filter only image templates for Image Generator (exclude reel templates)
+  const imageTemplates = useMemo(() => {
+    const list = sigTemplates.filter((t) => t.templateType !== 'reel');
+    return list.length > 0 ? list : sigTemplates;
+  }, [sigTemplates]);
+
   // Active top-level tab: 'templates' | 'editor' | 'generator' | 'reels'
   const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'generator' | 'reels'>('templates');
 
   // Currently loaded template for editing
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
-    sigTemplates[0]?.id || 'tmpl_1'
+    imageTemplates[0]?.id || 'tmpl_1'
   );
 
   // Auto-heal selectedTemplateId if current template was deleted or missing
   useEffect(() => {
-    if (sigTemplates.length > 0 && !sigTemplates.some((t) => t.id === selectedTemplateId)) {
-      setSelectedTemplateId(sigTemplates[0].id);
+    if (imageTemplates.length > 0 && !imageTemplates.some((t) => t.id === selectedTemplateId)) {
+      setSelectedTemplateId(imageTemplates[0].id);
     }
-  }, [sigTemplates, selectedTemplateId]);
+  }, [imageTemplates, selectedTemplateId]);
 
   const activeTemplate = useMemo(() => {
     return (
-      sigTemplates.find((t) => t.id === selectedTemplateId) ||
-      sigTemplates[0] || {
+      imageTemplates.find((t) => t.id === selectedTemplateId) ||
+      imageTemplates[0] || {
         id: 'tmpl_default',
         name: 'Default News Template',
+        templateType: 'image',
         canvasWidth: 1080,
         canvasHeight: 1350,
         templateImageUrl: '/uploads/media_8c7a84d712a33674.png',
@@ -190,7 +197,7 @@ function SocialImageGeneratorContent() {
         isDefault: true,
       }
     );
-  }, [sigTemplates, selectedTemplateId]);
+  }, [imageTemplates, selectedTemplateId]);
 
   // ── Template Editor State ──
   const [templateName, setTemplateName] = useState(activeTemplate.name);
@@ -292,7 +299,7 @@ function SocialImageGeneratorContent() {
   // Synchronize local states when switching selected template
   // This guarantees each template strictly maintains its own independent boxes and dimensions
   useEffect(() => {
-    const targetTmpl = sigTemplates.find((t) => t.id === selectedTemplateId) || sigTemplates[0];
+    const targetTmpl = imageTemplates.find((t) => t.id === selectedTemplateId) || imageTemplates[0];
     if (targetTmpl) {
       setTemplateName(targetTmpl.name);
       setCanvasWidth(targetTmpl.canvasWidth);
@@ -389,6 +396,7 @@ function SocialImageGeneratorContent() {
       ...activeTemplate,
       id: selectedTemplateId,
       name: templateName,
+      templateType: 'image',
       canvasWidth,
       canvasHeight,
       templateImageUrl,
@@ -414,6 +422,7 @@ function SocialImageGeneratorContent() {
       ...activeTemplate,
       id: selectedTemplateId,
       name: templateName,
+      templateType: 'image',
       canvasWidth,
       canvasHeight,
       templateImageUrl,
@@ -429,9 +438,9 @@ function SocialImageGeneratorContent() {
 
   // Set template as default for WordPress / RSS automation
   const handleSetDefaultTemplate = (templateId: string) => {
-    const tmpl = sigTemplates.find((t) => t.id === templateId);
+    const tmpl = imageTemplates.find((t) => t.id === templateId);
     if (!tmpl) return;
-    saveSigTemplate({ ...tmpl, isDefault: true });
+    saveSigTemplate({ ...tmpl, isDefault: true, templateType: 'image' });
     setSaveMessage(`"${tmpl.name}" is now the default template!`);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
@@ -439,7 +448,7 @@ function SocialImageGeneratorContent() {
 
   // Delete template permanently from database and local state
   const handleDeleteTemplate = (templateId: string, name: string) => {
-    if (sigTemplates.length <= 1) {
+    if (imageTemplates.length <= 1) {
       alert('Aapke account me kam se kam 1 template hona zaroori hai. Is template ko delete nahi kiya ja sakta.');
       return;
     }
@@ -453,7 +462,7 @@ function SocialImageGeneratorContent() {
 
     // If deleting currently active template, switch to first remaining
     if (selectedTemplateId === templateId) {
-      const remaining = sigTemplates.filter((t) => t.id !== templateId);
+      const remaining = imageTemplates.filter((t) => t.id !== templateId);
       if (remaining.length > 0) {
         setSelectedTemplateId(remaining[0].id);
       }
@@ -484,6 +493,7 @@ function SocialImageGeneratorContent() {
     const newTemplate: SigTemplate = {
       id: newId,
       name: newTmplName.trim(),
+      templateType: 'image',
       canvasWidth: w,
       canvasHeight: h,
       templateImageUrl: newTmplImageUrl.trim() || '/uploads/media_8c7a84d712a33674.png',
@@ -964,7 +974,7 @@ function SocialImageGeneratorContent() {
                 : 'text-slate-600 hover:text-black'
             }`}
           >
-            📋 Templates ({sigTemplates.length})
+            📋 Templates ({imageTemplates.length})
           </button>
           <button
             type="button"
@@ -1018,7 +1028,7 @@ function SocialImageGeneratorContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-black text-slate-900">
-                Saved PNG Templates ({sigTemplates.length})
+                Saved PNG Templates ({imageTemplates.length})
               </h3>
               <p className="text-xs text-slate-500">
                 Transparent PNG frame overlays and background templates ready for RSS and manual posting.
@@ -1035,7 +1045,7 @@ function SocialImageGeneratorContent() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sigTemplates.map((t) => {
+            {imageTemplates.map((t) => {
               const isSelected = t.id === selectedTemplateId;
               const isOverlay = t.layerMode !== 'background';
 
@@ -1190,7 +1200,7 @@ function SocialImageGeneratorContent() {
                 onChange={(e) => handleSwitchTemplateInEditor(e.target.value)}
                 className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#FF007A]/20"
               >
-                {sigTemplates.map((t) => (
+                {imageTemplates.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} ({t.canvasWidth}×{t.canvasHeight}) {t.isDefault ? '★ Default' : ''}
                   </option>
@@ -2318,7 +2328,7 @@ function SocialImageGeneratorContent() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'reels' && (
         <ReelStudioTab
-          sigTemplates={sigTemplates}
+          sigTemplates={sigTemplates.filter((t) => t.templateType === 'reel')}
           selectedTemplateId={selectedTemplateId}
           onSelectTemplate={(id) => setSelectedTemplateId(id)}
           onSaveTemplate={(updatedTmpl) => {
@@ -2355,7 +2365,7 @@ function SocialImageGeneratorContent() {
                 onChange={(e) => setSelectedTemplateId(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-[#EEF1F6] bg-[#F8F9FD] text-xs font-bold text-slate-800"
               >
-                {sigTemplates.map((t) => (
+                {imageTemplates.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} ({t.canvasWidth}×{t.canvasHeight})
                   </option>

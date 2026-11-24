@@ -1512,6 +1512,7 @@ function AutomationsContent() {
                             >
                               {sigTemplates.map((t) => (
                                 <option key={t.id} value={t.id}>
+                                  {t.templateType === 'reel' ? '🎬 [Reel] ' : '🖼️ [Card] '}
                                   {t.name} ({t.canvasWidth}×{t.canvasHeight})
                                 </option>
                               ))}
@@ -1952,6 +1953,7 @@ function AutomationsContent() {
                           >
                             {sigTemplates.map((t) => (
                               <option key={t.id} value={t.id}>
+                                {t.templateType === 'reel' ? '🎬 [Reel] ' : '🖼️ [Card] '}
                                 {t.name} ({t.canvasWidth}×{t.canvasHeight})
                               </option>
                             ))}

@@ -6,7 +6,18 @@ import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { SigTemplate, VideoMotionEffect, VideoOverlayType } from '@/types';
+import { INITIAL_SIG_TEMPLATES } from '@/lib/state/mock-data';
 import { renderTemplateToCanvas } from '@/lib/services/image-compositor';
+
+function getAspectRatioLabel(w: number, h: number): string {
+  if (!w || !h) return '9:16 Reel';
+  const ratio = w / h;
+  if (Math.abs(ratio - 9 / 16) < 0.05) return '9:16 Reel';
+  if (Math.abs(ratio - 4 / 5) < 0.05) return '4:5 Portrait';
+  if (Math.abs(ratio - 1) < 0.05) return '1:1 Square';
+  if (Math.abs(ratio - 16 / 9) < 0.05) return '16:9 Landscape';
+  return `${w}×${h}`;
+}
 import {
   Film,
   Sparkles,
@@ -806,20 +817,16 @@ export default function ReelStudioPage() {
   // Active top-level tab: 'templates' | 'editor' | 'motion' | 'generator'
   const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'motion' | 'generator'>('templates');
 
-  // Filter templates suitable for Reels (9:16 portrait or explicit reel type)
+  // Filter templates strictly for Reel Studio (only templateType === 'reel')
   const reelTemplates = useMemo(() => {
-    const matched = sigTemplates.filter(
-      (t) =>
-        t.templateType === 'reel' ||
-        (t.canvasHeight && t.canvasHeight > t.canvasWidth) ||
-        t.videoConfig?.enabled
-    );
-    return matched.length > 0 ? matched : sigTemplates;
+    const matched = sigTemplates.filter((t) => t.templateType === 'reel');
+    if (matched.length > 0) return matched;
+    return INITIAL_SIG_TEMPLATES.filter((t) => t.templateType === 'reel');
   }, [sigTemplates]);
 
   // Selected template id
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
-    reelTemplates[0]?.id || sigTemplates[0]?.id || 'tmpl_reel_9x16'
+    reelTemplates[0]?.id || 'tmpl_reel_breaking'
   );
 
   // Auto-heal selectedTemplateId
@@ -832,9 +839,8 @@ export default function ReelStudioPage() {
   const activeTemplate = useMemo(() => {
     return (
       reelTemplates.find((t) => t.id === selectedTemplateId) ||
-      sigTemplates.find((t) => t.id === selectedTemplateId) ||
       reelTemplates[0] ||
-      sigTemplates[0] || {
+      INITIAL_SIG_TEMPLATES.find((t) => t.templateType === 'reel') || {
         id: 'tmpl_reel_9x16',
         name: 'Vertical Reel & Shorts 1080x1920',
         templateType: 'reel',
@@ -868,7 +874,7 @@ export default function ReelStudioPage() {
         isDefault: false,
       }
     );
-  }, [reelTemplates, sigTemplates, selectedTemplateId]);
+  }, [reelTemplates, selectedTemplateId]);
 
   // ── Template Editor State ──
   const [templateName, setTemplateName] = useState(activeTemplate.name);
@@ -990,6 +996,8 @@ export default function ReelStudioPage() {
   // ── New Reel Template Modal ──
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newTmplName, setNewTmplName] = useState('');
+  const [newTmplWidth, setNewTmplWidth] = useState(1080);
+  const [newTmplHeight, setNewTmplHeight] = useState(1920);
   const [newTmplImageUrl, setNewTmplImageUrl] = useState('');
   const [newTmplMusicPreset, setNewTmplMusicPreset] = useState('breaking');
   const [newTmplEffect, setNewTmplEffect] = useState<VideoMotionEffect>('shake');
@@ -1004,7 +1012,6 @@ export default function ReelStudioPage() {
   useEffect(() => {
     const target =
       reelTemplates.find((t) => t.id === selectedTemplateId) ||
-      sigTemplates.find((t) => t.id === selectedTemplateId) ||
       activeTemplate;
 
     if (target) {
@@ -1474,13 +1481,16 @@ export default function ReelStudioPage() {
 
     const newId = `tmpl_reel_${Date.now()}`;
     const selectedMusicObj = PRESET_MUSIC_TRACKS.find((m) => m.id === newTmplMusicPreset) || PRESET_MUSIC_TRACKS[0];
+    const w = Number(newTmplWidth) || 1080;
+    const h = Number(newTmplHeight) || 1920;
+    const isPortrait = h > w;
 
     const newTemplate: SigTemplate = {
       id: newId,
       name: newTmplName.trim(),
       templateType: 'reel',
-      canvasWidth: 1080,
-      canvasHeight: 1920,
+      canvasWidth: w,
+      canvasHeight: h,
       templateImageUrl: newTmplImageUrl.trim() || '',
       layerMode: 'overlay',
       backgroundColor: '#0B0F19',
@@ -1490,25 +1500,25 @@ export default function ReelStudioPage() {
         effect: newTmplEffect,
         effects: [newTmplEffect],
         effectDurationSeconds: 15,
-        overlays: ['vignette'],
+        overlays: ['floating_dust', 'glitter_sparkle'],
         musicUrl: selectedMusicObj.url,
         musicName: selectedMusicObj.name,
         musicVolume: 100,
         targetPlatforms: ['facebook', 'instagram', 'youtube'],
       },
       featuredImageBox: {
-        x: 40,
-        y: Math.round(1920 * 0.1),
-        width: 1000,
-        height: Math.round(1920 * 0.52),
-        borderRadius: 24,
+        x: Math.round(w * 0.04),
+        y: Math.round(h * 0.08),
+        width: Math.round(w * 0.92),
+        height: Math.round(h * (isPortrait ? 0.52 : 0.60)),
+        borderRadius: 20,
       },
       titleBox: {
-        x: 60,
-        y: Math.round(1920 * 0.65),
-        width: 960,
-        height: Math.round(1920 * 0.3),
-        fontSize: 56,
+        x: Math.round(w * 0.06),
+        y: Math.round(h * (isPortrait ? 0.64 : 0.72)),
+        width: Math.round(w * 0.88),
+        height: Math.round(h * (isPortrait ? 0.30 : 0.24)),
+        fontSize: Math.max(36, Math.round(h * 0.038)),
         lineHeight: 1.35,
         textColor: '#FFFFFF',
         highlightColor: '#FACC15',
@@ -1522,7 +1532,7 @@ export default function ReelStudioPage() {
     setSelectedTemplateId(newId);
     setIsNewModalOpen(false);
     setActiveTab('editor');
-    setSaveMessage(`New 9:16 Reel template "${newTmplName}" created!`);
+    setSaveMessage(`New Reel template "${newTmplName}" (${w}×${h}) created!`);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
   };
@@ -1859,8 +1869,14 @@ export default function ReelStudioPage() {
                     }`}
                   >
                     <div>
-                      {/* 9:16 Mockup Preview Card */}
-                      <div className="relative aspect-[9/14] rounded-2xl overflow-hidden bg-slate-950 border border-slate-200/50 mb-3 group flex items-center justify-center">
+                      {/* Responsive Mockup Preview Card */}
+                      <div
+                        className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-200/50 mb-3 group flex items-center justify-center w-full"
+                        style={{
+                          aspectRatio: `${t.canvasWidth || 1080} / ${t.canvasHeight || 1920}`,
+                          maxHeight: '320px',
+                        }}
+                      >
                         {t.templateImageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -1874,7 +1890,7 @@ export default function ReelStudioPage() {
                               <Film className="w-6 h-6" />
                             </div>
                             <span className="text-[11px] font-bold text-slate-300">
-                              Full Screen 9:16 Reel
+                              {getAspectRatioLabel(t.canvasWidth || 1080, t.canvasHeight || 1920)}
                             </span>
                             <span className="text-[10px] text-slate-500 font-mono">
                               {t.canvasWidth || 1080}×{t.canvasHeight || 1920}
@@ -1885,6 +1901,9 @@ export default function ReelStudioPage() {
                         <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 flex-wrap">
                           <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-[10px] font-mono font-bold text-white">
                             {t.canvasWidth || 1080}×{t.canvasHeight || 1920}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded-md bg-indigo-600/90 text-white text-[9px] font-bold shadow-xs">
+                            {getAspectRatioLabel(t.canvasWidth || 1080, t.canvasHeight || 1920)}
                           </span>
                           <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-bold shadow-xs">
                             {reelDur}s Reel ({effDur}s Anim)
@@ -2033,7 +2052,7 @@ export default function ReelStudioPage() {
                 </select>
 
                 <span className="text-[11px] font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                  {canvasWidth}×{canvasHeight} (9:16)
+                  {canvasWidth}×{canvasHeight} ({getAspectRatioLabel(canvasWidth, canvasHeight)})
                 </span>
 
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
@@ -3457,10 +3476,10 @@ export default function ReelStudioPage() {
             <div className="lg:col-span-5 bg-white rounded-3xl border border-[#EEF1F6] p-5 shadow-[0_4px_20px_-2px_rgba(18,28,45,0.03)] space-y-4 text-xs">
               <div>
                 <h3 className="text-sm font-black text-slate-900 mb-0.5">
-                  Generate Test 9:16 Video Reel
+                  Generate Test Video Reel ({canvasWidth}×{canvasHeight})
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  Renders the template layout, applies selected motion animation, overlays, and cuts background music into an MP4 video.
+                  Renders the template layout in authentic {getAspectRatioLabel(canvasWidth, canvasHeight)}, applies selected motion animation, overlays, and cuts background music into an MP4 video.
                 </p>
               </div>
 
@@ -3602,12 +3621,12 @@ export default function ReelStudioPage() {
                 {isGeneratingReel ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Rendering 9:16 Video Reel (FFmpeg)...</span>
+                    <span>Rendering {canvasWidth}×{canvasHeight} Video Reel (FFmpeg)...</span>
                   </>
                 ) : (
                   <>
                     <Film className="w-4 h-4" />
-                    <span>Generate 9:16 Video Reel</span>
+                    <span>Generate {canvasWidth}×{canvasHeight} Video Reel</span>
                   </>
                 )}
               </button>
@@ -3616,9 +3635,22 @@ export default function ReelStudioPage() {
             {/* Right 7 Cols: Mobile Frame Mockup & Video Player */}
             <div className="lg:col-span-7 bg-slate-950/95 rounded-3xl border border-slate-800 p-6 flex flex-col items-center justify-center min-h-[580px] shadow-2xl relative">
               {generatedVideoUrl ? (
-                <div className="flex flex-col items-center space-y-4 max-w-sm w-full animate-fade-in">
-                  {/* Phone Mockup Frame */}
-                  <div className="relative aspect-[9/16] w-full max-w-[280px] rounded-[36px] overflow-hidden border-4 border-slate-700 shadow-2xl bg-black group select-none">
+                <div className="flex flex-col items-center space-y-4 max-w-md w-full animate-fade-in">
+                  {/* Phone Mockup Frame with Dynamic Aspect Ratio */}
+                  <div
+                    className="relative w-full rounded-[36px] overflow-hidden border-4 border-slate-700 shadow-2xl bg-black group select-none mx-auto"
+                    style={{
+                      aspectRatio: `${canvasWidth} / ${canvasHeight}`,
+                      maxWidth:
+                        canvasHeight > canvasWidth
+                          ? canvasWidth / canvasHeight < 0.65
+                            ? '280px' // 9:16 portrait
+                            : '330px' // 4:5 portrait
+                          : canvasWidth === canvasHeight
+                          ? '350px' // 1:1 square
+                          : '460px', // 16:9 landscape
+                    }}
+                  >
                     {/* Top Speaker / Camera Notch */}
                     <div className="absolute top-0 inset-x-0 h-4 flex justify-center z-30 pointer-events-none">
                       <div className="w-20 h-3.5 bg-black rounded-b-xl border-b border-x border-slate-800 flex items-center justify-center">
@@ -3698,7 +3730,7 @@ export default function ReelStudioPage() {
                       }}
                       onPause={() => setIsPlayingReel(false)}
                       onClick={showNativeControls ? undefined : handleTogglePlayReel}
-                      className="w-full h-full object-cover cursor-pointer"
+                      className="w-full h-full object-contain bg-black cursor-pointer"
                     >
                       <source src={generatedVideoUrl} type="video/mp4" />
                       Your browser does not support HTML5 video.
@@ -3835,7 +3867,9 @@ export default function ReelStudioPage() {
 
                   {/* Metadata and Action Buttons */}
                   <div className="flex items-center justify-between w-full text-xs font-mono text-slate-400 px-2">
-                    <span>Format: 1080×1920 MP4</span>
+                    <span>
+                      Format: {canvasWidth}×{canvasHeight} MP4 ({getAspectRatioLabel(canvasWidth, canvasHeight)})
+                    </span>
                     {generatedVideoSize && (
                       <span>Size: {(generatedVideoSize / 1024 / 1024).toFixed(2)} MB</span>
                     )}
@@ -3897,8 +3931,8 @@ export default function ReelStudioPage() {
                     <Plus className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-black text-sm text-slate-900">Create New 9:16 Reel Template</h3>
-                    <p className="text-[11px] text-slate-400">Standard 1080×1920 vertical mobile reel format</p>
+                    <h3 className="font-black text-sm text-slate-900">Create New Reel Template</h3>
+                    <p className="text-[11px] text-slate-400">Supports 9:16 (1080×1920), 4:5 (1080×1350), 1:1, or custom size</p>
                   </div>
                 </div>
                 <button
@@ -3921,6 +3955,57 @@ export default function ReelStudioPage() {
                     placeholder="e.g. Cricket Breaking News Reel or Dharam Bhakti Reel..."
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-[#F8F9FD] text-xs font-semibold"
                   />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Aspect Ratio / Size</label>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {[
+                      { label: '9:16 Reel (1080×1920)', w: 1080, h: 1920 },
+                      { label: '4:5 Feed (1080×1350)', w: 1080, h: 1350 },
+                      { label: '1:1 Square (1080×1080)', w: 1080, h: 1080 },
+                      { label: '16:9 Landscape (1920×1080)', w: 1920, h: 1080 },
+                    ].map((preset) => {
+                      const isActive = newTmplWidth === preset.w && newTmplHeight === preset.h;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            setNewTmplWidth(preset.w);
+                            setNewTmplHeight(preset.h);
+                          }}
+                          className={`py-1.5 px-2.5 rounded-xl text-center font-bold text-xs cursor-pointer transition-all border ${
+                            isActive
+                              ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500">Custom (px):</span>
+                    <input
+                      type="number"
+                      min={320}
+                      max={3840}
+                      value={newTmplWidth}
+                      onChange={(e) => setNewTmplWidth(Math.max(320, Number(e.target.value) || 1080))}
+                      className="w-20 px-2 py-1 rounded-lg border border-slate-200 bg-[#F8F9FD] font-mono text-center font-bold"
+                    />
+                    <span className="text-slate-400 font-bold">×</span>
+                    <input
+                      type="number"
+                      min={320}
+                      max={3840}
+                      value={newTmplHeight}
+                      onChange={(e) => setNewTmplHeight(Math.max(320, Number(e.target.value) || 1920))}
+                      className="w-20 px-2 py-1 rounded-lg border border-slate-200 bg-[#F8F9FD] font-mono text-center font-bold"
+                    />
+                  </div>
                 </div>
 
                 <div>
