@@ -149,8 +149,63 @@ async function handleProcessQueue(request: NextRequest) {
           continue;
         }
 
-        const finalTargets = targetPages.length > 0 ? targetPages : (Array.isArray(pages) && (!post.pageIds || post.pageIds.length === 0) ? pages : []);
+        // Strictly isolate post to its intended target page(s)
+        const finalTargets = targetPages;
+        if (finalTargets.length === 0) {
+          console.warn(`[Process Queue] Post "${post.title}" (${post.id}) has no valid target page matched. Skipping to prevent broadcast.`);
+          continue;
+        }
         const targetIds: string[] = finalTargets.map((pg: any) => pg.id || pg.pageId);
+
+        // --- CONTENT DEDUPLICATION GUARD ---
+        // Ensure that identical content (same headline or same image) is NEVER published to the same page twice!
+        const cleanTitle = (post.title || '').trim().toLowerCase();
+        const postMedia = (post.mediaUrl || '').trim();
+
+        // 1. Check in user's posts
+        const duplicateInPosts = posts.some((p) => {
+          if (p.id === post.id) return false;
+          if (p.status !== 'published') return false;
+          const pPageIds: string[] = Array.isArray(p.pageIds) ? p.pageIds : [];
+          const sharesTarget = pPageIds.some((pid) => targetIds.includes(pid));
+          if (!sharesTarget) return false;
+
+          // Check if same mediaUrl already published to this target page
+          if (postMedia && p.mediaUrl && p.mediaUrl.trim() === postMedia) {
+            return true;
+          }
+          // Check if same title already published to this target page
+          if (cleanTitle && p.title && p.title.trim().toLowerCase() === cleanTitle) {
+            return true;
+          }
+          return false;
+        });
+
+        // 2. Check in user's published audit logs
+        const duplicateInLogs = logs.some((l: any) => {
+          if (l.status !== 'success' && l.status !== 'published') return false;
+          if (!targetIds.includes(l.pageId)) return false;
+          if (postMedia && l.mediaUrl && l.mediaUrl.trim() === postMedia) return true;
+          if (cleanTitle && l.postMessage) {
+            const cleanLogMsg = l.postMessage.trim().toLowerCase();
+            if (cleanLogMsg.startsWith(cleanTitle.slice(0, 30)) || cleanTitle.startsWith(cleanLogMsg.slice(0, 30))) {
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (duplicateInPosts || duplicateInLogs) {
+          console.warn(`[Process Queue] Skipping duplicate post "${post.title}" (${post.id}) - content already published to target page.`);
+          posts[i] = {
+            ...post,
+            status: 'failed',
+            errorMessage: 'Duplicate skipped: Content already published to target page',
+            updatedAt: new Date().toISOString(),
+          };
+          userModified = true;
+          continue;
+        }
 
         // --- ANTI-BURST PER-PAGE RATE LIMITING ---
         // Minimum gap between posts on the exact same page is 20 minutes (1200000 ms)

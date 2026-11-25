@@ -228,8 +228,28 @@ export async function POST(request: NextRequest) {
       const dbPosts: any[] = existingRow ? parseField(existingRow.posts, []) : [];
       let finalPosts: any[] = [];
       if (Array.isArray(payload.posts)) {
-        // Authoritative posts sent from client session! Deleted posts must stay deleted.
-        finalPosts = payload.posts;
+        // Authoritative posts sent from client session; merge with existing DB statuses
+        // to NEVER downgrade an already published or publishing post to scheduled!
+        const dbPostMap = new Map<string, any>();
+        for (const dp of dbPosts) {
+          if (dp && dp.id) dbPostMap.set(dp.id, dp);
+        }
+
+        finalPosts = payload.posts.map((clientPost: any) => {
+          const dbPost = dbPostMap.get(clientPost.id);
+          if (dbPost) {
+            // Guard: Once published or publishing in DB, client cannot revert it to scheduled
+            if ((dbPost.status === 'published' || dbPost.status === 'publishing') && clientPost.status === 'scheduled') {
+              return {
+                ...clientPost,
+                status: dbPost.status,
+                publishedAt: dbPost.publishedAt || clientPost.publishedAt,
+                results: Array.isArray(dbPost.results) && dbPost.results.length > 0 ? dbPost.results : clientPost.results,
+              };
+            }
+          }
+          return clientPost;
+        });
       } else if (dbPosts.length > 0) {
         // Fallback only if payload did not include posts array
         finalPosts = dbPosts;

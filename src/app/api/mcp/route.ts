@@ -368,6 +368,34 @@ export async function POST(request: NextRequest) {
       const postMessage = item.message || item.title || '';
       const postHtml = item.contentHtml || (item.message ? item.message.replace(/\n/g, '<br/>') : '');
 
+      // DEDUPLICATION GUARD: Prevent creating duplicate scheduled posts
+      const isDuplicate = state.posts.some((existing) => {
+        const sharesPage = (existing.pageIds || []).some((pid) => itemPageIds.includes(pid));
+        if (!sharesPage) return false;
+
+        // Check media URL match
+        if (item.mediaUrl && existing.mediaUrl && item.mediaUrl.trim() === existing.mediaUrl.trim()) {
+          return true;
+        }
+
+        // Check title match (case-insensitive trimmed)
+        if (
+          postTitle &&
+          existing.title &&
+          postTitle.trim().toLowerCase() === existing.title.trim().toLowerCase() &&
+          (existing.status === 'scheduled' || existing.status === 'publishing')
+        ) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (isDuplicate) {
+        console.warn(`[MCP API] Skipping duplicate post: "${postTitle}"`);
+        continue;
+      }
+
       const newPost: Post = {
         id: `pst_mcp_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`,
         workspaceId: state.workspace.id || 'ws_default',

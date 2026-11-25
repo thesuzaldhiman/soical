@@ -939,6 +939,9 @@ export async function POST(request: NextRequest) {
     let cumulativeDelayMs = 0;
     let firstGeneratedCardUrl: string | undefined = undefined;
     let firstGeneratedReelUrl: string | undefined = undefined;
+    const generatedCardsByTitle = new Map<string, string>();
+    const generatedReelsByTitle = new Map<string, string>();
+    const isSingleTitleMode = !isMultiTitleActive || totalTitlesProvided <= 1;
 
     // Loop through each target page and dispatch 1-to-1 according to selected format
     for (let i = 0; i < targetPages.length; i++) {
@@ -950,7 +953,13 @@ export async function POST(request: NextRequest) {
       let hasCustomTitle = false;
       let isFallbackDefaultImage = false;
 
-      if (isMultiTitleActive) {
+      if (isSingleTitleMode) {
+        // Single title mode or single title provided: all target pages share the exact same title & image!
+        assignedTitle = mainTitle;
+        assignedSubtitle = payload.subtitle || payload.main_subtitle || undefined;
+        hasCustomTitle = i === 0;
+        isFallbackDefaultImage = i > 0;
+      } else if (isMultiTitleActive) {
         // Priority 1: Match by pageId or page.name in availableTitleVariations
         const matchedVar = availableTitleVariations.find(
           (v) =>
@@ -1005,6 +1014,8 @@ export async function POST(request: NextRequest) {
       let mediaToSend: string = '';
       let linkToSend: string = '';
 
+      const titleKey = `${assignedTitle.trim().toLowerCase()}|${(assignedSubtitle || '').trim().toLowerCase()}`;
+
       if (dispatchFormat === 'link_card') {
         postTypeToSend = 'link';
         linkToSend = permalink;
@@ -1015,137 +1026,132 @@ export async function POST(request: NextRequest) {
         postTypeToSend = imageUrl ? 'image' : 'text';
         mediaToSend = imageUrl || '';
         linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
-      } else if (isFallbackDefaultImage) {
-        // Fallback for pages where extra titles ran out (e.g. 4 pages selected, but only 2 or 3 titles given)
-        // User requirement:
-        // "Fallback me raw photo (clean original photo) nahi jayegi, balki Selected Page 1 par jo Image 1 (default title image) bani hai wahi Image 1 is page par jayegi!"
-        if (dispatchFormat === 'ai_reel' && firstGeneratedReelUrl) {
-          postTypeToSend = 'video';
-          mediaToSend = firstGeneratedReelUrl;
-        } else {
-          postTypeToSend = 'image';
-          if (!firstGeneratedCardUrl) {
-            try {
-              const cardBase64 = await generateServerCardImage({
-                headline: assignedTitle,
-                subtitle: assignedSubtitle,
-                featuredImageUrl: imageUrl || undefined,
-                template: templateToUse,
-                category: categories[0] || 'News',
-                siteName: payload.site_name || incomingSiteUrl || '',
-              });
-              firstGeneratedCardUrl = offloadBase64Media(cardBase64) || cardBase64;
-            } catch (cardErr) {
-              console.error('[WP Webhook] Fallback card generation error:', cardErr);
-            }
-          }
-          mediaToSend = firstGeneratedCardUrl || imageUrl || '';
-        }
-        linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
       } else if (dispatchFormat === 'ai_reel') {
         // AI Video Reel (9:16 Video with motion effects and background music)
         postTypeToSend = 'video';
         linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
 
-        try {
-          const cardBase64 = await generateServerCardImage({
-            headline: assignedTitle,
-            subtitle: assignedSubtitle,
-            featuredImageUrl: imageUrl || undefined,
-            template: templateToUse,
-            category: categories[0] || 'News',
-            siteName: payload.site_name || incomingSiteUrl || '',
-          });
-          const staticCardUrl = offloadBase64Media(cardBase64) || cardBase64;
-          if (!firstGeneratedCardUrl) {
-            firstGeneratedCardUrl = staticCardUrl;
-          }
+        // Check if reel already generated for this title or single-title fallback
+        if (isSingleTitleMode && firstGeneratedReelUrl) {
+          mediaToSend = firstGeneratedReelUrl;
+        } else if (generatedReelsByTitle.has(titleKey)) {
+          mediaToSend = generatedReelsByTitle.get(titleKey)!;
+        } else if (isFallbackDefaultImage && firstGeneratedReelUrl) {
+          mediaToSend = firstGeneratedReelUrl;
+        } else {
+          try {
+            const cardBase64 = await generateServerCardImage({
+              headline: assignedTitle,
+              subtitle: assignedSubtitle,
+              featuredImageUrl: imageUrl || undefined,
+              template: templateToUse,
+              category: categories[0] || 'News',
+              siteName: payload.site_name || incomingSiteUrl || '',
+            });
+            const staticCardUrl = offloadBase64Media(cardBase64) || cardBase64;
+            if (!firstGeneratedCardUrl) {
+              firstGeneratedCardUrl = staticCardUrl;
+            }
+            generatedCardsByTitle.set(titleKey, staticCardUrl);
 
-          const vConfig = templateToUse.videoConfig;
-          const reelRes = await generateServerVideoReel({
-            imageBase64: cardBase64,
-            canvasWidth: templateToUse.canvasWidth || 1080,
-            canvasHeight: templateToUse.canvasHeight || 1920,
-            durationSeconds: vConfig?.durationSeconds || 15,
-            effect: vConfig?.effect || 'subtle_float',
-            effects: vConfig?.effects || (vConfig?.effect ? [vConfig.effect] : ['subtle_float']),
-            effectDurationSeconds: vConfig?.effectDurationSeconds || vConfig?.durationSeconds || 15,
-            motionIntensity: vConfig?.motionIntensity ?? 20,
-            overlays: vConfig?.overlays || [],
-            overlayIntensity: vConfig?.overlayIntensity ?? 50,
-            musicUrl: vConfig?.musicUrl,
-            musicVolume: vConfig?.musicVolume ?? 100,
-          });
-          mediaToSend = reelRes.videoUrl;
-          if (!firstGeneratedReelUrl) {
-            firstGeneratedReelUrl = reelRes.videoUrl;
+            const vConfig = templateToUse.videoConfig;
+            const reelRes = await generateServerVideoReel({
+              imageBase64: cardBase64,
+              canvasWidth: templateToUse.canvasWidth || 1080,
+              canvasHeight: templateToUse.canvasHeight || 1920,
+              durationSeconds: vConfig?.durationSeconds || 15,
+              effect: vConfig?.effect || 'subtle_float',
+              effects: vConfig?.effects || (vConfig?.effect ? [vConfig.effect] : ['subtle_float']),
+              effectDurationSeconds: vConfig?.effectDurationSeconds || vConfig?.durationSeconds || 15,
+              motionIntensity: vConfig?.motionIntensity ?? 20,
+              overlays: vConfig?.overlays || [],
+              overlayIntensity: vConfig?.overlayIntensity ?? 50,
+              musicUrl: vConfig?.musicUrl,
+              musicVolume: vConfig?.musicVolume ?? 100,
+            });
+            mediaToSend = reelRes.videoUrl;
+            if (!firstGeneratedReelUrl) {
+              firstGeneratedReelUrl = reelRes.videoUrl;
+            }
+            generatedReelsByTitle.set(titleKey, reelRes.videoUrl);
+            console.log(`[WP Webhook] Video Reel generated for Page ${page.name}: ${reelRes.videoUrl}`);
+          } catch (reelErr) {
+            console.error('[WP Webhook] Reel generation error, fallback to card image:', reelErr);
+            postTypeToSend = 'image';
+            mediaToSend = firstGeneratedCardUrl || imageUrl;
           }
-          console.log(`[WP Webhook] Video Reel generated for Page ${page.name}: ${reelRes.videoUrl}`);
-        } catch (reelErr) {
-          console.error('[WP Webhook] Reel generation error, fallback to card image:', reelErr);
-          postTypeToSend = 'image';
-          mediaToSend = firstGeneratedCardUrl || imageUrl;
         }
       } else {
         // dispatchFormat === 'ai_image' (Canvas branded card with bold headline overlay)
         postTypeToSend = 'image';
         linkToSend = effectiveLinkPlacement === 'first_comment' ? '' : permalink;
 
-        try {
-          const cardBase64 = await generateServerCardImage({
-            headline: assignedTitle,
-            subtitle: assignedSubtitle,
-            featuredImageUrl: imageUrl || undefined,
-            template: templateToUse,
-            category: categories[0] || 'News',
-            siteName: payload.site_name || incomingSiteUrl || '',
-          });
-          const staticCardUrl = offloadBase64Media(cardBase64) || cardBase64;
-          mediaToSend = staticCardUrl;
-          if (!firstGeneratedCardUrl) {
-            firstGeneratedCardUrl = staticCardUrl;
-          }
-        } catch (cardErr) {
-          console.error('[WP Webhook] Server Card generation error with template:', cardErr);
-          // High-reliability fallback: try generating with safe layout so Facebook NEVER gets just a bare photo
+        // Check if card already generated for this title or single-title fallback
+        if (isSingleTitleMode && firstGeneratedCardUrl) {
+          mediaToSend = firstGeneratedCardUrl;
+        } else if (generatedCardsByTitle.has(titleKey)) {
+          mediaToSend = generatedCardsByTitle.get(titleKey)!;
+        } else if (isFallbackDefaultImage && firstGeneratedCardUrl) {
+          mediaToSend = firstGeneratedCardUrl;
+        } else {
           try {
-            const fallbackCard = await generateServerCardImage({
+            const cardBase64 = await generateServerCardImage({
               headline: assignedTitle,
               subtitle: assignedSubtitle,
               featuredImageUrl: imageUrl || undefined,
-              template: {
-                id: 'tmpl_safe_fallback',
-                name: 'Safe Fallback News Card',
-                canvasWidth: 1080,
-                canvasHeight: 1350,
-                templateImageUrl: '/uploads/media_8c7a84d712a33674.png',
-                layerMode: 'overlay',
-                featuredImageBox: { x: 0, y: 462, width: 1080, height: 784, borderRadius: 12 },
-                titleBox: {
-                  x: 95,
-                  y: 76,
-                  width: 858,
-                  height: 310,
-                  fontSize: 48,
-                  lineHeight: 1.35,
-                  textColor: '#FFFFFF',
-                  highlightColor: '#FBBF24',
-                  fontFamily: 'Noto Sans Devanagari',
-                  alignment: 'center',
-                },
-                isDefault: true,
-              },
+              template: templateToUse,
               category: categories[0] || 'News',
               siteName: payload.site_name || incomingSiteUrl || '',
             });
-            const staticFallback = offloadBase64Media(fallbackCard) || fallbackCard;
-            mediaToSend = staticFallback;
+            const staticCardUrl = offloadBase64Media(cardBase64) || cardBase64;
+            mediaToSend = staticCardUrl;
             if (!firstGeneratedCardUrl) {
-              firstGeneratedCardUrl = staticFallback;
+              firstGeneratedCardUrl = staticCardUrl;
             }
-          } catch (retryErr) {
-            console.error('[WP Webhook] Secondary card fallback also failed, using raw imageUrl:', retryErr);
-            mediaToSend = imageUrl;
+            generatedCardsByTitle.set(titleKey, staticCardUrl);
+          } catch (cardErr) {
+            console.error('[WP Webhook] Server Card generation error with template:', cardErr);
+            // High-reliability fallback: try generating with safe layout so Facebook NEVER gets just a bare photo
+            try {
+              const fallbackCard = await generateServerCardImage({
+                headline: assignedTitle,
+                subtitle: assignedSubtitle,
+                featuredImageUrl: imageUrl || undefined,
+                template: {
+                  id: 'tmpl_safe_fallback',
+                  name: 'Safe Fallback News Card',
+                  canvasWidth: 1080,
+                  canvasHeight: 1350,
+                  templateImageUrl: '/uploads/media_8c7a84d712a33674.png',
+                  layerMode: 'overlay',
+                  featuredImageBox: { x: 0, y: 462, width: 1080, height: 784, borderRadius: 12 },
+                  titleBox: {
+                    x: 95,
+                    y: 76,
+                    width: 858,
+                    height: 310,
+                    fontSize: 48,
+                    lineHeight: 1.35,
+                    textColor: '#FFFFFF',
+                    highlightColor: '#FBBF24',
+                    fontFamily: 'Noto Sans Devanagari',
+                    alignment: 'center',
+                  },
+                  isDefault: true,
+                },
+                category: categories[0] || 'News',
+                siteName: payload.site_name || incomingSiteUrl || '',
+              });
+              const staticFallback = offloadBase64Media(fallbackCard) || fallbackCard;
+              mediaToSend = staticFallback;
+              if (!firstGeneratedCardUrl) {
+                firstGeneratedCardUrl = staticFallback;
+              }
+              generatedCardsByTitle.set(titleKey, staticFallback);
+            } catch (retryErr) {
+              console.error('[WP Webhook] Secondary card fallback also failed, using raw imageUrl:', retryErr);
+              mediaToSend = imageUrl;
+            }
           }
         }
       }

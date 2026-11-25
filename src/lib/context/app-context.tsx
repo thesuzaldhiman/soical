@@ -2259,16 +2259,107 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let dispatchedCount = 0;
 
     try {
+      // 1. Authoritative Server Queue Execution: Call /api/cron/process-queue
+      // The server cron runner directly accesses MySQL, checks anti-duplicate & anti-burst limits,
+      // and guarantees only ONE atomic execution with no stale React state.
+      try {
+        const cronRes = await fetch('/api/cron/process-queue?key=sap_live_secret_k8f93a7d2b0e');
+        if (cronRes.ok) {
+          const cronData = await cronRes.json().catch(() => ({}));
+          if (cronData.source !== 'client_active') {
+            // MySQL server cron handled the queue!
+            if (cronData.dispatched > 0) {
+              dispatchedCount = cronData.dispatched;
+              const cleanUserEmail = (
+                user?.email ||
+                (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+                'suzaldhiman@gmail.com'
+              ).toLowerCase().trim();
+              const syncRes = await fetch(`/api/user/sync?email=${encodeURIComponent(cleanUserEmail)}`).then((r) => r.json()).catch(() => null);
+              if (syncRes?.success && syncRes.data?.posts) {
+                setPosts(syncRes.data.posts);
+                if (Array.isArray(syncRes.data.logs)) setLogs(syncRes.data.logs);
+              }
+            }
+            return { checked: postsRef.current.length, dispatched: dispatchedCount };
+          }
+        }
+      } catch (cronErr) {
+        console.warn('[Client Queue] Server cron runner ping failed, checking client fallback:', cronErr);
+      }
+
+      // 2. Client-side Fallback (Only if MySQL cloud storage is not connected)
+      const seenContentKeys = new Set<string>();
+      const pageLastDispatchedMs = new Map<string, number>();
+
       for (const post of duePosts) {
+        // Content deduplication key
+        const titleKey = (post.title || '').trim().toLowerCase();
+        const mediaKey = (post.mediaUrl || '').trim();
+        const contentKey = `${(post.pageIds || []).sort().join(',')}|${mediaKey || titleKey}`;
+
+        if (contentKey && seenContentKeys.has(contentKey)) {
+          console.warn(`[Client Queue] Skipping duplicate due post: "${post.title}" (${post.id})`);
+          setPosts((prev) =>
+            prev.map((p) => (p.id === post.id ? { ...p, status: 'failed', errorMessage: 'Duplicate post skipped' } : p))
+          );
+          continue;
+        }
+
+        // Per-page rate limit: minimum 15 minutes gap between posts to the exact same page
+        const targetPageIds = post.pageIds || [];
+        const isThrottled = targetPageIds.some((pid) => {
+          const lastTime = pageLastDispatchedMs.get(pid);
+          return lastTime && (Date.now() - lastTime) < 15 * 60 * 1000;
+        });
+
+        if (isThrottled) {
+          console.warn(`[Client Queue] Throttle: Post "${post.title}" delayed to prevent back-to-back posting.`);
+          continue;
+        }
+
+        if (contentKey) seenContentKeys.add(contentKey);
         const ok = await dispatchScheduledPost(post.id);
-        if (ok) dispatchedCount++;
+        if (ok) {
+          dispatchedCount++;
+          targetPageIds.forEach((pid) => pageLastDispatchedMs.set(pid, Date.now()));
+        }
       }
     } finally {
       setIsQueueProcessing(false);
     }
 
     return { checked: postsRef.current.length, dispatched: dispatchedCount };
-  }, [isHydrated]);
+  }, [isHydrated, user?.email]);
+
+  // Keep in-memory posts & logs fresh by syncing with Hostinger MySQL every 30s
+  useEffect(() => {
+    if (!isHydrated) return;
+    const cleanUserEmail = (
+      user?.email ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('sap_current_user_email') : '') ||
+      'suzaldhiman@gmail.com'
+    ).toLowerCase().trim();
+    if (!cleanUserEmail) return;
+
+    const syncInterval = setInterval(() => {
+      fetch(`/api/user/sync?email=${encodeURIComponent(cleanUserEmail)}`)
+        .then((res) => res.json())
+        .then((res) => {
+          if (res.success && res.data) {
+            if (Array.isArray(res.data.posts)) {
+              setPosts(res.data.posts);
+            }
+            if (Array.isArray(res.data.logs)) {
+              setLogs(res.data.logs);
+            }
+          }
+        })
+        .catch(() => {});
+    }, 30000);
+
+    return () => clearInterval(syncInterval);
+  }, [isHydrated, user?.email]);
 
   // Live in-browser background queue processor (pulse check every 8s + instant catch-up on load/focus)
   useEffect(() => {
