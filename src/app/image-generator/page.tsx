@@ -6,7 +6,6 @@ import { AppShell } from '@/components/layout/AppShell';
 import { useApp } from '@/lib/context/app-context';
 import { SigTemplate } from '@/types';
 import { renderTemplateToCanvas } from '@/lib/services/image-compositor';
-import { ReelStudioTab } from '@/components/image-generator/ReelStudioTab';
 import {
   Palette,
   Sparkles,
@@ -147,7 +146,7 @@ export default function ImageGeneratorPage() {
 
 function SocialImageGeneratorContent() {
   const router = useRouter();
-  const { sigTemplates, saveSigTemplate, deleteSigTemplate, reelTemplates, saveReelTemplate } = useApp();
+  const { sigTemplates, saveSigTemplate, deleteSigTemplate } = useApp();
 
   // Filter only image templates for Image Generator (exclude reel templates)
   const imageTemplates = useMemo(() => {
@@ -155,8 +154,8 @@ function SocialImageGeneratorContent() {
     return list.length > 0 ? list : sigTemplates;
   }, [sigTemplates]);
 
-  // Active top-level tab: 'templates' | 'editor' | 'generator' | 'reels'
-  const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'generator' | 'reels'>('templates');
+  // Active top-level tab: 'templates' | 'editor' | 'generator'
+  const [activeTab, setActiveTab] = useState<'templates' | 'editor' | 'generator'>('templates');
 
   // Currently loaded template for editing
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
@@ -989,18 +988,6 @@ function SocialImageGeneratorContent() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('reels')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'reels'
-                ? 'bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-xs'
-                : 'text-rose-700 bg-rose-50/70 hover:bg-rose-100 hover:text-rose-900'
-            }`}
-          >
-            <span>🎬</span>
-            <span>Reel Studio</span>
-          </button>
-          <button
-            type="button"
             onClick={() => setActiveTab('generator')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'generator'
@@ -1137,18 +1124,6 @@ function SocialImageGeneratorContent() {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedTemplateId(t.id);
-                          setActiveTab('reels');
-                        }}
-                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer transition-colors border border-rose-200"
-                      >
-                        <Film className="w-3.5 h-3.5" />
-                        <span>Reel</span>
-                      </button>
-
                       <button
                         type="button"
                         onClick={() => {
@@ -2324,25 +2299,7 @@ function SocialImageGeneratorContent() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* TAB 3: REEL & MOTION STUDIO */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'reels' && (
-        <ReelStudioTab
-          sigTemplates={reelTemplates}
-          selectedTemplateId={reelTemplates[0]?.id || 'tmpl_reel_breaking'}
-          onSelectTemplate={(id) => setSelectedTemplateId(id)}
-          onSaveTemplate={(updatedTmpl) => {
-            saveReelTemplate(updatedTmpl);
-            setSaveSuccess(true);
-            setTimeout(() => setSaveSuccess(false), 2500);
-          }}
-          sampleHeadline={genHeadline}
-          sampleImageUrl={genPhotoUrl}
-        />
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* TAB 4: TEST CARD GENERATOR */}
+      {/* TAB 3: TEST CARD GENERATOR */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'generator' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dispatchToTargets, PublishTarget } from '@/lib/services/publisher';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
-import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES } from '@/lib/state/mock-data';
+import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES, INITIAL_REEL_TEMPLATES } from '@/lib/state/mock-data';
 import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate, AppSettings } from '@/types';
 import { generateServerCardImage } from '@/lib/services/server-image-generator';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
@@ -255,6 +255,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
   automations: AutomationFeed[];
   posts: Post[];
   sigTemplates: SigTemplate[];
+  reelTemplates: SigTemplate[];
   settings?: AppSettings;
 }> {
   const fallbackEmail = (explicitEmail || 'suzaldhiman@gmail.com').toLowerCase().trim();
@@ -267,6 +268,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
       automations: [] as AutomationFeed[],
       posts: getLocalPosts(),
       sigTemplates: INITIAL_SIG_TEMPLATES,
+      reelTemplates: INITIAL_REEL_TEMPLATES,
       settings: {} as AppSettings,
     };
   }
@@ -278,7 +280,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
     // 1. If explicit email passed, use it directly
     if (explicitEmail) {
       const [rows] = await pool.query<any[]>(
-        'SELECT email, pages, categories, posts, automations, sig_templates, settings FROM app_user_data WHERE email = ? LIMIT 1',
+        'SELECT email, pages, categories, posts, automations, sig_templates, reel_templates, settings FROM app_user_data WHERE email = ? LIMIT 1',
         [fallbackEmail]
       );
       if (rows && rows.length > 0) {
@@ -289,6 +291,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
           automations: parseJsonSafe(rows[0].automations, []),
           posts: parseJsonSafe(rows[0].posts, getLocalPosts()),
           sigTemplates: parseJsonSafe(rows[0].sig_templates, INITIAL_SIG_TEMPLATES),
+          reelTemplates: parseJsonSafe(rows[0].reel_templates, INITIAL_REEL_TEMPLATES),
           settings: parseJsonSafe(rows[0].settings, {}),
         };
       }
@@ -296,7 +299,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
 
     // 2. Query all tenant users to find the owner of this site
     const [allUsers] = await pool.query<any[]>(
-      'SELECT email, pages, categories, posts, automations, accounts, sig_templates, settings FROM app_user_data'
+      'SELECT email, pages, categories, posts, automations, accounts, sig_templates, reel_templates, settings FROM app_user_data'
     );
 
     if (allUsers && allUsers.length > 0) {
@@ -315,6 +318,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
+              reelTemplates: parseJsonSafe(u.reel_templates, INITIAL_REEL_TEMPLATES),
               settings: parseJsonSafe(u.settings, {}),
             };
           }
@@ -332,6 +336,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
+              reelTemplates: parseJsonSafe(u.reel_templates, INITIAL_REEL_TEMPLATES),
               settings: parseJsonSafe(u.settings, {}),
             };
           }
@@ -349,6 +354,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
               automations: autos,
               posts: parseJsonSafe(u.posts, getLocalPosts()),
               sigTemplates: parseJsonSafe(u.sig_templates, INITIAL_SIG_TEMPLATES),
+              reelTemplates: parseJsonSafe(u.reel_templates, INITIAL_REEL_TEMPLATES),
               settings: parseJsonSafe(u.settings, {}),
             };
           }
@@ -370,6 +376,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
         automations: parseJsonSafe(activeUser.automations, []),
         posts: parseJsonSafe(activeUser.posts, getLocalPosts()),
         sigTemplates: parseJsonSafe(activeUser.sig_templates, INITIAL_SIG_TEMPLATES),
+        reelTemplates: parseJsonSafe(activeUser.reel_templates, INITIAL_REEL_TEMPLATES),
         settings: parseJsonSafe(activeUser.settings, {}),
       };
     }
@@ -384,6 +391,7 @@ async function resolveUserState(siteUrl: string = '', explicitEmail?: string): P
     automations: [] as AutomationFeed[],
     posts: getLocalPosts(),
     sigTemplates: INITIAL_SIG_TEMPLATES,
+    reelTemplates: INITIAL_REEL_TEMPLATES,
     settings: {} as AppSettings,
   };
 }
@@ -671,7 +679,13 @@ export async function POST(request: NextRequest) {
     const allPages: SocialPage[] = userState.pages || [];
     const allCategories: PageCategory[] = userState.categories || [];
     const allAutomations: AutomationFeed[] = (userState as any).automations || [];
-    const allSigTemplates: SigTemplate[] = userState.sigTemplates || INITIAL_SIG_TEMPLATES;
+    const allSigTemplates: SigTemplate[] = (userState.sigTemplates || INITIAL_SIG_TEMPLATES).filter(
+      (t) => t.templateType !== 'reel'
+    );
+    const allReelTemplates: SigTemplate[] =
+      userState.reelTemplates && userState.reelTemplates.length > 0
+        ? userState.reelTemplates
+        : INITIAL_REEL_TEMPLATES;
     const allPosts: Post[] = userState.posts || [];
 
     const postCategories = categories.map((c: string) => c.toLowerCase().trim());
@@ -816,15 +830,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Resolve template to use for AI Card Image generation
+    // Resolve template strictly from the matching library (Reel Studio vs Image Generator)
+    const templatePool = dispatchFormat === 'ai_reel' ? allReelTemplates : allSigTemplates;
+    const fallbackPool = dispatchFormat === 'ai_reel' ? INITIAL_REEL_TEMPLATES : INITIAL_SIG_TEMPLATES;
     let templateToUse =
-      allSigTemplates.find((t) => t.id === selectedSigTemplateId) ||
-      allSigTemplates.find((t) => t.isDefault && t.templateImageUrl) ||
-      allSigTemplates.find((t) => t.templateImageUrl && t.templateImageUrl.includes('media_')) ||
-      allSigTemplates.find((t) => t.isDefault) ||
-      allSigTemplates[0] ||
-      INITIAL_SIG_TEMPLATES.find((t) => t.isDefault) ||
-      INITIAL_SIG_TEMPLATES[0];
+      templatePool.find((t) => t.id === selectedSigTemplateId) ||
+      templatePool.find((t) => t.isDefault && t.templateImageUrl) ||
+      templatePool.find((t) => t.templateImageUrl && t.templateImageUrl.includes('media_')) ||
+      templatePool.find((t) => t.isDefault) ||
+      templatePool[0] ||
+      fallbackPool.find((t) => t.isDefault) ||
+      fallbackPool[0];
 
     // If template image is missing or refers to old external unsplash, fallback to default news frame
     if (!templateToUse.templateImageUrl || templateToUse.templateImageUrl.includes('unsplash.com')) {
