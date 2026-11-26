@@ -230,52 +230,79 @@ const VIDEO_OVERLAYS: Array<{
   },
 ];
 
-// ── Preset Category-Specific Music Tracks ──
+// ── Preset Category-Specific Music Tracks (Studio Quality) ──
 const PRESET_MUSIC_TRACKS = [
   {
     id: 'breaking',
-    name: 'Breaking News Beat',
+    name: 'Breaking News Studio Beat',
     category: '🔴 Breaking News',
-    badge: 'Urgent Alert',
+    badge: 'Studio Broadcast',
     badgeColor: 'bg-red-50 text-red-700 border-red-200',
-    url: '/uploads/audio/breaking_news_beat.mp3',
-    description: 'High-energy siren pulse, urgent drums, dramatic brass for breaking news.',
+    url: '/uploads/audio/v2_breaking_news.mp3',
+    description: 'Modern broadcast news groove with crisp driving bass & studio punch.',
+  },
+  {
+    id: 'epic_drums',
+    name: 'Epic Breaking News Drums',
+    category: '🔴 Urgent Headline',
+    badge: 'Impactful Drums',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+    url: '/uploads/audio/v2_epic_drums.mp3',
+    description: 'Bold theatrical percussion & dramatic build-up for major headline alerts.',
   },
   {
     id: 'cricket',
-    name: 'Cricket & Sports Action Beat',
+    name: 'Cricket & Sports Highlights',
     category: '🏏 Cricket & Sports',
     badge: 'Stadium Action',
     badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
-    url: '/uploads/audio/sports_cricket_beat.mp3',
-    description: 'Fast upbeat stadium claps, high-energy synth, punchy bass for match updates & IPL.',
+    url: '/uploads/audio/v2_sports_cricket.mp3',
+    description: 'Upbeat stadium energy, punchy synth groove, and match highlights vibe.',
   },
   {
     id: 'devotional',
-    name: 'Dharam & Devotional Ambient Flute',
+    name: 'Dharam & Spiritual Ambient',
     category: '🕉️ Dharam / Bhakti',
     badge: 'Peaceful / Temple',
     badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    url: '/uploads/audio/devotional_ambient.mp3',
-    description: 'Calm bansuri flute, temple bells, sitar, and spiritual meditation vibe.',
+    url: '/uploads/audio/v2_devotional_spiritual.mp3',
+    description: 'Warm celestial pads and serene meditative atmosphere for devotional stories.',
+  },
+  {
+    id: 'peaceful',
+    name: 'Calm Acoustic Serenity',
+    category: '🌿 Wellness / Positive',
+    badge: 'Soft & Soothing',
+    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200',
+    url: '/uploads/audio/v2_peaceful_valley.mp3',
+    description: 'Gentle melodic acoustic texture ideal for feel-good and inspiring reels.',
   },
   {
     id: 'crime',
-    name: 'Crime & Suspense Pulse',
+    name: 'Crime & Mystery Suspense',
     category: '🚨 Crime & Mystery',
     badge: 'Dark Thriller',
     badgeColor: 'bg-slate-100 text-slate-800 border-slate-300',
-    url: '/uploads/audio/dramatic_pulse.mp3',
-    description: 'Deep cello pulse, dark suspense, heartbeat tension for crime & investigation stories.',
+    url: '/uploads/audio/v2_crime_suspense.mp3',
+    description: 'Deep cinematic suspense underscore with atmospheric tension for crime news.',
   },
   {
     id: 'viral',
-    name: 'Trending Tech / Viral Beat',
-    category: '📈 Viral & Trending',
+    name: 'Trending Chill Lo-Fi',
+    category: '📈 Viral & Lifestyle',
     badge: 'Modern Lo-Fi',
     badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
-    url: '/uploads/audio/viral_lofi_beat.mp3',
-    description: 'Smooth modern hip-hop lo-fi beat, crisp snare, perfect for viral facts & youth news.',
+    url: '/uploads/audio/v2_viral_lofi.mp3',
+    description: 'Smooth warm lo-fi hip-hop groove with crisp chill drums for viral reels.',
+  },
+  {
+    id: 'urban',
+    name: 'Deep Urban Tech Groove',
+    category: '⚡ Tech & Business',
+    badge: 'Sleek Electronic',
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    url: '/uploads/audio/v2_tech_urban.mp3',
+    description: 'Clean modern electronic pulse ideal for tech, business & explainer reels.',
   },
 ];
 
@@ -324,96 +351,123 @@ function ReelParticleOverlay({
       type: 'snow' | 'dust' | 'glitter' | 'bokeh' | 'ember';
       color: string;
       phase: number;
+      rot: number;
+      rotSpeed: number;
+      depth: number;
     }
 
     const particles: PItem[] = [];
 
     if (hasSnow) {
-      const count = Math.round(35 * intensity);
+      const count = Math.round(14 + 42 * intensity);
       for (let i = 0; i < count; i++) {
+        const depth = 0.4 + Math.random() * 0.6;
         particles.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.6,
-          vy: 0.6 + Math.random() * 1.2,
-          size: 1.5 + Math.random() * 2.5,
-          alpha: 0.4 + Math.random() * 0.5,
-          alphaSpeed: 0.005,
+          vx: (Math.random() - 0.5) * 0.45 * depth,
+          vy: (0.45 + Math.random() * 1.1) * depth,
+          size: (1.2 + Math.random() * 2.6) * depth,
+          alpha: 0.35 + Math.random() * 0.55,
+          alphaSpeed: 0.01,
           type: 'snow',
           color: '#FFFFFF',
           phase: Math.random() * Math.PI * 2,
+          rot: 0,
+          rotSpeed: 0,
+          depth,
         });
       }
     }
 
     if (hasDust) {
-      const count = Math.round(30 * intensity);
+      const count = Math.round(14 + 54 * intensity);
       for (let i = 0; i < count; i++) {
+        const isBokehDust = Math.random() > 0.72;
         particles.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: -0.2 - Math.random() * 0.4,
-          size: 1 + Math.random() * 1.8,
-          alpha: 0.2 + Math.random() * 0.45,
-          alphaSpeed: 0.008,
+          vx: (Math.random() - 0.5) * 0.25,
+          vy: -0.18 - Math.random() * 0.38,
+          size: isBokehDust ? 2.4 + Math.random() * 2.6 : 0.9 + Math.random() * 1.7,
+          alpha: isBokehDust ? 0.22 + Math.random() * 0.28 : 0.35 + Math.random() * 0.5,
+          alphaSpeed: 0.012 + Math.random() * 0.014,
           type: 'dust',
-          color: Math.random() > 0.5 ? '#FBBF24' : '#E2E8F0',
+          color: Math.random() > 0.38 ? 'gold' : 'white',
           phase: Math.random() * Math.PI * 2,
+          rot: 0,
+          rotSpeed: 0,
+          depth: isBokehDust ? 1.2 : 0.8,
         });
       }
     }
 
     if (hasGlitter) {
-      const count = Math.round(20 * intensity);
+      const count = Math.round(7 + 20 * intensity);
       for (let i = 0; i < count; i++) {
+        const isHeroStar = Math.random() > 0.45;
         particles.push({
-          x: Math.random() * width,
-          y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.2,
-          vy: (Math.random() - 0.5) * 0.2,
-          size: 2 + Math.random() * 3.5,
-          alpha: Math.random(),
-          alphaSpeed: 0.02 + Math.random() * 0.03,
+          x: 12 + Math.random() * (width - 24),
+          y: 12 + Math.random() * (height - 24),
+          vx: (Math.random() - 0.5) * 0.14,
+          vy: -0.08 - Math.random() * 0.14,
+          size: (isHeroStar ? 4.0 + Math.random() * 4.2 : 2.2 + Math.random() * 2.4) * (0.75 + 0.35 * intensity),
+          alpha: Math.random() * Math.PI * 2, // phase angle for smooth twinkle
+          alphaSpeed: 0.032 + Math.random() * 0.038,
           type: 'glitter',
-          color: '#FACC15',
+          color: Math.random() > 0.3 ? 'gold' : 'white',
           phase: Math.random() * Math.PI * 2,
+          rot: (Math.random() - 0.5) * 0.35,
+          rotSpeed: (Math.random() - 0.5) * 0.008,
+          depth: 1,
         });
       }
     }
 
     if (hasBokeh) {
-      const count = Math.round(10 * intensity);
+      const count = Math.round(4 + 12 * intensity);
+      const bokehColors = [
+        'rgba(253, 224, 71, ',
+        'rgba(244, 114, 182, ',
+        'rgba(251, 146, 60, ',
+        'rgba(167, 139, 250, ',
+      ];
       for (let i = 0; i < count; i++) {
         particles.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.25,
-          vy: -0.3 - Math.random() * 0.5,
-          size: 12 + Math.random() * 22,
-          alpha: 0.08 + Math.random() * 0.14,
-          alphaSpeed: 0.003,
+          vx: (Math.random() - 0.5) * 0.22,
+          vy: -0.22 - Math.random() * 0.42,
+          size: 9 + Math.random() * 20,
+          alpha: 0.09 + Math.random() * 0.14,
+          alphaSpeed: 0.004,
           type: 'bokeh',
-          color: Math.random() > 0.5 ? 'rgba(251, 191, 36, ' : 'rgba(236, 72, 153, ',
+          color: bokehColors[i % bokehColors.length],
           phase: Math.random() * Math.PI * 2,
+          rot: 0,
+          rotSpeed: 0,
+          depth: 1,
         });
       }
     }
 
     if (hasEmbers) {
-      const count = Math.round(25 * intensity);
+      const count = Math.round(10 + 30 * intensity);
       for (let i = 0; i < count; i++) {
         particles.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: -0.8 - Math.random() * 1.2,
-          size: 1.5 + Math.random() * 2.5,
-          alpha: 0.5 + Math.random() * 0.5,
-          alphaSpeed: 0.015,
+          vx: (Math.random() - 0.5) * 0.65,
+          vy: -0.9 - Math.random() * 1.4,
+          size: 1.4 + Math.random() * 2.4,
+          alpha: 0.45 + Math.random() * 0.5,
+          alphaSpeed: 0.012 + Math.random() * 0.01,
           type: 'ember',
-          color: Math.random() > 0.4 ? '#F97316' : '#EF4444',
+          color: Math.random() > 0.35 ? 'amber' : 'red',
           phase: Math.random() * Math.PI * 2,
+          rot: 0,
+          rotSpeed: 0,
+          depth: 1,
         });
       }
     }
@@ -427,70 +481,148 @@ function ReelParticleOverlay({
         p.x += p.vx;
         p.y += p.vy;
 
-        if (p.x < -20) p.x = width + 20;
-        if (p.x > width + 20) p.x = -20;
+        if (p.x < -24) p.x = width + 24;
+        if (p.x > width + 24) p.x = -24;
         if (p.y < -30) p.y = height + 20;
         if (p.y > height + 30) p.y = -20;
 
         if (p.type === 'snow') {
-          p.x += Math.sin((frame + p.phase * 50) * 0.03) * 0.4;
+          p.x += Math.sin((frame + p.phase * 50) * 0.025) * 0.35 * p.depth;
+          const a = Math.min(0.95, p.alpha * (0.45 + 0.55 * intensity));
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 1.7);
+          grad.addColorStop(0, `rgba(255, 255, 255, ${a})`);
+          grad.addColorStop(0.55, `rgba(241, 245, 249, ${(a * 0.55).toFixed(2)})`);
+          grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha * intensity})`;
+          ctx.arc(p.x, p.y, p.size * 1.7, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
           ctx.fill();
         } else if (p.type === 'dust') {
-          p.x += Math.sin((frame + p.phase * 30) * 0.02) * 0.3;
+          p.x += Math.sin(frame * 0.018 + p.phase) * 0.25 + Math.cos(frame * 0.011 + p.phase * 2) * 0.14;
+          const breath = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(frame * p.alphaSpeed + p.phase));
+          const a = Math.min(0.92, p.alpha * breath * (0.4 + 0.6 * intensity));
+          const rGlow = p.size * 2.2;
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rGlow);
+          if (p.color === 'gold') {
+            grad.addColorStop(0, `rgba(255, 251, 235, ${a})`);
+            grad.addColorStop(0.35, `rgba(253, 230, 138, ${(a * 0.72).toFixed(2)})`);
+            grad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+          } else {
+            grad.addColorStop(0, `rgba(255, 255, 255, ${a})`);
+            grad.addColorStop(0.45, `rgba(226, 232, 240, ${(a * 0.52).toFixed(2)})`);
+            grad.addColorStop(1, 'rgba(203, 213, 225, 0)');
+          }
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fillStyle =
-            p.color === '#FBBF24'
-              ? `rgba(251, 191, 36, ${p.alpha * intensity})`
-              : `rgba(226, 232, 240, ${p.alpha * intensity})`;
+          ctx.arc(p.x, p.y, rGlow, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
           ctx.fill();
         } else if (p.type === 'glitter') {
           p.alpha += p.alphaSpeed;
-          if (p.alpha > 1 || p.alpha < 0.1) p.alphaSpeed = -p.alphaSpeed;
-          const currentA = Math.max(0.1, Math.min(1, p.alpha)) * intensity;
-          const s = p.size;
+          p.rot += p.rotSpeed;
+          const wave = Math.pow(0.5 + 0.5 * Math.sin(p.alpha), 2.2);
+          const currentA = Math.min(0.98, (0.08 + 0.92 * wave) * (0.45 + 0.55 * intensity));
+          const s = p.size * (0.65 + 0.5 * wave);
+          const w = s * 0.05;
+
           ctx.save();
           ctx.translate(p.x, p.y);
-          ctx.fillStyle = `rgba(254, 240, 138, ${currentA})`;
+          ctx.rotate(p.rot);
+
+          // Soft optical radial aura glow
+          const auraR = s * 1.45;
+          const aura = ctx.createRadialGradient(0, 0, 0, 0, 0, auraR);
+          if (p.color === 'gold') {
+            aura.addColorStop(0, `rgba(255, 255, 255, ${currentA})`);
+            aura.addColorStop(0.28, `rgba(254, 240, 138, ${(currentA * 0.65).toFixed(2)})`);
+            aura.addColorStop(0.65, `rgba(250, 204, 21, ${(currentA * 0.18).toFixed(2)})`);
+          } else {
+            aura.addColorStop(0, `rgba(255, 255, 255, ${currentA})`);
+            aura.addColorStop(0.32, `rgba(224, 242, 254, ${(currentA * 0.6).toFixed(2)})`);
+            aura.addColorStop(0.7, `rgba(147, 197, 253, ${(currentA * 0.15).toFixed(2)})`);
+          }
+          aura.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.beginPath();
+          ctx.arc(0, 0, auraR, 0, Math.PI * 2);
+          ctx.fillStyle = aura;
+          ctx.fill();
+
+          // Slender concave 4-point primary rays (razor-sharp delicate tips)
+          ctx.fillStyle = p.color === 'gold'
+            ? `rgba(254, 249, 195, ${currentA})`
+            : `rgba(255, 255, 255, ${currentA})`;
           ctx.beginPath();
           ctx.moveTo(0, -s);
-          ctx.quadraticCurveTo(0, 0, s, 0);
-          ctx.quadraticCurveTo(0, 0, 0, s);
-          ctx.quadraticCurveTo(0, 0, -s, 0);
-          ctx.quadraticCurveTo(0, 0, 0, -s);
+          ctx.quadraticCurveTo(w, -w, s, 0);
+          ctx.quadraticCurveTo(w, w, 0, s);
+          ctx.quadraticCurveTo(-w, w, -s, 0);
+          ctx.quadraticCurveTo(-w, -w, 0, -s);
           ctx.fill();
+
+          // 45-degree diagonal secondary shimmer cross
+          const s2 = s * 0.45;
+          const w2 = w * 0.55;
+          ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = p.color === 'gold'
+            ? `rgba(253, 224, 71, ${(currentA * 0.72).toFixed(2)})`
+            : `rgba(224, 242, 254, ${(currentA * 0.72).toFixed(2)})`;
+          ctx.beginPath();
+          ctx.moveTo(0, -s2);
+          ctx.quadraticCurveTo(w2, -w2, s2, 0);
+          ctx.quadraticCurveTo(w2, w2, 0, s2);
+          ctx.quadraticCurveTo(-w2, w2, -s2, 0);
+          ctx.quadraticCurveTo(-w2, -w2, 0, -s2);
+          ctx.fill();
+
+          // Hot pinpoint white core
+          ctx.beginPath();
+          ctx.arc(0, 0, Math.max(0.8, s * 0.15), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 255, 255, ${currentA})`;
+          ctx.fill();
+
           ctx.restore();
         } else if (p.type === 'bokeh') {
-          p.alpha += Math.sin(frame * 0.02 + p.phase) * 0.003;
-          const currentA = Math.max(0.04, Math.min(0.25, p.alpha)) * intensity;
+          p.alpha += Math.sin(frame * 0.02 + p.phase) * 0.002;
+          const currentA = Math.max(0.05, Math.min(0.32, p.alpha)) * (0.4 + 0.6 * intensity);
           const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
-          grad.addColorStop(0, `${p.color}${currentA})`);
+          grad.addColorStop(0, `${p.color}${(currentA * 0.45).toFixed(2)})`);
+          grad.addColorStop(0.75, `${p.color}${(currentA * 0.78).toFixed(2)})`);
+          grad.addColorStop(0.9, `${p.color}${(currentA * 0.95).toFixed(2)})`);
           grad.addColorStop(1, `${p.color}0)`);
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
           ctx.fillStyle = grad;
           ctx.fill();
         } else if (p.type === 'ember') {
-          p.x += Math.sin((frame + p.phase * 40) * 0.05) * 0.5;
+          p.x += Math.sin((frame + p.phase * 40) * 0.055) * 0.55;
           p.alpha -= p.alphaSpeed;
           if (p.alpha <= 0.1) {
-            p.alpha = 0.8;
+            p.alpha = 0.85;
             p.y = height + 10;
             p.x = Math.random() * width;
           }
+          const a = Math.min(0.95, p.alpha * (0.45 + 0.55 * intensity));
+          const tilt = Math.atan2(p.vx, -p.vy) * 0.6;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(tilt);
+
+          const eGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size * 2.8);
+          eGlow.addColorStop(0, `rgba(254, 240, 138, ${a})`);
+          eGlow.addColorStop(
+            0.45,
+            p.color === 'amber' ? `rgba(249, 115, 22, ${(a * 0.7).toFixed(2)})` : `rgba(239, 68, 68, ${(a * 0.65).toFixed(2)})`
+          );
+          eGlow.addColorStop(1, 'rgba(234, 88, 12, 0)');
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fillStyle =
-            p.color === '#F97316'
-              ? `rgba(249, 115, 22, ${p.alpha * intensity})`
-              : `rgba(239, 68, 68, ${p.alpha * intensity})`;
-          ctx.shadowColor = '#F97316';
-          ctx.shadowBlur = 4;
+          ctx.ellipse(0, 0, p.size * 2.2, p.size * 3.4, 0, 0, Math.PI * 2);
+          ctx.fillStyle = eGlow;
           ctx.fill();
-          ctx.shadowBlur = 0;
+
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size * 0.65, p.size * 1.6, 0, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(254, 249, 195, ${a})`;
+          ctx.fill();
+          ctx.restore();
         }
       }
 
@@ -567,42 +699,48 @@ function ReelLiveMockupPreview({
   const dispW = Math.round(canvasWidth * scale);
   const dispH = Math.round(canvasHeight * scale);
 
-  const activeEffect = selectedEffects.find((e) => e !== 'none') || 'subtle_float';
+  const mi = Math.max(0.05, Math.min(1.0, (motionIntensity || 20) / 100));
+  const ovI = Math.max(0.1, Math.min(1.0, (overlayIntensity || 50) / 100));
 
-  let animName = 'none';
-  let animDuration = '4s';
-  let animTiming = 'ease-in-out';
+  const nonNoneEffects = selectedEffects.filter((e) => e !== 'none');
+  const activeEffect = nonNoneEffects[0] || 'none';
 
-  if (isLiveMotionPlaying) {
-    if (activeEffect === 'subtle_float') {
-      animName = 'liveSubtleFloat';
-      animDuration = '4.5s';
-    } else if (activeEffect === 'micro_jitter') {
-      animName = 'liveMicroJitter';
-      animDuration = '0.35s';
-      animTiming = 'steps(2)';
-    } else if (activeEffect === 'smooth_sway') {
-      animName = 'liveSmoothSway';
-      animDuration = '4s';
-    } else if (activeEffect === 'vertical_drift') {
-      animName = 'liveVerticalDrift';
-      animDuration = '4.5s';
-    } else if (activeEffect === 'pulse_shake' || activeEffect === 'pulse') {
-      animName = 'livePulseShake';
-      animDuration = '2s';
-    } else if (activeEffect === 'zoom_in') {
-      animName = 'liveZoomIn';
-      animDuration = '12s';
-      animTiming = 'ease-out';
-    } else if (activeEffect === 'zoom_out') {
-      animName = 'liveZoomOut';
-      animDuration = '12s';
-      animTiming = 'ease-out';
-    } else if (activeEffect === 'shake' || activeEffect === 'breaking_jitter') {
-      animName = 'liveShake';
-      animDuration = activeEffect === 'breaking_jitter' ? '0.9s' : '1.6s';
+  // Split spatial zoom/float/sway (outer wrapper) from shake/pulse/glitter (inner wrapper) so multiple effects combine!
+  let outerAnim = 'none';
+  let innerAnim = 'none';
+
+  if (isLiveMotionPlaying && nonNoneEffects.length > 0) {
+    if (nonNoneEffects.includes('zoom_in')) outerAnim = 'liveZoomIn 9s ease-out infinite alternate';
+    else if (nonNoneEffects.includes('zoom_out')) outerAnim = 'liveZoomOut 9s ease-out infinite alternate';
+    else if (nonNoneEffects.includes('smooth_sway')) outerAnim = 'liveSmoothSway 4.2s ease-in-out infinite';
+    else if (nonNoneEffects.includes('vertical_drift')) outerAnim = 'liveVerticalDrift 4.4s ease-in-out infinite';
+    else if (nonNoneEffects.includes('subtle_float')) outerAnim = 'liveSubtleFloat 4.2s ease-in-out infinite';
+
+    if (nonNoneEffects.includes('breaking_jitter')) innerAnim = 'liveBreakingJitter 0.75s ease-in-out infinite';
+    else if (nonNoneEffects.includes('shake')) innerAnim = 'liveShake 1.4s ease-in-out infinite';
+    else if (nonNoneEffects.includes('micro_jitter')) innerAnim = 'liveMicroJitter 0.9s ease-in-out infinite';
+    else if (nonNoneEffects.includes('pulse_shake')) innerAnim = 'livePulseShake 1.6s ease-in-out infinite';
+    else if (nonNoneEffects.includes('glitter')) innerAnim = 'liveGlitterShimmer 1.8s ease-in-out infinite';
+    else if (outerAnim === 'none' && nonNoneEffects.includes('subtle_float')) {
+      innerAnim = 'liveSubtleFloat 4.2s ease-in-out infinite';
     }
   }
+
+  const dynamicMotionVars: React.CSSProperties = {
+    ['--float-x' as any]: `${(2.5 + 8.5 * mi).toFixed(2)}px`,
+    ['--float-y' as any]: `${(3.5 + 11.5 * mi).toFixed(2)}px`,
+    ['--sway-x' as any]: `${(4.5 + 15.5 * mi).toFixed(2)}px`,
+    ['--sway-rot' as any]: `${(0.2 + 0.9 * mi).toFixed(2)}deg`,
+    ['--drift-y' as any]: `${(4.5 + 15.5 * mi).toFixed(2)}px`,
+    ['--jitter-x' as any]: `${(1.2 + 5.0 * mi).toFixed(2)}px`,
+    ['--jitter-y' as any]: `${(1.2 + 5.0 * mi).toFixed(2)}px`,
+    ['--shake-x' as any]: `${(2.5 + 9.0 * mi).toFixed(2)}px`,
+    ['--shake-y' as any]: `${(2.0 + 7.5 * mi).toFixed(2)}px`,
+    ['--zoom-max' as any]: `${(1.03 + 0.14 * mi).toFixed(3)}`,
+    ['--pulse-max' as any]: `${(1.012 + 0.045 * mi).toFixed(3)}`,
+    ['--glitter-bright' as any]: `${(1.04 + 0.14 * mi).toFixed(2)}`,
+    ['--glitter-sat' as any]: `${(1.08 + 0.28 * mi).toFixed(2)}`,
+  };
 
   const cleanHeadline = headline || 'सुक्खू सरकार का बड़ा फैसला : हिमकेयर बंद, अब मिलेगा ₹10 लाख तक फ्री इलाज!';
   const cleanHighlight = highlight?.trim() || '';
@@ -661,16 +799,27 @@ function ReelLiveMockupPreview({
           }}
           className="relative rounded-[22px] overflow-hidden border border-slate-800/80 shadow-inner group"
         >
-          {/* Animated Wrapper for Live Camera Motion */}
+          {/* Outer Spatial Motion Wrapper (Zoom / Sway / Float) */}
           <div
             style={{
+              ...dynamicMotionVars,
               width: '100%',
               height: '100%',
               position: 'relative',
-              animation: animName !== 'none' ? `${animName} ${animDuration} ${animTiming} infinite` : 'none',
+              animation: outerAnim,
               transformOrigin: 'center center',
             }}
           >
+            {/* Inner Secondary Motion Wrapper (Pulse / Shake / Jitter / Shimmer) */}
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                position: 'relative',
+                animation: innerAnim,
+                transformOrigin: 'center center',
+              }}
+            >
             {/* LAYER 1: Photo (Z=1 if overlay, Z=2 if background) */}
             {photoUrl && (
               <div
@@ -756,6 +905,7 @@ function ReelLiveMockupPreview({
               </p>
             </div>
           </div>
+          </div>
 
           {/* LAYER 4: Real-time Live Particle Overlays */}
           <ReelParticleOverlay
@@ -765,21 +915,22 @@ function ReelLiveMockupPreview({
             overlayIntensity={overlayIntensity}
           />
 
-          {/* Vignette Overlay (if selected) */}
+          {/* Vignette Overlay (if selected, scales dynamically with overlayIntensity) */}
           {selectedOverlays.includes('vignette') && (
             <div
-              className="absolute inset-0 pointer-events-none z-16"
+              className="absolute inset-0 pointer-events-none z-16 transition-all duration-200"
               style={{
-                background: 'radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.65) 100%)',
+                background: `radial-gradient(circle at center, transparent 42%, rgba(2,4,8,${(0.24 + 0.62 * ovI).toFixed(2)}) 100%)`,
               }}
             />
           )}
 
-          {/* Film Grain (if selected) */}
+          {/* Film Grain (if selected, scales dynamically with overlayIntensity) */}
           {selectedOverlays.includes('film_grain') && (
             <div
-              className="absolute inset-0 pointer-events-none opacity-20 z-16 mix-blend-overlay"
+              className="absolute inset-0 pointer-events-none z-16 mix-blend-overlay transition-opacity duration-200"
               style={{
+                opacity: Number((0.08 + 0.32 * ovI).toFixed(2)),
                 backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
               }}
             />
@@ -1563,7 +1714,13 @@ export default function ReelStudioPage() {
     }
   };
 
-  // Toggle Audio Play / Pause
+  // Toggle Audio Play / Pause & keep live preview volume synced with slider
+  useEffect(() => {
+    if (audioPreviewRef.current) {
+      audioPreviewRef.current.volume = Math.max(0.05, Math.min(1.0, musicVolume / 100));
+    }
+  }, [musicVolume]);
+
   const togglePlayAudio = (urlToPlay: string) => {
     if (!audioPreviewRef.current) return;
 
@@ -1572,8 +1729,8 @@ export default function ReelStudioPage() {
       setIsPlayingAudio(false);
     } else {
       audioPreviewRef.current.src = urlToPlay;
-      audioPreviewRef.current.volume = Math.max(0.1, musicVolume / 100);
-      audioPreviewRef.current.play();
+      audioPreviewRef.current.volume = Math.max(0.05, Math.min(1.0, musicVolume / 100));
+      audioPreviewRef.current.play().catch(() => {});
       setIsPlayingAudio(true);
     }
   };
@@ -1719,46 +1876,58 @@ export default function ReelStudioPage() {
   return (
     <AppShell>
       <div className="space-y-6 font-sans max-w-7xl pb-24 select-none animate-fade-in">
-        {/* Global Keyframes for Live Motion Preview */}
+        {/* Global Keyframes for Live Motion Preview (dynamically driven by Motion Intensity CSS variables) */}
         <style dangerouslySetInnerHTML={{ __html: `
           @keyframes liveSubtleFloat {
             0%, 100% { transform: translate(0, 0) scale(1); }
-            50% { transform: translate(0, -2.5px) scale(1.004); }
+            33% { transform: translate(var(--float-x, 4px), calc(var(--float-y, -5px) * -0.7)) scale(1.012); }
+            66% { transform: translate(calc(var(--float-x, 4px) * -0.7), var(--float-y, 5px)) scale(1.006); }
           }
           @keyframes liveMicroJitter {
-            0% { transform: translate(0, 0); }
-            25% { transform: translate(0.8px, -0.6px); }
-            50% { transform: translate(-0.7px, 0.5px); }
-            75% { transform: translate(0.5px, 0.7px); }
-            100% { transform: translate(0, 0); }
+            0%, 100% { transform: translate(0, 0); }
+            25% { transform: translate(var(--jitter-x, 2px), calc(var(--jitter-y, 2px) * -0.8)); }
+            50% { transform: translate(calc(var(--jitter-x, 2px) * -0.9), var(--jitter-y, 2px)); }
+            75% { transform: translate(calc(var(--jitter-x, 2px) * 0.6), calc(var(--jitter-y, 2px) * 0.9)); }
           }
           @keyframes liveSmoothSway {
             0%, 100% { transform: translate(0, 0) rotate(0deg); }
-            33% { transform: translate(1.5px, -1px) rotate(0.12deg); }
-            66% { transform: translate(-1.5px, 0.8px) rotate(-0.12deg); }
+            25% { transform: translate(var(--sway-x, 6px), -2px) rotate(var(--sway-rot, 0.4deg)); }
+            75% { transform: translate(calc(var(--sway-x, 6px) * -1), 2px) rotate(calc(var(--sway-rot, 0.4deg) * -1)); }
           }
           @keyframes liveVerticalDrift {
             0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-3.5px); }
+            50% { transform: translateY(calc(var(--drift-y, 6px) * -1)); }
           }
           @keyframes livePulseShake {
             0%, 100% { transform: scale(1) translate(0, 0); }
-            50% { transform: scale(1.012) translate(0.5px, -0.5px); }
+            50% { transform: scale(var(--pulse-max, 1.025)) translate(1px, -1px); }
           }
           @keyframes liveZoomIn {
             0% { transform: scale(1); }
-            100% { transform: scale(1.05); }
+            100% { transform: scale(var(--zoom-max, 1.08)); }
           }
           @keyframes liveZoomOut {
-            0% { transform: scale(1.05); }
+            0% { transform: scale(var(--zoom-max, 1.08)); }
             100% { transform: scale(1); }
           }
           @keyframes liveShake {
-            0%, 100% { transform: translate(0, 0); }
-            20% { transform: translate(-2px, 1.5px); }
-            40% { transform: translate(2px, -1px); }
-            60% { transform: translate(-1.5px, -1.5px); }
-            80% { transform: translate(1.5px, 1px); }
+            0%, 60%, 100% { transform: translate(0, 0); }
+            10% { transform: translate(calc(var(--shake-x, 4px) * -1), var(--shake-y, 3px)); }
+            20% { transform: translate(var(--shake-x, 4px), calc(var(--shake-y, 3px) * -1)); }
+            30% { transform: translate(calc(var(--shake-x, 4px) * -0.8), calc(var(--shake-y, 3px) * -0.8)); }
+            40% { transform: translate(calc(var(--shake-x, 4px) * 0.8), calc(var(--shake-y, 3px) * 0.7)); }
+            50% { transform: translate(calc(var(--shake-x, 4px) * -0.4), calc(var(--shake-y, 3px) * 0.4)); }
+          }
+          @keyframes liveBreakingJitter {
+            0%, 100% { transform: translate(0, 0); filter: brightness(1); }
+            15% { transform: translate(calc(var(--shake-x, 4px) * -0.9), var(--shake-y, 3px)); filter: brightness(1.08); }
+            30% { transform: translate(var(--shake-x, 4px), calc(var(--shake-y, 3px) * -0.9)); filter: brightness(1); }
+            45% { transform: translate(calc(var(--shake-x, 4px) * -0.7), calc(var(--shake-y, 3px) * -0.7)); filter: brightness(1.06); }
+            60% { transform: translate(calc(var(--shake-x, 4px) * 0.6), calc(var(--shake-y, 3px) * 0.6)); filter: brightness(1); }
+          }
+          @keyframes liveGlitterShimmer {
+            0%, 100% { filter: brightness(1) saturate(1); }
+            50% { filter: brightness(var(--glitter-bright, 1.08)) saturate(var(--glitter-sat, 1.18)); }
           }
         ` }} />
 

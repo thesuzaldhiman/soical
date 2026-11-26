@@ -5,6 +5,7 @@ import zlib from 'zlib';
 import { spawn } from 'child_process';
 import { VideoMotionEffect, VideoOverlayType } from '@/types';
 import { saveMediaToDb, getMediaFromDb } from '@/lib/db/mysql';
+import { generateSeamlessOverlayAssets, OverlayAssetLayer } from './video-overlay-renderer';
 
 let cachedFfmpegPath: string | null = null;
 
@@ -384,10 +385,10 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   const finalFilePath = path.join(videosDir, finalFilename);
   const publicVideoUrl = `/uploads/videos/${finalFilename}`;
 
-  // 4. Build Combined Multi-Motion Video Filter Chain
+  // 4. Build Combined Multi-Motion Video Filter Chain (calibrated for 1080px+ reels)
   const fps = 30;
-  const totalFrames = duration * fps;
   const animFrames = Math.max(1, Math.round(animDuration * fps));
+  const refScale = Math.max(0.65, targetW / 1080);
 
   const hasSubtleFloat = activeEffects.includes('subtle_float');
   const hasMicroJitter = activeEffects.includes('micro_jitter');
@@ -405,292 +406,144 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
 
   const filterChain: string[] = [];
 
-  // Motion margin padding (2% to 5% based on intensity)
-  const padRatio = Math.max(0.02, Math.min(0.06, 0.02 + 0.03 * intensityRatio));
+  // Generous motion margin padding (3% to 10% based on intensity) so even intense multi-motion never clips edges
+  const hasPan = hasPanLeft || hasPanRight;
+  const padRatio = hasPan
+    ? Math.max(0.12, 0.08 + 0.08 * intensityRatio)
+    : Math.max(0.035, Math.min(0.11, 0.035 + 0.075 * intensityRatio));
   const padX = Math.round((targetW * padRatio) / 2) * 2;
   const padY = Math.round((targetH * padRatio) / 2) * 2;
   const scaledW = targetW + padX * 2;
   const scaledH = targetH + padY * 2;
 
-  const needsScaleUp =
+  const hasDisplacementMotion =
     hasSubtleFloat ||
     hasMicroJitter ||
     hasSmoothSway ||
     hasVerticalDrift ||
     hasPulseShake ||
     hasShake ||
-    hasJitter;
+    hasJitter ||
+    hasPan;
 
-  // Step A: Base Scale & Crop
-  if (needsScaleUp) {
-    filterChain.push(`scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase`);
+  // Step A: Scale & Additive Spatial Displacement (combines all selected pan/drift/float/shake motions cleanly!)
+  if (hasDisplacementMotion) {
+    filterChain.push(`scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase:flags=bicubic`);
+
+    const xTerms: string[] = [`${padX}`];
+    const yTerms: string[] = [`${padY}`];
+    const activeGate = `if(lt(n,${animFrames}),1,0)`;
+
+    if (hasPanLeft) {
+      xTerms.push(`(${padX * 0.85})*(1-2*min(1,n/${animFrames}))`);
+    } else if (hasPanRight) {
+      xTerms.push(`(${padX * 0.85})*(2*min(1,n/${animFrames})-1)`);
+    }
+
+    if (hasSubtleFloat) {
+      const ampX = ((5 + 19 * intensityRatio) * refScale).toFixed(2);
+      const ampY = ((7 + 23 * intensityRatio) * refScale).toFixed(2);
+      xTerms.push(`${ampX}*sin(2*PI*n/(${fps}*4.2))*${activeGate}`);
+      yTerms.push(`${ampY}*cos(2*PI*n/(${fps}*3.8))*${activeGate}`);
+    }
+
+    if (hasSmoothSway) {
+      const ampX = ((12 + 38 * intensityRatio) * refScale).toFixed(2);
+      xTerms.push(`${ampX}*sin(2*PI*n/(${fps}*4.6))*${activeGate}`);
+    }
+
+    if (hasVerticalDrift) {
+      const ampY = ((12 + 40 * intensityRatio) * refScale).toFixed(2);
+      yTerms.push(`${ampY}*sin(2*PI*n/(${fps}*4.8))*${activeGate}`);
+    }
 
     if (hasMicroJitter) {
-      // Handheld camera micro-tremble: displacement ~1-2.5px, slow frequency, 100% readable text
-      const ampX = (1.5 * intensityRatio).toFixed(2);
-      const ampY = (1.8 * intensityRatio).toFixed(2);
+      const amp = ((3.5 + 13 * intensityRatio) * refScale).toFixed(2);
+      xTerms.push(`${amp}*(0.65*sin(n*0.42)+0.35*sin(n*0.97))*${activeGate}`);
+      yTerms.push(`${amp}*(0.65*cos(n*0.38)+0.35*cos(n*0.89))*${activeGate}`);
+    }
+
+    if (hasShake) {
+      const amp = ((7 + 24 * intensityRatio) * refScale).toFixed(2);
+      const burstGate = `if(lt(mod(n,60),22)*lt(n,${animFrames}),1,0.08)`;
+      xTerms.push(`${amp}*sin(n*0.75)*${burstGate}`);
+      yTerms.push(`${amp}*cos(n*0.88)*${burstGate}`);
+    }
+
+    if (hasJitter) {
+      const amp = ((6 + 20 * intensityRatio) * refScale).toFixed(2);
+      xTerms.push(`${amp}*sin(n*0.85)*${activeGate}`);
+      yTerms.push(`${amp}*cos(n*0.95)*${activeGate}`);
+    }
+
+    if (hasPulseShake) {
+      const amp = ((3 + 11 * intensityRatio) * refScale).toFixed(2);
+      xTerms.push(`${amp}*sin(n*0.5)*${activeGate}`);
+      yTerms.push(`${amp}*cos(n*0.55)*${activeGate}`);
+    }
+
+    const xExpr = `max(0,min(${padX * 2},${xTerms.join('+')}))`;
+    const yExpr = `max(0,min(${padY * 2},${yTerms.join('+')}))`;
+    filterChain.push(`crop=${targetW}:${targetH}:'${xExpr}':'${yExpr}',setsar=1`);
+
+    if (hasJitter) {
       filterChain.push(
-        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.35)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.42)*if(lt(n,${animFrames}),1,0)'`
-      );
-    } else if (hasSubtleFloat) {
-      // Slow gentle floating/breathing: displacement ~2.5-4px, very slow frequency
-      const ampX = (2.5 * intensityRatio).toFixed(2);
-      const ampY = (3.0 * intensityRatio).toFixed(2);
-      filterChain.push(
-        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.12)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.10)*if(lt(n,${animFrames}),1,0)'`
-      );
-    } else if (hasSmoothSway) {
-      // Horizontal cinematic pan sway
-      const ampX = Math.max(4, Math.round(padX * 0.7 * intensityRatio));
-      filterChain.push(
-        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(2*PI*n/(${fps}*4))*if(lt(n,${animFrames}),1,0)':'${padY}'`
-      );
-    } else if (hasVerticalDrift) {
-      // Vertical gentle bob
-      const ampY = Math.max(4, Math.round(padY * 0.7 * intensityRatio));
-      filterChain.push(
-        `crop=${targetW}:${targetH}:'${padX}':'${padY}+${ampY}*sin(2*PI*n/(${fps}*5))*if(lt(n,${animFrames}),1,0)'`
-      );
-    } else if (hasJitter) {
-      // Alert strobe jitter (scaled down so headline is readable)
-      const ampX = Math.max(2, Math.round(5 * intensityRatio));
-      const ampY = Math.max(2, Math.round(6 * intensityRatio));
-      filterChain.push(
-        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.6)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.7)*if(lt(n,${animFrames}),1,0)'`
-      );
-      filterChain.push(
-        `eq=brightness='${(0.04 * intensityRatio).toFixed(3)}*if(lt(mod(n,45),5)*lt(n,${animFrames}),1,0)'`
-      );
-    } else if (hasShake) {
-      // Mild impact camera shake (scaled down so headline is readable)
-      const ampX = Math.max(2, Math.round(4.5 * intensityRatio));
-      const ampY = Math.max(2, Math.round(4.5 * intensityRatio));
-      filterChain.push(
-        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.35)*if(lt(mod(n,60),20)*lt(n,${animFrames}),1,0.05)':'${padY}+${ampY}*cos(n*0.4)*if(lt(mod(n,60),20)*lt(n,${animFrames}),1,0.05)'`
-      );
-    } else if (hasPulseShake) {
-      const ampX = (1.5 * intensityRatio).toFixed(2);
-      const ampY = (1.5 * intensityRatio).toFixed(2);
-      filterChain.push(
-        `crop=${targetW}:${targetH}:'${padX}+${ampX}*sin(n*0.3)*if(lt(n,${animFrames}),1,0)':'${padY}+${ampY}*cos(n*0.3)*if(lt(n,${animFrames}),1,0)'`
+        `eq=brightness='${(0.055 * intensityRatio).toFixed(3)}*if(lt(mod(n,45),5)*lt(n,${animFrames}),1,0)'`
       );
     }
-  } else if (hasPanLeft) {
-    const panW = targetW + Math.round(targetW * 0.15);
-    filterChain.push(`scale=${panW}:${targetH}:force_original_aspect_ratio=increase`);
-    filterChain.push(
-      `crop=${targetW}:${targetH}:'(${panW}-${targetW})*if(lt(n,${animFrames}),1-n/${animFrames},0)':0`
-    );
-  } else if (hasPanRight) {
-    const panW = targetW + Math.round(targetW * 0.15);
-    filterChain.push(`scale=${panW}:${targetH}:force_original_aspect_ratio=increase`);
-    filterChain.push(
-      `crop=${targetW}:${targetH}:'(${panW}-${targetW})*if(lt(n,${animFrames}),n/${animFrames},1)':0`
-    );
   } else {
     filterChain.push(
-      `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black`
+      `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=bicubic,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black`
     );
   }
 
-  // Step B: Zoom / Pan / Breathing Pulse (Spatial Animation)
-  if (hasZoomIn) {
-    const zoomRate = (0.0003 + 0.0006 * intensityRatio).toFixed(5);
-    const maxZ = (1.04 + 0.08 * intensityRatio).toFixed(3);
+  // Step B: Zoom / Breathing Pulse (Spatial Scale Animation using d=1 for seamless multi-effect layering!)
+  if (hasZoomIn || hasZoomOut || hasPulse || hasPulseShake) {
+    const zoomSpan = (0.04 + 0.16 * intensityRatio).toFixed(4);
+    const pulseSpan = (0.014 + 0.046 * intensityRatio).toFixed(4);
+    let zExpr = '1.0';
+
+    if (hasZoomIn) {
+      zExpr = `1.0+${zoomSpan}*min(1,in/${animFrames})`;
+    } else if (hasZoomOut) {
+      zExpr = `${(1.0 + Number(zoomSpan)).toFixed(4)}-${zoomSpan}*min(1,in/${animFrames})`;
+    } else if (hasPulse || hasPulseShake) {
+      zExpr = `1.0+${pulseSpan}*(0.5-0.5*cos(2*PI*(in/${fps})*0.85))*if(lt(in,${animFrames}),1,0)`;
+    }
+
     filterChain.push(
-      `zoompan=z='if(lt(on,${animFrames}),min(zoom+${zoomRate},${maxZ}),${maxZ})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${targetW}x${targetH}:fps=${fps}`
-    );
-  } else if (hasZoomOut) {
-    const zoomRate = (0.0003 + 0.0006 * intensityRatio).toFixed(5);
-    const maxZ = (1.05 + 0.08 * intensityRatio).toFixed(3);
-    filterChain.push(
-      `zoompan=z='if(lt(on,${animFrames}),if(lte(zoom,1.0),${maxZ},max(1.001,zoom-${zoomRate})),1.001)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${targetW}x${targetH}:fps=${fps}`
-    );
-  } else if (hasPulse || hasPulseShake) {
-    const pulseAmp = (0.015 * intensityRatio).toFixed(3);
-    filterChain.push(
-      `zoompan=z='if(lt(on,${animFrames}),1.01+${pulseAmp}*sin(2*PI*(on/${fps})*0.8),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${targetW}x${targetH}:fps=${fps}`
+      `zoompan=z='${zExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${targetW}x${targetH}:fps=${fps},setsar=1`
     );
   }
 
-  // Step C: Glitter (Ambient Shimmer Pulses)
+  // Step C: Ambient Light Shimmer & Warm Saturation Glow
   if (hasGlitter) {
     filterChain.push(
-      `eq=brightness='${(0.04 * intensityRatio).toFixed(3)}*sin(2*PI*t*1.4)':saturation='1.0+${(0.12 * intensityRatio).toFixed(3)}*cos(2*PI*t*1.4)':enable='between(t,0,${animDuration})'`
+      `eq=brightness='${(0.055 * intensityRatio).toFixed(3)}*sin(2*PI*t*1.35)':saturation='1.0+${(0.18 * intensityRatio).toFixed(3)}*(0.5+0.5*cos(2*PI*t*1.35))':enable='between(t,0,${animDuration})'`
     );
   }
 
-  // Step D: Apply Atmospheric Visual Overlays (snow, dust, glitter, bokeh, embers)
-  // Uses pure native FFmpeg drawbox & color filters (zero font/freetype dependency, 100% crash-proof across all OSs)
-  if (Array.isArray(overlays) && overlays.length > 0) {
-    for (const ov of overlays) {
-      if (ov === 'vignette') {
-        filterChain.push('vignette=PI/4');
-      } else if (ov === 'film_grain') {
-        const grainLevel = Math.max(3, Math.round(5 + 10 * ovIntensityRatio));
-        filterChain.push(`noise=alls=${grainLevel}:allf=t+u`);
-      } else if (ov === 'particle_snow') {
-        // Delicate soft snow shimmer pulse
-        filterChain.push(
-          `eq=brightness='${(0.03 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.2)':saturation='1.0+${(0.06 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.2)'`
-        );
-        const snowPoints = [
-          { rx: 0.14, ry: 0.04, vy: 140, size: 7, drift: 20 },
-          { rx: 0.35, ry: 0.13, vy: 170, size: 6, drift: -25 },
-          { rx: 0.57, ry: 0.03, vy: 130, size: 8, drift: 18 },
-          { rx: 0.78, ry: 0.17, vy: 160, size: 7, drift: -22 },
-          { rx: 0.23, ry: 0.29, vy: 180, size: 6, drift: 25 },
-          { rx: 0.67, ry: 0.36, vy: 150, size: 8, drift: -30 },
-          { rx: 0.17, ry: 0.49, vy: 165, size: 7, drift: 20 },
-          { rx: 0.50, ry: 0.57, vy: 175, size: 6, drift: -18 },
-          { rx: 0.81, ry: 0.65, vy: 145, size: 8, drift: 26 },
-          { rx: 0.30, ry: 0.73, vy: 185, size: 6, drift: -24 },
-          { rx: 0.70, ry: 0.81, vy: 155, size: 7, drift: 22 },
-          { rx: 0.42, ry: 0.91, vy: 160, size: 6, drift: -20 },
-        ];
-        for (const sp of snowPoints) {
-          const bx = Math.round(targetW * sp.rx);
-          const by = Math.round(targetH * sp.ry);
-          const dSign = sp.drift >= 0 ? '+' : '-';
-          const x = `${bx}${dSign}${Math.abs(sp.drift)}*sin(t*1.4)`;
-          const y = `mod(${by}+t*${sp.vy},${targetH + 120})-60`;
-          filterChain.push(
-            `drawbox=x='${x}':y='${y}':w=${sp.size}:h=${sp.size}:color=white@0.85:t=fill`
-          );
-        }
-      } else if (ov === 'floating_dust' || ov === 'particles') {
-        // Atmospheric floating dust with subtle ambient grain
-        const dustGrain = Math.max(2, Math.round(3 + 6 * ovIntensityRatio));
-        filterChain.push(`noise=alls=${dustGrain}:allf=t+u`);
-        filterChain.push(`eq=brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.9)'`);
-        const dustPoints = [
-          { rx: 0.19, ry: 0.94, vy: 70, size: 6, color: 'gold', drift: 30 },
-          { rx: 0.39, ry: 0.86, vy: 85, size: 5, color: 'white', drift: -25 },
-          { rx: 0.63, ry: 0.91, vy: 75, size: 7, color: 'gold', drift: 35 },
-          { rx: 0.80, ry: 0.83, vy: 90, size: 5, color: 'white', drift: -30 },
-          { rx: 0.29, ry: 0.68, vy: 80, size: 6, color: 'gold', drift: 22 },
-          { rx: 0.69, ry: 0.63, vy: 70, size: 5, color: 'white', drift: -26 },
-          { rx: 0.15, ry: 0.47, vy: 85, size: 7, color: 'gold', drift: 28 },
-          { rx: 0.54, ry: 0.42, vy: 75, size: 5, color: 'white', drift: -20 },
-          { rx: 0.78, ry: 0.31, vy: 80, size: 6, color: 'gold', drift: 25 },
-          { rx: 0.33, ry: 0.23, vy: 90, size: 5, color: 'white', drift: -24 },
-        ];
-        for (const dp of dustPoints) {
-          const bx = Math.round(targetW * dp.rx);
-          const by = Math.round(targetH * dp.ry);
-          const dSign = dp.drift >= 0 ? '+' : '-';
-          const x = `${bx}${dSign}${Math.abs(dp.drift)}*sin(t*1.1)`;
-          const y = `${targetH}-mod(${by}+t*${dp.vy},${targetH + 150})`;
-          filterChain.push(
-            `drawbox=x='${x}':y='${y}':w=${dp.size}:h=${dp.size}:color=${dp.color}@0.75:t=fill`
-          );
-        }
-      } else if (ov === 'glitter_sparkle') {
-        // ── Diamond / Gold Sparkle Shimmer (Real 4-point golden star sparkles across screen) ──
-        filterChain.push(
-          `eq=brightness='${(0.045 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.6)':saturation='1.0+${(0.15 * ovIntensityRatio).toFixed(3)}*cos(2*PI*t*1.6)'`
-        );
-        const sparklePoints = [
-          { rx: 0.13, ry: 0.11, size: 36, color: 'gold', speed: 1.8, phase: 0.2, driftX: 12, driftY: 8 },
-          { rx: 0.81, ry: 0.15, size: 44, color: 'yellow', speed: 2.2, phase: 1.4, driftX: -15, driftY: 10 },
-          { rx: 0.48, ry: 0.08, size: 30, color: 'white', speed: 1.4, phase: 2.1, driftX: 8, driftY: -12 },
-          { rx: 0.26, ry: 0.30, size: 40, color: 'yellow', speed: 2.5, phase: 0.8, driftX: -10, driftY: 14 },
-          { rx: 0.78, ry: 0.35, size: 34, color: 'gold', speed: 1.9, phase: 3.0, driftX: 14, driftY: -8 },
-          { rx: 0.11, ry: 0.48, size: 42, color: 'white', speed: 2.1, phase: 2.5, driftX: -12, driftY: 11 },
-          { rx: 0.85, ry: 0.56, size: 38, color: 'yellow', speed: 1.6, phase: 4.2, driftX: 10, driftY: -10 },
-          { rx: 0.46, ry: 0.64, size: 32, color: 'gold', speed: 2.3, phase: 1.1, driftX: -8, driftY: 12 },
-          { rx: 0.20, ry: 0.75, size: 44, color: 'yellow', speed: 1.7, phase: 3.7, driftX: 15, driftY: -14 },
-          { rx: 0.72, ry: 0.79, size: 36, color: 'white', speed: 2.4, phase: 0.5, driftX: -14, driftY: 8 },
-          { rx: 0.50, ry: 0.43, size: 46, color: 'gold', speed: 2.0, phase: 2.8, driftX: 11, driftY: 15 },
-          { rx: 0.33, ry: 0.90, size: 34, color: 'yellow', speed: 1.5, phase: 4.8, driftX: -10, driftY: -9 },
-          { rx: 0.80, ry: 0.92, size: 40, color: 'gold', speed: 2.2, phase: 1.9, driftX: 12, driftY: 10 },
-          { rx: 0.17, ry: 0.21, size: 30, color: 'white', speed: 2.6, phase: 3.3, driftX: -9, driftY: -11 },
-          { rx: 0.63, ry: 0.23, size: 42, color: 'yellow', speed: 1.8, phase: 5.1, driftX: 13, driftY: 13 },
-          { rx: 0.39, ry: 0.18, size: 32, color: 'gold', speed: 2.1, phase: 0.9, driftX: -11, driftY: 7 },
-          { rx: 0.67, ry: 0.49, size: 38, color: 'white', speed: 1.7, phase: 2.4, driftX: 9, driftY: -13 },
-          { rx: 0.29, ry: 0.60, size: 36, color: 'yellow', speed: 2.3, phase: 3.9, driftX: -12, driftY: 10 },
-        ];
-        for (const sp of sparklePoints) {
-          const bx = Math.round(targetW * sp.rx);
-          const by = Math.round(targetH * sp.ry);
-          const half = Math.round(sp.size / 2);
-          const thick = Math.max(2, Math.round(sp.size * 0.14));
-          const halfThick = Math.round(thick / 2);
-          const en = `gt(sin(2*PI*t*${sp.speed}+${sp.phase}),0.15)`;
-          const dxSign = sp.driftX >= 0 ? '+' : '-';
-          const dySign = sp.driftY >= 0 ? '+' : '-';
-          const xH = `${bx - half}${dxSign}${Math.abs(sp.driftX)}*sin(t*${(sp.speed * 0.6).toFixed(2)})`;
-          const yH = `${by - halfThick}${dySign}${Math.abs(sp.driftY)}*cos(t*${(sp.speed * 0.6).toFixed(2)})`;
-          const xV = `${bx - halfThick}${dxSign}${Math.abs(sp.driftX)}*sin(t*${(sp.speed * 0.6).toFixed(2)})`;
-          const yV = `${by - half}${dySign}${Math.abs(sp.driftY)}*cos(t*${(sp.speed * 0.6).toFixed(2)})`;
-          const xC = `${bx - thick}${dxSign}${Math.abs(sp.driftX)}*sin(t*${(sp.speed * 0.6).toFixed(2)})`;
-          const yC = `${by - thick}${dySign}${Math.abs(sp.driftY)}*cos(t*${(sp.speed * 0.6).toFixed(2)})`;
-
-          // Horizontal flare
-          filterChain.push(
-            `drawbox=x='${xH}':y='${yH}':w=${sp.size}:h=${thick}:color=${sp.color}@0.85:t=fill:enable='${en}'`
-          );
-          // Vertical flare
-          filterChain.push(
-            `drawbox=x='${xV}':y='${yV}':w=${thick}:h=${sp.size}:color=${sp.color}@0.85:t=fill:enable='${en}'`
-          );
-          // Center diamond core
-          filterChain.push(
-            `drawbox=x='${xC}':y='${yC}':w=${thick * 2}:h=${thick * 2}:color=white@0.95:t=fill:enable='${en}'`
-          );
-        }
-      } else if (ov === 'bokeh_lights') {
-        // Soft glowing ambient bokeh breathing warmth
-        filterChain.push(
-          `eq=brightness='${(0.04 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)':saturation='1.0+${(0.10 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*0.7)'`
-        );
-        const bokehPoints = [
-          { rx: 0.23, ry: 0.89, vy: 50, size: 50, color: 'gold' },
-          { rx: 0.69, ry: 0.94, vy: 60, size: 60, color: 'purple' },
-          { rx: 0.44, ry: 0.73, vy: 45, size: 70, color: 'pink' },
-          { rx: 0.14, ry: 0.47, vy: 55, size: 55, color: 'yellow' },
-          { rx: 0.79, ry: 0.42, vy: 65, size: 60, color: 'purple' },
-          { rx: 0.48, ry: 0.26, vy: 40, size: 65, color: 'gold' },
-        ];
-        for (const bp of bokehPoints) {
-          const bx = Math.round(targetW * bp.rx);
-          const by = Math.round(targetH * bp.ry);
-          const y = `${targetH}-mod(${by}+t*${bp.vy},${targetH + 200})`;
-          const x = `${bx}+35*sin(t*0.8)`;
-          filterChain.push(
-            `drawbox=x='${x}':y='${y}':w=${bp.size}:h=${bp.size}:color=${bp.color}@0.15:t=fill`
-          );
-        }
-      } else if (ov === 'fire_embers') {
-        // Warm glowing embers hue pulse
-        filterChain.push(
-          `eq=gamma_r='1.0+${(0.08 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)':brightness='${(0.025 * ovIntensityRatio).toFixed(3)}*sin(2*PI*t*1.1)'`
-        );
-        const emberPoints = [
-          { rx: 0.17, ry: 0.94, vy: 260, size: 8, color: '#F97316', drift: 35 },
-          { rx: 0.35, ry: 0.89, vy: 310, size: 6, color: '#EF4444', drift: -40 },
-          { rx: 0.56, ry: 0.99, vy: 280, size: 9, color: '#F97316', drift: 30 },
-          { rx: 0.76, ry: 0.91, vy: 250, size: 7, color: '#FB923C', drift: -35 },
-          { rx: 0.44, ry: 0.83, vy: 290, size: 8, color: '#EF4444', drift: 25 },
-          { rx: 0.67, ry: 0.96, vy: 270, size: 8, color: '#F97316', drift: -30 },
-          { rx: 0.24, ry: 0.86, vy: 320, size: 6, color: '#FB923C', drift: 40 },
-          { rx: 0.83, ry: 0.93, vy: 260, size: 7, color: '#EF4444', drift: -25 },
-        ];
-        for (const ep of emberPoints) {
-          const bx = Math.round(targetW * ep.rx);
-          const by = Math.round(targetH * ep.ry);
-          const dSign = ep.drift >= 0 ? '+' : '-';
-          const x = `${bx}${dSign}${Math.abs(ep.drift)}*sin(t*2.5)`;
-          const y = `${targetH}-mod(${by}+t*${ep.vy},${targetH + 180})`;
-          filterChain.push(
-            `drawbox=x='${x}':y='${y}':w=${ep.size}:h=${ep.size}:color=${ep.color}@0.9:t=fill`
-          );
-        }
-      }
-    }
+  // Step D: Film Grain filter (only when explicitly selected)
+  const cleanOverlays = Array.isArray(overlays) ? overlays : [];
+  if (cleanOverlays.includes('film_grain')) {
+    const grainLevel = Math.max(2, Math.round(2 + 11 * ovIntensityRatio));
+    filterChain.push(`noise=alls=${grainLevel}:allf=t+u`);
   }
 
-  const videoFilter = filterChain.join(',');
+  // Step E: Generate Gorgeous SVG Radial-Glow Transparent Overlay Layers via Sharp (Zero blocky drawbox squares!)
+  let overlayLayers: OverlayAssetLayer[] = [];
+  try {
+    overlayLayers = await generateSeamlessOverlayAssets({
+      targetW,
+      targetH,
+      overlays: cleanOverlays,
+      overlayIntensity: oIntensity,
+    });
+  } catch (ovErr) {
+    console.warn('[server-video-generator] Overlay layer generation warning:', ovErr);
+  }
+
+  const baseVideoFilter = filterChain.join(',');
 
   // 5. Build FFmpeg Arguments (with -nostats & -loglevel error to prevent maxBuffer stderr overflow)
   const args: string[] = [
@@ -706,10 +559,76 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     inputImage,
   ];
 
+  for (const layer of overlayLayers) {
+    args.push('-i', layer.filePath);
+  }
+
   const volRatio = Math.max(0.05, Math.min(1.0, (musicVolume || 100) / 100));
+  const audioInputIdx = 1 + overlayLayers.length;
+
+  // Build Filter Complex connecting base video -> each radial-glow PNG overlay layer -> final [v]
+  const filterGraphParts: string[] = [
+    `[0:v]${baseVideoFilter},fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[base0]`,
+  ];
+
+  for (let idx = 0; idx < overlayLayers.length; idx++) {
+    const layer = overlayLayers[idx];
+    const inStreamIdx = idx + 1;
+    const prevLabel = `base${idx}`;
+    const nextLabel = idx === overlayLayers.length - 1 ? 'v' : `base${idx + 1}`;
+    const ovLabel = `ov${idx}`;
+
+    if (layer.kind === 'scroll_up') {
+      const sway = Math.min(Math.max(0, layer.padX - 4), layer.swayAmpX || 24);
+      const xExpr = `-${layer.padX}+${sway}*sin(t*${(layer.swayFreq || 0.7).toFixed(2)})`;
+      const yExpr = `-mod(t*${layer.speedY || 45},${targetH})`;
+      filterGraphParts.push(`[${inStreamIdx}:v]format=rgba[${ovLabel}]`);
+      filterGraphParts.push(
+        `[${prevLabel}][${ovLabel}]overlay=x='${xExpr}':y='${yExpr}':eof_action=repeat[${nextLabel}]`
+      );
+    } else if (layer.kind === 'scroll_down') {
+      const sway = Math.min(Math.max(0, layer.padX - 4), layer.swayAmpX || 28);
+      const xExpr = `-${layer.padX}+${sway}*sin(t*${(layer.swayFreq || 0.7).toFixed(2)})`;
+      const yExpr = `-${targetH}+mod(t*${layer.speedY || 110},${targetH})`;
+      filterGraphParts.push(`[${inStreamIdx}:v]format=rgba[${ovLabel}]`);
+      filterGraphParts.push(
+        `[${prevLabel}][${ovLabel}]overlay=x='${xExpr}':y='${yExpr}':eof_action=repeat[${nextLabel}]`
+      );
+    } else if (layer.kind === 'twinkle_fade') {
+      // Smooth continuous staggered sinusoidal alpha twinkle in RAM (0% -> 100% -> 0% over ~1.6-2.8s loops)
+      const periodSec = layer.fadePeriodSec || 2.0;
+      const periodFrames = Math.max(30, Math.round(periodSec * fps));
+      const fadeHalf = (periodSec * 0.45).toFixed(2);
+      const staggerRatio = Math.min(0.5, (layer.fadeOffsetSec || 0) / 3.0);
+      const fadeInStart = (staggerRatio * periodSec * 0.5).toFixed(2);
+      const fadeOutStart = Math.max(
+        Number(fadeInStart) + Number(fadeHalf) * 0.6,
+        Number(fadeInStart) + Number(fadeHalf)
+      ).toFixed(2);
+      const sway = Math.min(Math.max(0, layer.padX - 4), layer.swayAmpX || 14);
+      const xExpr = `-${layer.padX}+${sway}*sin(t*${(layer.swayFreq || 0.55).toFixed(2)})`;
+      const yExpr = `-${layer.padY}+${Math.round(sway * 0.7)}*cos(t*${((layer.swayFreq || 0.55) * 0.85).toFixed(2)})`;
+
+      filterGraphParts.push(
+        `[${inStreamIdx}:v]format=rgba,loop=${periodFrames}:1:0,setpts=N/(${fps}*TB),fade=t=in:st=${fadeInStart}:d=${fadeHalf}:alpha=1,fade=t=out:st=${fadeOutStart}:d=${fadeHalf}:alpha=1,loop=-1:${periodFrames}:0,setpts=N/(${fps}*TB)[${ovLabel}]`
+      );
+      filterGraphParts.push(
+        `[${prevLabel}][${ovLabel}]overlay=x='${xExpr}':y='${yExpr}':shortest=1[${nextLabel}]`
+      );
+    } else {
+      // static_vignette
+      filterGraphParts.push(`[${inStreamIdx}:v]format=rgba[${ovLabel}]`);
+      filterGraphParts.push(`[${prevLabel}][${ovLabel}]overlay=0:0:eof_action=repeat[${nextLabel}]`);
+    }
+  }
+
+  // If no overlay layers were attached, rename [base0] cleanly to [v]
+  const finalVideoFilterGraph =
+    overlayLayers.length === 0
+      ? `[0:v]${baseVideoFilter},fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[v]`
+      : filterGraphParts.join(';');
 
   if (inputMusic && fs.existsSync(inputMusic)) {
-    // Music provided: Loop music if shorter than duration, trim to duration, scale volume, and apply smooth 1.5s audio fade-out
     const fadeStart = Math.max(0, duration - 1.5);
     args.push(
       '-stream_loop',
@@ -717,25 +636,24 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       '-i',
       inputMusic,
       '-filter_complex',
-      `[0:v]${videoFilter},fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[v];[1:a]atrim=0:${duration},asetpts=PTS-STARTPTS,volume=${volRatio.toFixed(2)},afade=t=out:st=${fadeStart}:d=1.5[a]`,
+      `${finalVideoFilterGraph};[${audioInputIdx}:a]atrim=0:${duration},asetpts=PTS-STARTPTS,volume=${volRatio.toFixed(2)},afade=t=out:st=${fadeStart}:d=1.5[a]`,
       '-map',
       '[v]',
       '-map',
       '[a]'
     );
   } else {
-    // No music: Add synthetic silent stereo AAC track with explicit duration
     args.push(
       '-f',
       'lavfi',
       '-i',
       `anullsrc=channel_layout=stereo:sample_rate=44100:d=${duration}`,
       '-filter_complex',
-      `[0:v]${videoFilter},fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[v]`,
+      finalVideoFilterGraph,
       '-map',
       '[v]',
       '-map',
-      '1:a'
+      `${audioInputIdx}:a`
     );
   }
 

@@ -83,19 +83,44 @@ const MOTION_EFFECTS: Array<{
 
 const PRESET_MUSIC_TRACKS = [
   {
-    name: 'Breaking News Beat',
-    url: '/uploads/audio/breaking_news_beat.mp3',
+    name: 'Breaking News Studio Beat',
+    url: '/uploads/audio/v2_breaking_news.mp3',
     genre: 'News / Urgent',
   },
   {
-    name: 'Devotional Ambient Flute',
-    url: '/uploads/audio/devotional_ambient.mp3',
+    name: 'Epic Breaking Drums',
+    url: '/uploads/audio/v2_epic_drums.mp3',
+    genre: 'High-Impact News',
+  },
+  {
+    name: 'Cricket & Sports Highlights',
+    url: '/uploads/audio/v2_sports_cricket.mp3',
+    genre: 'Sports / Action',
+  },
+  {
+    name: 'Dharam & Spiritual Ambient',
+    url: '/uploads/audio/v2_devotional_spiritual.mp3',
     genre: 'Bhakti / Mandir',
   },
   {
-    name: 'Dramatic Action Pulse',
-    url: '/uploads/audio/dramatic_pulse.mp3',
-    genre: 'Action / Crime',
+    name: 'Calm Acoustic Serenity',
+    url: '/uploads/audio/v2_peaceful_valley.mp3',
+    genre: 'Peaceful / Wellness',
+  },
+  {
+    name: 'Crime & Mystery Suspense',
+    url: '/uploads/audio/v2_crime_suspense.mp3',
+    genre: 'Suspense / Thriller',
+  },
+  {
+    name: 'Trending Chill Lo-Fi',
+    url: '/uploads/audio/v2_viral_lofi.mp3',
+    genre: 'Trending / Viral',
+  },
+  {
+    name: 'Deep Urban Tech Groove',
+    url: '/uploads/audio/v2_tech_urban.mp3',
+    genre: 'Tech / Explainer',
   },
 ];
 

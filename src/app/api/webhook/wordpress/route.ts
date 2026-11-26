@@ -690,27 +690,30 @@ export async function POST(request: NextRequest) {
 
     const postCategories = categories.map((c: string) => c.toLowerCase().trim());
 
-    // 2. Resolve Automation Rule & Target Pages
-    let targetPages: SocialPage[] = [];
-    let dispatchFormat: 'ai_image' | 'featured_image' | 'link_card' | 'text_only' | 'ai_reel' | 'image_and_reel' = 'ai_image';
-    let enableMultiTitles = true;
-    let addFirstComment = true;
-    let matchedRuleName = '';
-    let isDraftMode = false;
-    let isDripQueueMode = false;
-    let selectedSigTemplateId: string | undefined = undefined;
-    let matchingRule: AutomationFeed | undefined = undefined;
+    // 2. Resolve All Matching Automation Rules & Target Pages
+    interface WebhookRuleJob {
+      ruleName: string;
+      rule?: AutomationFeed;
+      pages: SocialPage[];
+    }
+    const executionJobs: WebhookRuleJob[] = [];
 
     // A. Explicit targets passed directly in payload
     if (Array.isArray(payload.targets) && payload.targets.length > 0) {
       const explicitIds = new Set(payload.targets.map((t: any) => t.id || t.pageId));
-      targetPages = allPages.filter((p) => explicitIds.has(p.id) || explicitIds.has(p.pageId));
-      matchedRuleName = 'Explicit Target Payload';
+      const explicitPages = allPages.filter((p) => explicitIds.has(p.id) || explicitIds.has(p.pageId));
+      if (explicitPages.length > 0) {
+        executionJobs.push({
+          ruleName: 'Explicit Target Payload',
+          rule: undefined,
+          pages: explicitPages,
+        });
+      }
     }
 
-    // B. Check Website to FB Automation Rules
-    if (targetPages.length === 0 && allAutomations.length > 0) {
-      matchingRule = allAutomations.find((rule) => {
+    // B. Check ALL Active Website to FB Automation Rules (so separate Image & Reel rules on same category both execute!)
+    if (executionJobs.length === 0 && allAutomations.length > 0) {
+      const matchedRules = allAutomations.filter((rule) => {
         if (rule.isActive === false) return false;
         if (rule.type !== 'website_to_fb' && rule.type !== 'wordpress') return false;
 
@@ -736,81 +739,32 @@ export async function POST(request: NextRequest) {
         );
       });
 
-      if (matchingRule) {
-        matchedRuleName = matchingRule.name;
-        dispatchFormat = matchingRule.format || (matchingRule.autoGenerateImage ? 'ai_image' : 'featured_image');
-        enableMultiTitles = matchingRule.enableMultiTitle !== false;
-        addFirstComment = matchingRule.linkInComment ?? true;
-        isDraftMode = matchingRule.postStatus === 'draft' || matchingRule.publishingMode === 'draft';
-        if (payload.test === true || payload.is_test === true || payload.draft === true || payload.status === 'draft') {
-          isDraftMode = true;
-        }
-        isDripQueueMode =
-          !isDraftMode &&
-          (matchingRule.postStatus === 'drip_queue' || matchingRule.publishingMode === 'drip_queue');
-        selectedSigTemplateId = matchingRule.sigTemplateId;
-
-        if (Array.isArray(matchingRule.targetPageIds) && matchingRule.targetPageIds.length > 0) {
-          const rulePageIds = new Set(matchingRule.targetPageIds);
-          targetPages = allPages.filter((p) => rulePageIds.has(p.id) || rulePageIds.has(p.pageId));
-        } else if (matchingRule.targetCategoryId) {
-          const targetCatId = matchingRule.targetCategoryId;
+      for (const rule of matchedRules) {
+        let rulePages: SocialPage[] = [];
+        if (Array.isArray(rule.targetPageIds) && rule.targetPageIds.length > 0) {
+          const rulePageIds = new Set(rule.targetPageIds);
+          rulePages = allPages.filter((p) => rulePageIds.has(p.id) || rulePageIds.has(p.pageId));
+        } else if (rule.targetCategoryId) {
+          const targetCatId = rule.targetCategoryId;
           const catGroup = allCategories.find((c) => c.id === targetCatId);
           if (catGroup && catGroup.pageIds) {
             const catPageIds = new Set(catGroup.pageIds);
-            targetPages = allPages.filter((p) => catPageIds.has(p.id) || catPageIds.has(p.pageId));
+            rulePages = allPages.filter((p) => catPageIds.has(p.id) || catPageIds.has(p.pageId));
           }
         }
-      }
-    }
-
-    // STRICT ANTI-SPAM & DEDUPLICATION PROTECTION:
-    // If an identical article (same incoming URL or identical title) already exists in posts within the last 48 hours,
-    // skip it to prevent double-posting due to repeated webhooks, article updates, or retries!
-    const normalizedNewTitle = mainTitle.trim().toLowerCase();
-    const candidateLink = (payload.shortlink || permalink || payload.link || payload.url || '').trim().toLowerCase();
-    const isDuplicateIncoming = allPosts.some((existing) => {
-      const existingTitle = (existing.title || '').trim().toLowerCase();
-      const existingLink = (existing.linkUrl || existing.commentText || '').toLowerCase();
-      
-      const linkMatch =
-        candidateLink &&
-        candidateLink.length > 10 &&
-        existingLink.includes(candidateLink);
-
-      // Check title similarity or match
-      const titleMatch =
-        normalizedNewTitle &&
-        existingTitle &&
-        (existingTitle === normalizedNewTitle ||
-         (normalizedNewTitle.length > 20 && existingTitle.startsWith(normalizedNewTitle.slice(0, 30))));
-
-      if (linkMatch || titleMatch) {
-        // Only consider duplicate if created within last 48 hours
-        const createdMs = new Date(existing.createdAt).getTime();
-        if (!isNaN(createdMs) && Date.now() - createdMs < 48 * 60 * 60 * 1000) {
-          return true;
+        if (rulePages.length > 0) {
+          executionJobs.push({
+            ruleName: rule.name,
+            rule,
+            pages: rulePages,
+          });
         }
       }
-      return false;
-    });
-
-    if (isDuplicateIncoming) {
-      console.log(
-        `[WP Webhook] Post "${mainTitle}" was SKIPPED because it was already ingested into the system recently. Duplicate webhook prevented.`
-      );
-      return NextResponse.json({
-        success: true,
-        dispatched: false,
-        skipped: true,
-        reason: 'duplicate_article_recently_ingested',
-        message: `Post "${mainTitle}" was skipped because an identical article is already queued or published.`,
-      });
     }
 
     // STRICT ANTI-SPAM PROTECTION:
     // If NO active Website to FB automation rule matched, STOP! DO NOT POST OR SAVE DRAFTS!
-    if (targetPages.length === 0) {
+    if (executionJobs.length === 0) {
       console.log(
         `[WP Webhook] Post "${mainTitle}" for site "${incomingSiteUrl}" in categories [${categories.join(
           ', '
@@ -830,33 +784,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Resolve template strictly from the matching library (Reel Studio vs Image Generator)
-    const templatePool = dispatchFormat === 'ai_reel' ? allReelTemplates : allSigTemplates;
-    const fallbackPool = dispatchFormat === 'ai_reel' ? INITIAL_REEL_TEMPLATES : INITIAL_SIG_TEMPLATES;
-    let templateToUse =
-      templatePool.find((t) => t.id === selectedSigTemplateId) ||
-      templatePool.find((t) => t.isDefault && t.templateImageUrl) ||
-      templatePool.find((t) => t.templateImageUrl && t.templateImageUrl.includes('media_')) ||
-      templatePool.find((t) => t.isDefault) ||
-      templatePool[0] ||
-      fallbackPool.find((t) => t.isDefault) ||
-      fallbackPool[0];
-
-    // If template image is missing or refers to old external unsplash, fallback to default news frame
-    if (!templateToUse.templateImageUrl || templateToUse.templateImageUrl.includes('unsplash.com')) {
-      const defaultFrame = '/uploads/media_8c7a84d712a33674.png';
-      if (fs.existsSync(path.join(process.cwd(), 'public', 'uploads', 'media_8c7a84d712a33674.png'))) {
-        templateToUse = {
-          ...templateToUse,
-          templateImageUrl: defaultFrame,
-        };
-      }
-    }
-
-    // 3. Prepare Multi-Title & Subtitle Mapping
-    // payload can provide:
-    // a) variations: Array<{ page_id?: string, page_name?: string, title?: string, subtitle?: string }>
-    // b) social_titles: Array<string> (where each string can be "Title | Subtitle" or "Title")
+    // 3. Prepare Multi-Title & Subtitle Mapping once for incoming payload
     const incomingVariations: Array<{ page_id?: string; page_name?: string; title?: string; subtitle?: string }> =
       Array.isArray(payload.variations)
         ? payload.variations
@@ -879,7 +807,6 @@ export async function POST(request: NextRequest) {
 
     const availableTitleVariations: TitleVariationItem[] = [];
 
-    // First collect from structured variations
     if (incomingVariations.length > 0) {
       for (const v of incomingVariations) {
         if (v && v.title && v.title.trim()) {
@@ -893,7 +820,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Then merge/extend from rawSocialTitles (e.g. pasted lines in WordPress meta box)
     if (rawSocialTitles.length > 0) {
       rawSocialTitles.forEach((line, idx) => {
         const trimmed = line.trim();
@@ -915,53 +841,178 @@ export async function POST(request: NextRequest) {
     }
 
     const totalTitlesProvided = availableTitleVariations.filter((v) => v && v.title?.trim()).length;
-    const isMultiTitleActive = enableMultiTitles && totalTitlesProvided > 0;
-
+    const normalizedNewTitle = mainTitle.trim().toLowerCase();
+    const candidateLink = (payload.shortlink || permalink || payload.link || payload.url || '').trim().toLowerCase();
     const userSettings: Partial<AppSettings> = userState.settings || {};
-    const effectiveCaptionStyle =
-      matchingRule?.captionStyle ||
-      userSettings.automationCaptionStyle ||
-      'title_char_limit';
-    const effectiveCharLimit =
-      matchingRule?.titleCharLimit ||
-      userSettings.automationTitleCharLimit ||
-      80;
-    const effectiveSeeMoreText =
-      matchingRule?.seeMoreText ||
-      userSettings.automationSeeMoreText ||
-      '... See more';
-    const effectiveLinkPlacement =
-      matchingRule?.linkPlacement ||
-      userSettings.automationLinkPlacement ||
-      (addFirstComment ? 'first_comment' : 'in_caption');
-    const effectiveCommentTemplate =
-      matchingRule?.commentTemplate ||
-      userSettings.automationCommentTemplate ||
-      '👉 पूरी खबर यहाँ पढ़ें: {link}';
-
-    const intervalMinSeconds =
-      matchingRule?.pageIntervalMinSeconds ??
-      userSettings.automationPageIntervalMinSeconds ??
-      userSettings.pageIntervalMinSeconds ??
-      0;
-    const intervalMaxSeconds =
-      matchingRule?.pageIntervalMaxSeconds ??
-      userSettings.automationPageIntervalMaxSeconds ??
-      userSettings.pageIntervalMaxSeconds ??
-      0;
 
     const dispatchResults: any[] = [];
-    const pagePostsToPersist: Post[] = [];
-    let cumulativeDelayMs = 0;
-    let firstGeneratedCardUrl: string | undefined = undefined;
-    let firstGeneratedReelUrl: string | undefined = undefined;
-    const generatedCardsByTitle = new Map<string, string>();
-    const generatedReelsByTitle = new Map<string, string>();
-    const isSingleTitleMode = !isMultiTitleActive || totalTitlesProvided <= 1;
+    const allPostsToPersist: Post[] = [];
+    const matchedRuleNames: string[] = [];
+    let lastDispatchFormat: 'ai_image' | 'featured_image' | 'link_card' | 'text_only' | 'ai_reel' | 'image_and_reel' = 'ai_image';
+    let lastIsDraftMode = false;
+    let lastIsDripQueueMode = false;
+    let lastAddFirstComment = true;
+    let totalAssignedPages = 0;
 
-    // Loop through each target page and dispatch 1-to-1 according to selected format
-    for (let i = 0; i < targetPages.length; i++) {
-      const page = targetPages[i];
+    // Track (pageId|postType) processed in this webhook request too
+    const inRequestProcessedKeys = new Set<string>();
+
+    for (const job of executionJobs) {
+      const matchingRule = job.rule;
+      const matchedRuleName = job.ruleName;
+      let selectedSigTemplateId = matchingRule?.sigTemplateId;
+
+      // Resolve Format (auto-infer ai_reel if selectedSigTemplateId belongs to Reel Studio library!)
+      const isReelTemplateId =
+        !!selectedSigTemplateId &&
+        (allReelTemplates.some((r) => r.id === selectedSigTemplateId) ||
+          String(selectedSigTemplateId).startsWith('tmpl_reel'));
+
+      let dispatchFormat: 'ai_image' | 'featured_image' | 'link_card' | 'text_only' | 'ai_reel' | 'image_and_reel' =
+        matchingRule?.format || (matchingRule?.autoGenerateImage ? 'ai_image' : 'featured_image');
+      if (isReelTemplateId && (dispatchFormat === 'ai_image' || !matchingRule?.format)) {
+        dispatchFormat = 'ai_reel';
+      }
+
+      const enableMultiTitles = matchingRule ? matchingRule.enableMultiTitle !== false : true;
+      const addFirstComment = matchingRule ? (matchingRule.linkInComment ?? true) : true;
+      let isDraftMode = matchingRule?.postStatus === 'draft' || matchingRule?.publishingMode === 'draft';
+      if (payload.test === true || payload.is_test === true || payload.draft === true || payload.status === 'draft') {
+        isDraftMode = true;
+      }
+      const isDripQueueMode =
+        !isDraftMode &&
+        (matchingRule?.postStatus === 'drip_queue' || matchingRule?.publishingMode === 'drip_queue');
+
+      const expectedPostType: 'image' | 'video' | 'link' | 'text' =
+        dispatchFormat === 'ai_reel'
+          ? 'video'
+          : dispatchFormat === 'link_card'
+          ? 'link'
+          : dispatchFormat === 'text_only'
+          ? 'text'
+          : 'image';
+
+      // Per-(pageId + postType) duplicate check so Reel rule on same page isn't blocked by Image rule,
+      // while duplicate webhooks for same article + format + page ARE strictly skipped!
+      const targetPages = job.pages.filter((pg) => {
+        const reqKey = `${pg.id}|${expectedPostType}`;
+        if (inRequestProcessedKeys.has(reqKey)) return false;
+
+        const alreadyExists = allPosts.some((existing) => {
+          const sharesPage = Array.isArray(existing.pageIds) && existing.pageIds.includes(pg.id);
+          if (!sharesPage) return false;
+          // Separate video reels vs static image posts so both automations can coexist cleanly!
+          const sameMediaKind = (existing.postType || 'image') === expectedPostType;
+          if (!sameMediaKind) return false;
+
+          const existingTitle = (existing.title || '').trim().toLowerCase();
+          const existingLink = (existing.linkUrl || existing.commentText || '').toLowerCase();
+          const linkMatch = candidateLink && candidateLink.length > 10 && existingLink.includes(candidateLink);
+          const titleMatch =
+            normalizedNewTitle &&
+            existingTitle &&
+            (existingTitle === normalizedNewTitle ||
+              (normalizedNewTitle.length > 20 && existingTitle.startsWith(normalizedNewTitle.slice(0, 30))));
+
+          if (linkMatch || titleMatch) {
+            const createdMs = new Date(existing.createdAt).getTime();
+            if (!isNaN(createdMs) && Date.now() - createdMs < 48 * 60 * 60 * 1000) {
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (!alreadyExists) {
+          inRequestProcessedKeys.add(reqKey);
+          return true;
+        }
+        return false;
+      });
+
+      if (targetPages.length === 0) {
+        console.log(`[WP Webhook] Skipping rule "${matchedRuleName}" (${expectedPostType}): already ingested recently for all target pages.`);
+        continue;
+      }
+
+      matchedRuleNames.push(matchedRuleName);
+      lastDispatchFormat = dispatchFormat;
+      lastIsDraftMode = isDraftMode;
+      lastIsDripQueueMode = isDripQueueMode;
+      lastAddFirstComment = addFirstComment;
+      totalAssignedPages += targetPages.length;
+
+      // Resolve template strictly from the matching library (Reel Studio vs Image Generator)
+      const templatePool = dispatchFormat === 'ai_reel' ? allReelTemplates : allSigTemplates;
+      const fallbackPool = dispatchFormat === 'ai_reel' ? INITIAL_REEL_TEMPLATES : INITIAL_SIG_TEMPLATES;
+      let templateToUse =
+        templatePool.find((t) => t.id === selectedSigTemplateId) ||
+        templatePool.find((t) => t.isDefault && t.templateImageUrl) ||
+        templatePool.find((t) => t.templateImageUrl && t.templateImageUrl.includes('media_')) ||
+        templatePool.find((t) => t.isDefault) ||
+        templatePool[0] ||
+        fallbackPool.find((t) => t.isDefault) ||
+        fallbackPool[0];
+
+      // Only apply 4:5 fallback frame for ai_image or stale unsplash URLs; keep empty dark background intact for pure Reel layouts
+      if (
+        (dispatchFormat !== 'ai_reel' && !templateToUse.templateImageUrl) ||
+        (templateToUse.templateImageUrl && templateToUse.templateImageUrl.includes('unsplash.com'))
+      ) {
+        const defaultFrame = '/uploads/media_8c7a84d712a33674.png';
+        if (fs.existsSync(path.join(process.cwd(), 'public', 'uploads', 'media_8c7a84d712a33674.png'))) {
+          templateToUse = {
+            ...templateToUse,
+            templateImageUrl: defaultFrame,
+          };
+        }
+      }
+
+      const isMultiTitleActive = enableMultiTitles && totalTitlesProvided > 0;
+      const effectiveCaptionStyle =
+        matchingRule?.captionStyle ||
+        userSettings.automationCaptionStyle ||
+        'title_char_limit';
+      const effectiveCharLimit =
+        matchingRule?.titleCharLimit ||
+        userSettings.automationTitleCharLimit ||
+        80;
+      const effectiveSeeMoreText =
+        matchingRule?.seeMoreText ||
+        userSettings.automationSeeMoreText ||
+        '... See more';
+      const effectiveLinkPlacement =
+        matchingRule?.linkPlacement ||
+        userSettings.automationLinkPlacement ||
+        (addFirstComment ? 'first_comment' : 'in_caption');
+      const effectiveCommentTemplate =
+        matchingRule?.commentTemplate ||
+        userSettings.automationCommentTemplate ||
+        '👉 पूरी खबर यहाँ पढ़ें: {link}';
+
+      const intervalMinSeconds =
+        matchingRule?.pageIntervalMinSeconds ??
+        userSettings.automationPageIntervalMinSeconds ??
+        userSettings.pageIntervalMinSeconds ??
+        0;
+      const intervalMaxSeconds =
+        matchingRule?.pageIntervalMaxSeconds ??
+        userSettings.automationPageIntervalMaxSeconds ??
+        userSettings.pageIntervalMaxSeconds ??
+        0;
+
+      const pagePostsToPersist: Post[] = [];
+      let cumulativeDelayMs = 0;
+      let firstGeneratedCardUrl: string | undefined = undefined;
+      let firstGeneratedReelUrl: string | undefined = undefined;
+      const generatedCardsByTitle = new Map<string, string>();
+      const generatedReelsByTitle = new Map<string, string>();
+      const isSingleTitleMode = !isMultiTitleActive || totalTitlesProvided <= 1;
+
+      // Loop through each target page and dispatch 1-to-1 according to selected format
+      for (let i = 0; i < targetPages.length; i++) {
+        const page = targetPages[i];
 
       // Resolve Title and Subtitle for this specific page
       let assignedTitle = mainTitle;
@@ -1231,7 +1282,7 @@ export async function POST(request: NextRequest) {
       // Dynamic rolling interval (e.g. 27–33 min random gap) with Night Sleep active hours protection
       if (isDripQueueMode) {
         const slotInfo = calculateNextDripSlot({
-          existingPosts: [...allPosts, ...pagePostsToPersist],
+          existingPosts: [...allPosts, ...allPostsToPersist, ...pagePostsToPersist],
           targetPageIds: [page.id],
           minMinutes: matchingRule?.dripIntervalMinMinutes ?? 27,
           maxMinutes: matchingRule?.dripIntervalMaxMinutes ?? 33,
@@ -1496,27 +1547,44 @@ export async function POST(request: NextRequest) {
           timestamp: new Date().toISOString(),
         });
       }
+      }
+
+      if (pagePostsToPersist.length > 0) {
+        allPostsToPersist.push(...pagePostsToPersist);
+      }
+    }
+
+    if (matchedRuleNames.length === 0) {
+      return NextResponse.json({
+        success: true,
+        dispatched: false,
+        skipped: true,
+        reason: 'duplicate_article_recently_ingested',
+        message: `Post "${mainTitle}" was skipped because an identical article is already queued or published for all matching rules.`,
+      });
     }
 
     // 4. Save to Posts History (Post Library)
-    await persistPosts(pagePostsToPersist, resolvedEmail);
+    await persistPosts(allPostsToPersist, resolvedEmail);
+
+    const combinedRuleNames = matchedRuleNames.join(', ');
 
     return NextResponse.json({
       success: true,
-      dispatched: !isDraftMode && !isDripQueueMode,
-      isDraft: isDraftMode,
-      isDripQueue: isDripQueueMode,
-      ruleMatched: matchedRuleName,
-      dispatchFormat,
-      message: isDraftMode
-        ? `Ingested and saved as Draft in Post Library for review/schedule with AI Card image (${matchedRuleName}).`
-        : isDripQueueMode
-        ? `Ingested & queued into Smart Drip Schedule (${dispatchResults[0]?.dripIntervalMinutes || 30}m interval) for ${targetPages.length} pages (${matchedRuleName}).`
-        : `Ingested & dispatched to ${targetPages.length} pages (${matchedRuleName}) with ${Math.max(1, incomingVariations.length, rawSocialTitles.length)} title variations.`,
+      dispatched: !lastIsDraftMode && !lastIsDripQueueMode,
+      isDraft: lastIsDraftMode,
+      isDripQueue: lastIsDripQueueMode,
+      ruleMatched: combinedRuleNames,
+      dispatchFormat: lastDispatchFormat,
+      message: lastIsDraftMode
+        ? `Ingested and saved as Draft in Post Library (${combinedRuleNames}).`
+        : lastIsDripQueueMode
+        ? `Ingested & queued into Smart Drip Schedule (${dispatchResults[0]?.dripIntervalMinutes || 30}m interval) for ${totalAssignedPages} target page dispatches (${combinedRuleNames}).`
+        : `Ingested & dispatched to ${totalAssignedPages} target page dispatches (${combinedRuleNames}).`,
       mainTitle,
       totalVariations: Math.max(1, incomingVariations.length, rawSocialTitles.length),
-      assignedPagesCount: targetPages.length,
-      firstCommentEnabled: addFirstComment,
+      assignedPagesCount: totalAssignedPages,
+      firstCommentEnabled: lastAddFirstComment,
       dispatchedCount: dispatchResults.filter((r) => r.status === 'success').length,
       queuedCount: dispatchResults.filter((r) => r.status === 'scheduled').length,
       results: dispatchResults,

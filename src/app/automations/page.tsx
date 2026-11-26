@@ -299,13 +299,16 @@ function AutomationsContent() {
       if (match) setSelectedWpAccountId(match.id);
     }
     setSelectedWpCategory(auto.wpCategory || '*');
-    setDispatchFormat(auto.format || (auto.autoGenerateImage ? 'ai_image' : 'featured_image'));
+    const isReelRule =
+      auto.format === 'ai_reel' ||
+      (auto.sigTemplateId && (reelTemplates.some((r) => r.id === auto.sigTemplateId) || String(auto.sigTemplateId).startsWith('tmpl_reel')));
+    setDispatchFormat(isReelRule ? 'ai_reel' : (auto.format || (auto.autoGenerateImage ? 'ai_image' : 'featured_image')));
     setEnableMultiTitle(auto.enableMultiTitle !== false);
     setTargetCategory(auto.targetCategoryId || categories[0]?.id || '');
     setSelectedPageIds(auto.targetPageIds || pages.map((p) => p.id));
     setIntervalMinutes(auto.intervalMinutes || 15);
-    setAutoGenerateImage(auto.autoGenerateImage ?? true);
-    setSelectedSigTemplateId(auto.sigTemplateId || sigTemplates[0]?.id || 'tmpl_1');
+    setAutoGenerateImage(isReelRule || auto.format === 'ai_image' || auto.autoGenerateImage === true);
+    setSelectedSigTemplateId(auto.sigTemplateId || (isReelRule ? reelTemplates[0]?.id : sigTemplates[0]?.id) || 'tmpl_1');
     setLinkInComment(auto.linkInComment ?? true);
     setPostStatus((auto.publishingMode || auto.postStatus || 'published') as any);
     setDripIntervalMin(auto.dripIntervalMinMinutes ?? 27);
@@ -353,6 +356,13 @@ function AutomationsContent() {
       const catLabel = selectedWpCategory === '*' ? 'All Categories' : selectedWpCategory;
       const finalName = feedName.trim() || `${siteDisplayName} [${catLabel}] ➔ Facebook`;
 
+      const isAiVisual = dispatchFormat === 'ai_image' || dispatchFormat === 'ai_reel';
+      const imageOnlyTemplates = sigTemplates.filter((t) => t.templateType !== 'reel');
+      const poolForRule = dispatchFormat === 'ai_reel' ? reelTemplates : (imageOnlyTemplates.length > 0 ? imageOnlyTemplates : sigTemplates);
+      const effectiveTemplateId = poolForRule.some((t) => t.id === selectedSigTemplateId)
+        ? selectedSigTemplateId
+        : (poolForRule[0]?.id || selectedSigTemplateId);
+
       if (editingAutomationId) {
         updateAutomation(editingAutomationId, {
           name: finalName,
@@ -362,11 +372,11 @@ function AutomationsContent() {
           wpCategory: selectedWpCategory,
           targetCategoryId: targetCategory,
           targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
-          format: autoGenerateImage ? 'ai_image' : dispatchFormat,
+          format: dispatchFormat,
           enableMultiTitle,
           intervalMinutes: 0,
-          autoGenerateImage,
-          sigTemplateId: selectedSigTemplateId,
+          autoGenerateImage: isAiVisual,
+          sigTemplateId: isAiVisual ? effectiveTemplateId : undefined,
           linkInComment,
           postStatus,
           publishingMode: postStatus,
@@ -387,12 +397,12 @@ function AutomationsContent() {
           wpCategory: selectedWpCategory,
           targetCategoryId: targetCategory,
           targetPageIds: selectedPageIds.length > 0 ? selectedPageIds : undefined,
-          format: autoGenerateImage ? 'ai_image' : dispatchFormat,
+          format: dispatchFormat,
           enableMultiTitle,
           isActive: true,
           intervalMinutes: 0,
-          autoGenerateImage,
-          sigTemplateId: selectedSigTemplateId,
+          autoGenerateImage: isAiVisual,
+          sigTemplateId: isAiVisual ? effectiveTemplateId : undefined,
           linkInComment,
           postStatus,
           publishingMode: postStatus,
@@ -939,10 +949,14 @@ function AutomationsContent() {
                 targetPagesForCard = pages.filter((p) => p.category === auto.targetCategoryId || p.isActive);
               }
 
+              const isReelCardRule =
+                auto.format === 'ai_reel' ||
+                (auto.sigTemplateId && (reelTemplates.some((r) => r.id === auto.sigTemplateId) || String(auto.sigTemplateId).startsWith('tmpl_reel')));
+              const cardTemplatePool = isReelCardRule ? reelTemplates : sigTemplates;
               const matchedTemplate =
-                sigTemplates.find((t) => t.id === auto.sigTemplateId) ||
-                sigTemplates.find((t) => t.isDefault) ||
-                sigTemplates[0];
+                cardTemplatePool.find((t) => t.id === auto.sigTemplateId) ||
+                cardTemplatePool.find((t) => t.isDefault) ||
+                cardTemplatePool[0];
 
               return (
                 <div
@@ -994,8 +1008,14 @@ function AutomationsContent() {
                             )}
 
                             {/* Format badge */}
-                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
-                              {auto.format === 'featured_image'
+                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                              isReelCardRule
+                                ? 'text-rose-700 bg-rose-50 border-rose-200'
+                                : 'text-amber-700 bg-amber-50 border-amber-200'
+                            }`}>
+                              {isReelCardRule
+                                ? '🎬 AI Video Reel'
+                                : auto.format === 'featured_image'
                                 ? '📸 Featured Image'
                                 : auto.format === 'link_card'
                                 ? '🔗 Link Card'
@@ -1473,7 +1493,20 @@ function AutomationsContent() {
                         return (
                           <div
                             key={fmt.id}
-                            onClick={() => setDispatchFormat(fmt.id)}
+                            onClick={() => {
+                              setDispatchFormat(fmt.id);
+                              setAutoGenerateImage(fmt.id === 'ai_image' || fmt.id === 'ai_reel');
+                              if (fmt.id === 'ai_reel') {
+                                if (!reelTemplates.some((r) => r.id === selectedSigTemplateId) && reelTemplates[0]) {
+                                  setSelectedSigTemplateId(reelTemplates[0].id);
+                                }
+                              } else if (fmt.id === 'ai_image') {
+                                const imgOnly = sigTemplates.filter((t) => t.templateType !== 'reel');
+                                if (!imgOnly.some((t) => t.id === selectedSigTemplateId) && imgOnly[0]) {
+                                  setSelectedSigTemplateId(imgOnly[0].id);
+                                }
+                              }
+                            }}
                             className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
                               isSelected
                                 ? 'bg-white border-amber-500 ring-2 ring-amber-400/20 shadow-xs'
