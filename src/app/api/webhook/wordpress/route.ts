@@ -29,7 +29,7 @@ function formatAutomationCaption({
   permalink,
   captionStyle = 'title_char_limit',
   charLimit = 80,
-  seeMoreText = '... See more',
+  seeMoreText = '...See more',
   linkPlacement = 'first_comment',
   commentTemplate = '👉 पूरी खबर यहाँ पढ़ें: {link}',
 }: {
@@ -47,7 +47,9 @@ function formatAutomationCaption({
 
   if (captionStyle === 'title_char_limit') {
     const limit = Math.max(20, charLimit || 80);
-    const suffix = (seeMoreText || '... See more').replace(/^[\s\u00A0\u200B]+/, '');
+    const suffix = (seeMoreText || '...See more')
+      .replace(/^[\s\u00A0\u200B]+/, '')
+      .replace(/^(\.{2,}|…)[\s\u00A0\u200B]+/, '$1');
     if (title.length > limit) {
       const truncated = title.substring(0, limit);
       const lastSpace = truncated.lastIndexOf(' ');
@@ -982,8 +984,10 @@ export async function POST(request: NextRequest) {
       const effectiveSeeMoreText = (
         matchingRule?.seeMoreText ||
         userSettings.automationSeeMoreText ||
-        '... See more'
-      ).replace(/^[\s\u00A0\u200B]+/, '');
+        '...See more'
+      )
+        .replace(/^[\s\u00A0\u200B]+/, '')
+        .replace(/^(\.{2,}|…)[\s\u00A0\u200B]+/, '$1');
       const effectiveLinkPlacement =
         matchingRule?.linkPlacement ||
         userSettings.automationLinkPlacement ||

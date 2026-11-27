@@ -44,6 +44,10 @@ import {
   Mail,
 } from 'lucide-react';
 
+function sanitizeSeeMoreSuffix(value: string): string {
+  return value.replace(/^[\s\u00A0\u200B]+/, '').replace(/^(\.{2,}|…)[\s\u00A0\u200B]+/, '$1');
+}
+
 const PAGE_INTERVAL_OPTIONS = [
   { label: '0 sec (Instant)', seconds: 0 },
   { label: '15 sec', seconds: 15 },
@@ -152,7 +156,7 @@ function SettingsContent() {
     settings?.automationTitleCharLimit ?? 80
   );
   const [automationSeeMoreText, setAutomationSeeMoreText] = useState<string>(
-    (settings?.automationSeeMoreText || '... See more').replace(/^[\s\u00A0\u200B]+/, '')
+    sanitizeSeeMoreSuffix(settings?.automationSeeMoreText || '...See more')
   );
   const [automationLinkPlacement, setAutomationLinkPlacement] = useState<AutomationLinkPlacement>(
     settings?.automationLinkPlacement || 'first_comment'
@@ -223,7 +227,7 @@ function SettingsContent() {
       if (activeMax !== undefined) setPageIntervalMaxSeconds(activeMax);
       if (settings.automationCaptionStyle !== undefined) setAutomationCaptionStyle(settings.automationCaptionStyle);
       if (settings.automationTitleCharLimit !== undefined) setAutomationTitleCharLimit(settings.automationTitleCharLimit);
-      if (settings.automationSeeMoreText !== undefined) setAutomationSeeMoreText(settings.automationSeeMoreText.replace(/^[\s\u00A0\u200B]+/, ''));
+      if (settings.automationSeeMoreText !== undefined) setAutomationSeeMoreText(sanitizeSeeMoreSuffix(settings.automationSeeMoreText));
       if (settings.automationLinkPlacement !== undefined) setAutomationLinkPlacement(settings.automationLinkPlacement);
       if (settings.automationCommentTemplate !== undefined) setAutomationCommentTemplate(settings.automationCommentTemplate);
       if (settings.sensitiveWords && settings.sensitiveWords.length > 0) {
@@ -667,7 +671,7 @@ function SettingsContent() {
       automationPageIntervalMaxSeconds: Math.max(Number(pageIntervalMinSeconds) || 0, Number(pageIntervalMaxSeconds) || 0),
       automationCaptionStyle,
       automationTitleCharLimit: Number(automationTitleCharLimit) || 80,
-      automationSeeMoreText: (automationSeeMoreText || '... See more').trim().replace(/^[\s\u00A0\u200B]+/, ''),
+      automationSeeMoreText: sanitizeSeeMoreSuffix((automationSeeMoreText || '...See more').trim()) || '...See more',
       automationLinkPlacement,
       automationCommentTemplate: automationCommentTemplate.trim() || '👉 पूरी खबर यहाँ पढ़ें: {link}',
       sensitiveWords: wordsArray.length > 0 ? wordsArray : DEFAULT_SENSITIVE_WORDS,
@@ -1638,7 +1642,7 @@ function SettingsContent() {
                       Caption & Link Formatting Style (FB Reach Booster)
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Facebook algorithm external links ko caption me daalne par organic reach kam kar deta hai. Click-through badhane ke liye character limit + &quot;... See more&quot; aur link comment me daalne ka option choose karein.
+                      Facebook algorithm external links ko caption me daalne par organic reach kam kar deta hai. Click-through badhane ke liye character limit + &quot;...See more&quot; aur link comment me daalne ka option choose karein.
                     </p>
                   </div>
                 </div>
@@ -1654,7 +1658,7 @@ function SettingsContent() {
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-bold text-slate-900">Char Limit + &quot;... See more&quot;</span>
+                      <span className="text-xs font-bold text-slate-900">Char Limit + &quot;...See more&quot;</span>
                       <input
                         type="radio"
                         name="captionStyle"
@@ -1664,7 +1668,7 @@ function SettingsContent() {
                       />
                     </div>
                     <p className="text-[10.5px] text-slate-500 leading-snug">
-                      Title ko chune hue characters par cut karke &quot;... See more&quot; lagata hai. User click badhta hai.
+                      Title ko chune hue characters par cut karke &quot;...See more&quot; lagata hai. User click badhta hai.
                     </p>
                   </div>
 
@@ -1742,12 +1746,12 @@ function SettingsContent() {
                       <input
                         type="text"
                         value={automationSeeMoreText}
-                        onChange={(e) => setAutomationSeeMoreText(e.target.value.replace(/^[\s\u00A0\u200B]+/, ''))}
-                        placeholder="... See more"
+                        onChange={(e) => setAutomationSeeMoreText(sanitizeSeeMoreSuffix(e.target.value))}
+                        placeholder="...See more"
                         className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-800"
                       />
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Title ke turant baad bina space ke dots attach honge (e.g. <code>Title... See more</code>)
+                        Title ke turant baad bina kisi space ke dots aur label attach honge (e.g. <code>Title...See more</code>)
                       </p>
                     </div>
                   </div>
@@ -1853,7 +1857,7 @@ function SettingsContent() {
                         let previewCaption = '';
                         if (automationCaptionStyle === 'title_char_limit') {
                           const limit = Math.max(20, automationTitleCharLimit || 80);
-                          const suffix = (automationSeeMoreText || '... See more').replace(/^[\s\u00A0\u200B]+/, '');
+                          const suffix = sanitizeSeeMoreSuffix(automationSeeMoreText || '...See more') || '...See more';
                           if (sampleTitle.length > limit) {
                             const tr = sampleTitle.substring(0, limit);
                             const lastSp = tr.lastIndexOf(' ');
