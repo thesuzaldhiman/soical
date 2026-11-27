@@ -152,7 +152,7 @@ function SettingsContent() {
     settings?.automationTitleCharLimit ?? 80
   );
   const [automationSeeMoreText, setAutomationSeeMoreText] = useState<string>(
-    settings?.automationSeeMoreText || '... See more'
+    (settings?.automationSeeMoreText || '... See more').replace(/^[\s\u00A0\u200B]+/, '')
   );
   const [automationLinkPlacement, setAutomationLinkPlacement] = useState<AutomationLinkPlacement>(
     settings?.automationLinkPlacement || 'first_comment'
@@ -223,7 +223,7 @@ function SettingsContent() {
       if (activeMax !== undefined) setPageIntervalMaxSeconds(activeMax);
       if (settings.automationCaptionStyle !== undefined) setAutomationCaptionStyle(settings.automationCaptionStyle);
       if (settings.automationTitleCharLimit !== undefined) setAutomationTitleCharLimit(settings.automationTitleCharLimit);
-      if (settings.automationSeeMoreText !== undefined) setAutomationSeeMoreText(settings.automationSeeMoreText);
+      if (settings.automationSeeMoreText !== undefined) setAutomationSeeMoreText(settings.automationSeeMoreText.replace(/^[\s\u00A0\u200B]+/, ''));
       if (settings.automationLinkPlacement !== undefined) setAutomationLinkPlacement(settings.automationLinkPlacement);
       if (settings.automationCommentTemplate !== undefined) setAutomationCommentTemplate(settings.automationCommentTemplate);
       if (settings.sensitiveWords && settings.sensitiveWords.length > 0) {
@@ -667,7 +667,7 @@ function SettingsContent() {
       automationPageIntervalMaxSeconds: Math.max(Number(pageIntervalMinSeconds) || 0, Number(pageIntervalMaxSeconds) || 0),
       automationCaptionStyle,
       automationTitleCharLimit: Number(automationTitleCharLimit) || 80,
-      automationSeeMoreText: automationSeeMoreText.trim() || '... See more',
+      automationSeeMoreText: (automationSeeMoreText || '... See more').trim().replace(/^[\s\u00A0\u200B]+/, ''),
       automationLinkPlacement,
       automationCommentTemplate: automationCommentTemplate.trim() || '👉 पूरी खबर यहाँ पढ़ें: {link}',
       sensitiveWords: wordsArray.length > 0 ? wordsArray : DEFAULT_SENSITIVE_WORDS,
@@ -1742,10 +1742,13 @@ function SettingsContent() {
                       <input
                         type="text"
                         value={automationSeeMoreText}
-                        onChange={(e) => setAutomationSeeMoreText(e.target.value)}
+                        onChange={(e) => setAutomationSeeMoreText(e.target.value.replace(/^[\s\u00A0\u200B]+/, ''))}
                         placeholder="... See more"
                         className="w-full px-3 py-2 rounded-xl border border-[#E2E8F0] text-xs font-semibold text-slate-800"
                       />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Title ke turant baad bina space ke dots attach honge (e.g. <code>Title... See more</code>)
+                      </p>
                     </div>
                   </div>
                 )}
@@ -1850,12 +1853,13 @@ function SettingsContent() {
                         let previewCaption = '';
                         if (automationCaptionStyle === 'title_char_limit') {
                           const limit = Math.max(20, automationTitleCharLimit || 80);
-                          const suffix = automationSeeMoreText || '... See more';
+                          const suffix = (automationSeeMoreText || '... See more').replace(/^[\s\u00A0\u200B]+/, '');
                           if (sampleTitle.length > limit) {
                             const tr = sampleTitle.substring(0, limit);
                             const lastSp = tr.lastIndexOf(' ');
                             const clean = lastSp > limit * 0.6 ? tr.substring(0, lastSp) : tr;
-                            previewCaption = `${clean.trim()}${suffix}`;
+                            const cleanTrimmed = clean.replace(/[\s\u00A0\u200B,:;\-]+$/, '').trim();
+                            previewCaption = `${cleanTrimmed}${suffix}`;
                           } else {
                             previewCaption = sampleTitle;
                           }

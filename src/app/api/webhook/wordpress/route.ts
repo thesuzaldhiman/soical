@@ -47,12 +47,13 @@ function formatAutomationCaption({
 
   if (captionStyle === 'title_char_limit') {
     const limit = Math.max(20, charLimit || 80);
-    const suffix = seeMoreText || '... See more';
+    const suffix = (seeMoreText || '... See more').replace(/^[\s\u00A0\u200B]+/, '');
     if (title.length > limit) {
       const truncated = title.substring(0, limit);
       const lastSpace = truncated.lastIndexOf(' ');
       const cleanCut = lastSpace > limit * 0.6 ? truncated.substring(0, lastSpace) : truncated;
-      baseText = `${cleanCut.trim()}${suffix}`;
+      const cleanCutTrimmed = cleanCut.replace(/[\s\u00A0\u200B,:;\-]+$/, '').trim();
+      baseText = `${cleanCutTrimmed}${suffix}`;
     } else {
       baseText = title;
     }
@@ -978,10 +979,11 @@ export async function POST(request: NextRequest) {
         matchingRule?.titleCharLimit ||
         userSettings.automationTitleCharLimit ||
         80;
-      const effectiveSeeMoreText =
+      const effectiveSeeMoreText = (
         matchingRule?.seeMoreText ||
         userSettings.automationSeeMoreText ||
-        '... See more';
+        '... See more'
+      ).replace(/^[\s\u00A0\u200B]+/, '');
       const effectiveLinkPlacement =
         matchingRule?.linkPlacement ||
         userSettings.automationLinkPlacement ||
