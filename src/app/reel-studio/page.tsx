@@ -131,19 +131,48 @@ const MOTION_EFFECTS: Array<{
   },
   {
     id: 'zoom_in',
-    name: 'Slow Zoom In',
+    name: 'Zoom In (Photo Focus)',
     icon: '🔍',
     badge: 'Ken Burns',
     badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    description: 'Cinematic Ken Burns slow zoom into the center of the news card.',
+    description: 'Smooth cinematic zoom in on the featured photo while frame & headline stay 100% stable.',
+    isNew: true,
   },
   {
     id: 'zoom_out',
-    name: 'Slow Zoom Out',
+    name: 'Zoom Out (Photo Reveal)',
     icon: '🔎',
     badge: 'Cinematic Reveal',
     badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
-    description: 'Slow zoom out starting close and smoothly revealing the entire news card.',
+    description: 'Smooth zoom out revealing the full featured photo while frame & text remain still.',
+    isNew: true,
+  },
+  {
+    id: 'pan_right',
+    name: 'Left → Right Pan',
+    icon: '➡️',
+    badge: 'Slide Motion',
+    badgeColor: 'bg-violet-50 text-violet-700 border-violet-200',
+    description: 'Glides smoothly across the featured photo from Left to Right inside the stable frame.',
+    isNew: true,
+  },
+  {
+    id: 'pan_left',
+    name: 'Right → Left Pan',
+    icon: '⬅️',
+    badge: 'Slide Motion',
+    badgeColor: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
+    description: 'Glides smoothly across the featured photo from Right to Left inside the stable frame.',
+    isNew: true,
+  },
+  {
+    id: 'pulse_boom',
+    name: 'Pulse Boom (Beat Pop)',
+    icon: '💥',
+    badge: 'High Energy',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+    description: 'Energetic beat-synced zoom boom kick on the featured photo so Reels pop with life!',
+    isNew: true,
   },
   {
     id: 'glitter',
@@ -151,7 +180,7 @@ const MOTION_EFFECTS: Array<{
     icon: '✨',
     badge: 'Warm Shimmer',
     badgeColor: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-    description: 'Warm shimmering light pulses and sparkling glow for festive & cultural news.',
+    description: 'Warm shimmering light pulses and sparkling glow across the featured photo.',
   },
   {
     id: 'none',
@@ -705,41 +734,55 @@ function ReelLiveMockupPreview({
   const nonNoneEffects = selectedEffects.filter((e) => e !== 'none');
   const activeEffect = nonNoneEffects[0] || 'none';
 
-  // Split spatial zoom/float/sway (outer wrapper) from shake/pulse/glitter (inner wrapper) so multiple effects combine!
+  // Split spatial zoom/pan/float/sway (outer wrapper) from pulse-boom/shake/glitter (inner wrapper)
+  // Applied ONLY to the Featured Image slot so Frame & Headline stay 100% STABLE!
   let outerAnim = 'none';
   let innerAnim = 'none';
+  const needsPanPreviewScale =
+    isLiveMotionPlaying &&
+    (nonNoneEffects.includes('pan_right') ||
+      nonNoneEffects.includes('pan_left') ||
+      nonNoneEffects.includes('smooth_sway') ||
+      nonNoneEffects.includes('vertical_drift') ||
+      nonNoneEffects.includes('subtle_float') ||
+      nonNoneEffects.includes('shake') ||
+      nonNoneEffects.includes('breaking_jitter') ||
+      nonNoneEffects.includes('micro_jitter'));
 
   if (isLiveMotionPlaying && nonNoneEffects.length > 0) {
-    if (nonNoneEffects.includes('zoom_in')) outerAnim = 'liveZoomIn 9s ease-out infinite alternate';
-    else if (nonNoneEffects.includes('zoom_out')) outerAnim = 'liveZoomOut 9s ease-out infinite alternate';
-    else if (nonNoneEffects.includes('smooth_sway')) outerAnim = 'liveSmoothSway 4.2s ease-in-out infinite';
-    else if (nonNoneEffects.includes('vertical_drift')) outerAnim = 'liveVerticalDrift 4.4s ease-in-out infinite';
-    else if (nonNoneEffects.includes('subtle_float')) outerAnim = 'liveSubtleFloat 4.2s ease-in-out infinite';
+    if (nonNoneEffects.includes('zoom_in')) outerAnim = 'liveZoomIn 7s ease-out infinite alternate';
+    else if (nonNoneEffects.includes('zoom_out')) outerAnim = 'liveZoomOut 7s ease-out infinite alternate';
+    else if (nonNoneEffects.includes('pan_right')) outerAnim = 'livePanRight 6.5s ease-in-out infinite alternate';
+    else if (nonNoneEffects.includes('pan_left')) outerAnim = 'livePanLeft 6.5s ease-in-out infinite alternate';
+    else if (nonNoneEffects.includes('smooth_sway')) outerAnim = 'liveSmoothSway 4.0s ease-in-out infinite';
+    else if (nonNoneEffects.includes('vertical_drift')) outerAnim = 'liveVerticalDrift 4.2s ease-in-out infinite';
+    else if (nonNoneEffects.includes('subtle_float')) outerAnim = 'liveSubtleFloat 4.0s ease-in-out infinite';
 
-    if (nonNoneEffects.includes('breaking_jitter')) innerAnim = 'liveBreakingJitter 0.75s ease-in-out infinite';
-    else if (nonNoneEffects.includes('shake')) innerAnim = 'liveShake 1.4s ease-in-out infinite';
+    if (nonNoneEffects.includes('pulse_boom') || nonNoneEffects.includes('pulse')) {
+      innerAnim = 'livePulseBoom 1.2s cubic-bezier(0.22, 1, 0.36, 1) infinite';
+    } else if (nonNoneEffects.includes('breaking_jitter')) innerAnim = 'liveBreakingJitter 0.75s ease-in-out infinite';
+    else if (nonNoneEffects.includes('shake')) innerAnim = 'liveShake 1.3s ease-in-out infinite';
     else if (nonNoneEffects.includes('micro_jitter')) innerAnim = 'liveMicroJitter 0.9s ease-in-out infinite';
-    else if (nonNoneEffects.includes('pulse_shake')) innerAnim = 'livePulseShake 1.6s ease-in-out infinite';
-    else if (nonNoneEffects.includes('glitter')) innerAnim = 'liveGlitterShimmer 1.8s ease-in-out infinite';
-    else if (outerAnim === 'none' && nonNoneEffects.includes('subtle_float')) {
-      innerAnim = 'liveSubtleFloat 4.2s ease-in-out infinite';
-    }
+    else if (nonNoneEffects.includes('pulse_shake')) innerAnim = 'livePulseShake 1.3s ease-in-out infinite';
+    else if (nonNoneEffects.includes('glitter')) innerAnim = 'liveGlitterShimmer 1.6s ease-in-out infinite';
   }
 
   const dynamicMotionVars: React.CSSProperties = {
-    ['--float-x' as any]: `${(2.5 + 8.5 * mi).toFixed(2)}px`,
-    ['--float-y' as any]: `${(3.5 + 11.5 * mi).toFixed(2)}px`,
-    ['--sway-x' as any]: `${(4.5 + 15.5 * mi).toFixed(2)}px`,
+    ['--float-x' as any]: `${(3.5 + 10.5 * mi).toFixed(2)}px`,
+    ['--float-y' as any]: `${(4.5 + 13.5 * mi).toFixed(2)}px`,
+    ['--sway-x' as any]: `${(6.0 + 18.0 * mi).toFixed(2)}px`,
     ['--sway-rot' as any]: `${(0.2 + 0.9 * mi).toFixed(2)}deg`,
-    ['--drift-y' as any]: `${(4.5 + 15.5 * mi).toFixed(2)}px`,
-    ['--jitter-x' as any]: `${(1.2 + 5.0 * mi).toFixed(2)}px`,
-    ['--jitter-y' as any]: `${(1.2 + 5.0 * mi).toFixed(2)}px`,
-    ['--shake-x' as any]: `${(2.5 + 9.0 * mi).toFixed(2)}px`,
-    ['--shake-y' as any]: `${(2.0 + 7.5 * mi).toFixed(2)}px`,
-    ['--zoom-max' as any]: `${(1.03 + 0.14 * mi).toFixed(3)}`,
-    ['--pulse-max' as any]: `${(1.012 + 0.045 * mi).toFixed(3)}`,
-    ['--glitter-bright' as any]: `${(1.04 + 0.14 * mi).toFixed(2)}`,
-    ['--glitter-sat' as any]: `${(1.08 + 0.28 * mi).toFixed(2)}`,
+    ['--drift-y' as any]: `${(6.0 + 18.0 * mi).toFixed(2)}px`,
+    ['--pan-x' as any]: `${(8.0 + 22.0 * mi).toFixed(2)}px`,
+    ['--jitter-x' as any]: `${(1.5 + 5.5 * mi).toFixed(2)}px`,
+    ['--jitter-y' as any]: `${(1.5 + 5.5 * mi).toFixed(2)}px`,
+    ['--shake-x' as any]: `${(3.0 + 10.5 * mi).toFixed(2)}px`,
+    ['--shake-y' as any]: `${(2.5 + 8.5 * mi).toFixed(2)}px`,
+    ['--zoom-max' as any]: `${(1.12 + 0.24 * mi).toFixed(3)}`,
+    ['--boom-max' as any]: `${(1.06 + 0.14 * mi).toFixed(3)}`,
+    ['--pulse-max' as any]: `${(1.04 + 0.09 * mi).toFixed(3)}`,
+    ['--glitter-bright' as any]: `${(1.05 + 0.16 * mi).toFixed(2)}`,
+    ['--glitter-sat' as any]: `${(1.10 + 0.30 * mi).toFixed(2)}`,
   };
 
   const cleanHeadline = headline || 'सुक्खू सरकार का बड़ा फैसला : हिमकेयर बंद, अब मिलेगा ₹10 लाख तक फ्री इलाज!';
@@ -799,112 +842,117 @@ function ReelLiveMockupPreview({
           }}
           className="relative rounded-[22px] overflow-hidden border border-slate-800/80 shadow-inner group"
         >
-          {/* Outer Spatial Motion Wrapper (Zoom / Sway / Float) */}
-          <div
-            style={{
-              ...dynamicMotionVars,
-              width: '100%',
-              height: '100%',
-              position: 'relative',
-              animation: outerAnim,
-              transformOrigin: 'center center',
-            }}
-          >
-            {/* Inner Secondary Motion Wrapper (Pulse / Shake / Jitter / Shimmer) */}
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                position: 'relative',
-                animation: innerAnim,
-                transformOrigin: 'center center',
-              }}
-            >
-            {/* LAYER 1: Photo (Z=1 if overlay, Z=2 if background) */}
-            {photoUrl && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: `${Math.round(fBox.x * scale)}px`,
-                  top: `${Math.round(fBox.y * scale)}px`,
-                  width: `${Math.round(fBox.width * scale)}px`,
-                  height: `${Math.round(fBox.height * scale)}px`,
-                  borderRadius: `${Math.round((fBox.borderRadius || 0) * scale)}px`,
-                  backgroundImage: `url(${photoUrl})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  zIndex: layerMode === 'overlay' ? 1 : 2,
-                }}
-                className="overflow-hidden"
-              />
-            )}
-
-            {/* LAYER 2: Template PNG Frame (Z=2 if overlay, Z=1 if background) */}
-            {templateImageUrl && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  backgroundImage: `url(${templateImageUrl})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  zIndex: layerMode === 'overlay' ? 2 : 1,
-                  pointerEvents: 'none',
-                }}
-              />
-            )}
-
-            {/* LAYER 3: Headline Text */}
+          {/* LAYER 1: Animated Featured Photo Container (Clipped cleanly to fBox; ONLY Photo Animates!) */}
+          {photoUrl && (
             <div
               style={{
                 position: 'absolute',
-                left: `${Math.round(tBox.x * scale)}px`,
-                top: `${Math.round(tBox.y * scale)}px`,
-                width: `${Math.round(tBox.width * scale)}px`,
-                height: `${Math.round(tBox.height * scale)}px`,
-                zIndex: 3,
-                pointerEvents: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent:
-                  tBox.alignment === 'center'
-                    ? 'center'
-                    : tBox.alignment === 'right'
-                    ? 'flex-end'
-                    : 'flex-start',
-                textAlign: (tBox.alignment || 'center') as any,
+                left: `${Math.round(fBox.x * scale)}px`,
+                top: `${Math.round(fBox.y * scale)}px`,
+                width: `${Math.round(fBox.width * scale)}px`,
+                height: `${Math.round(fBox.height * scale)}px`,
+                borderRadius: `${Math.round((fBox.borderRadius || 0) * scale)}px`,
+                zIndex: layerMode === 'overlay' ? 1 : 2,
               }}
+              className="overflow-hidden"
             >
-              <p
+              <div
                 style={{
-                  fontSize: `${Math.max(10, Math.round((tBox.fontSize || 56) * scale))}px`,
-                  lineHeight: 1.3,
-                  color: tBox.textColor || '#FFFFFF',
-                  fontFamily: 'Noto Sans Devanagari, sans-serif',
-                  fontWeight: 800,
-                  textShadow: '0 2px 8px rgba(0,0,0,0.95)',
+                  ...dynamicMotionVars,
+                  width: '100%',
+                  height: '100%',
+                  animation: outerAnim,
+                  transformOrigin: 'center center',
                 }}
-                className="leading-tight select-none"
               >
-                {hasHighlight ? (
-                  <>
-                    {cleanHeadline.split(cleanHighlight).map((chunk, idx, arr) => (
-                      <React.Fragment key={idx}>
-                        {chunk}
-                        {idx < arr.length - 1 && (
-                          <span style={{ color: tBox.highlightColor || '#FACC15' }}>
-                            {cleanHighlight}
-                          </span>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </>
-                ) : (
-                  cleanHeadline
-                )}
-              </p>
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    animation: innerAnim,
+                    transformOrigin: 'center center',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      backgroundImage: `url(${photoUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      transform: needsPanPreviewScale ? 'scale(1.22)' : 'scale(1)',
+                      transition: 'transform 0.25s ease-out',
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* LAYER 2: STABLE Template PNG Frame (Z=2 if overlay, Z=1 if background) */}
+          {templateImageUrl && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: `url(${templateImageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                zIndex: layerMode === 'overlay' ? 2 : 1,
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+
+          {/* LAYER 3: STABLE Headline Text */}
+          <div
+            style={{
+              position: 'absolute',
+              left: `${Math.round(tBox.x * scale)}px`,
+              top: `${Math.round(tBox.y * scale)}px`,
+              width: `${Math.round(tBox.width * scale)}px`,
+              height: `${Math.round(tBox.height * scale)}px`,
+              zIndex: 3,
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent:
+                tBox.alignment === 'center'
+                  ? 'center'
+                  : tBox.alignment === 'right'
+                  ? 'flex-end'
+                  : 'flex-start',
+              textAlign: (tBox.alignment || 'center') as any,
+            }}
+          >
+            <p
+              style={{
+                fontSize: `${Math.max(10, Math.round((tBox.fontSize || 56) * scale))}px`,
+                lineHeight: 1.3,
+                color: tBox.textColor || '#FFFFFF',
+                fontFamily: 'Noto Sans Devanagari, sans-serif',
+                fontWeight: 800,
+                textShadow: '0 2px 8px rgba(0,0,0,0.95)',
+              }}
+              className="leading-tight select-none"
+            >
+              {hasHighlight ? (
+                <>
+                  {cleanHeadline.split(cleanHighlight).map((chunk, idx, arr) => (
+                    <React.Fragment key={idx}>
+                      {chunk}
+                      {idx < arr.length - 1 && (
+                        <span style={{ color: tBox.highlightColor || '#FACC15' }}>
+                          {cleanHighlight}
+                        </span>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </>
+              ) : (
+                cleanHeadline
+              )}
+            </p>
           </div>
 
           {/* LAYER 4: Real-time Live Particle Overlays */}
@@ -1757,6 +1805,7 @@ export default function ReelStudioPage() {
       };
 
       let cardDataUrl = '';
+      let frameOverlayDataUrl = '';
       try {
         cardDataUrl = await renderTemplateToCanvas(offscreenCanvas, {
           template: currentDraftTemplate,
@@ -1765,6 +1814,16 @@ export default function ReelStudioPage() {
           featuredImageUrl: genPhotoUrl,
         });
         setLastRenderedCardUrl(cardDataUrl);
+
+        // Render separate Frame+Text PNG layer (without featured photo) so FFmpeg animates ONLY the featured photo!
+        const frameCanvas = document.createElement('canvas');
+        frameOverlayDataUrl = await renderTemplateToCanvas(frameCanvas, {
+          template: currentDraftTemplate,
+          headline: genHeadline,
+          highlightPhrase: genHighlight,
+          featuredImageUrl: genPhotoUrl,
+          omitFeaturedImage: true,
+        });
       } catch (canvasErr) {
         console.warn('[Reel Studio] Client canvas render error, falling back to server-side compositor:', canvasErr);
       }
@@ -1775,10 +1834,14 @@ export default function ReelStudioPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64: cardDataUrl || undefined,
+          frameOverlayBase64: frameOverlayDataUrl || undefined,
+          featuredImageUrl: genPhotoUrl || undefined,
+          featuredImageBox: fBox,
+          layerMode,
+          backgroundColor,
           template: currentDraftTemplate,
           headline: genHeadline,
           highlightPhrase: genHighlight,
-          featuredImageUrl: genPhotoUrl,
           canvasWidth,
           canvasHeight,
           duration,
@@ -1904,11 +1967,24 @@ export default function ReelStudioPage() {
           }
           @keyframes liveZoomIn {
             0% { transform: scale(1); }
-            100% { transform: scale(var(--zoom-max, 1.08)); }
+            100% { transform: scale(var(--zoom-max, 1.16)); }
           }
           @keyframes liveZoomOut {
-            0% { transform: scale(var(--zoom-max, 1.08)); }
+            0% { transform: scale(var(--zoom-max, 1.16)); }
             100% { transform: scale(1); }
+          }
+          @keyframes livePanRight {
+            0% { transform: translateX(calc(var(--pan-x, 14px) * -1)); }
+            100% { transform: translateX(var(--pan-x, 14px)); }
+          }
+          @keyframes livePanLeft {
+            0% { transform: translateX(var(--pan-x, 14px)); }
+            100% { transform: translateX(calc(var(--pan-x, 14px) * -1)); }
+          }
+          @keyframes livePulseBoom {
+            0%, 55%, 100% { transform: scale(1); }
+            16% { transform: scale(var(--boom-max, 1.10)); }
+            34% { transform: scale(1.015); }
           }
           @keyframes liveShake {
             0%, 60%, 100% { transform: translate(0, 0); }

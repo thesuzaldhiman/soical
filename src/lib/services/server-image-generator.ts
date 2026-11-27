@@ -13,6 +13,7 @@ export interface GenerateCardOptions {
   template?: SigTemplate | null;
   category?: string;
   siteName?: string;
+  omitFeaturedImage?: boolean; // Renders ONLY frame + text PNG (transparent in overlay mode)
 }
 
 let fontConfigInitialized = false;
@@ -317,16 +318,19 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     height: safeTitleHeight,
   };
 
+  const omitFeaturedImage = Boolean(options.omitFeaturedImage);
+
   const [photoBuf, templateBuf] = await Promise.all([
-    fetchImageBuffer(featuredImageUrl, 8000),
+    omitFeaturedImage ? Promise.resolve(null) : fetchImageBuffer(featuredImageUrl, 8000),
     template?.templateImageUrl ? fetchImageBuffer(template.templateImageUrl, 8000) : Promise.resolve(null),
   ]);
 
   const layers: Array<{ input: Buffer; top?: number; left?: number }> = [];
 
-  // 1. Process Featured Photo
+  // 1. Process Featured Photo (skipped when rendering standalone frame layer)
   let photoLayerItem: { input: Buffer; top: number; left: number } | null = null;
-  if (photoBuf) {
+  if (!omitFeaturedImage) {
+    if (photoBuf) {
     try {
       let resizedPhotoBuf: Buffer;
       const baseResize = sharp(photoBuf).resize(fBox.width, fBox.height, { fit: 'cover', position: 'center' });
@@ -373,6 +377,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
       top: Math.round(fBox.y),
       left: Math.round(fBox.x),
     };
+    }
   }
 
   // 2. Process Template Frame
@@ -531,7 +536,7 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     left: 0,
   });
 
-  // Base canvas background (respects template.backgroundColor if specified)
+  // Base canvas background (transparent when omitting photo in overlay mode; otherwise respects template.backgroundColor)
   let bgR = 11;
   let bgG = 15;
   let bgB = 25;
@@ -545,16 +550,26 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     bgB = parseInt(hex.substring(4, 6), 16);
   }
 
+  const useTransparentCanvas = omitFeaturedImage && !isBackgroundMode;
+
   const baseCanvas = await sharp({
     create: {
       width,
       height,
       channels: 4,
-      background: { r: bgR, g: bgG, b: bgB, alpha: 1 },
+      background: useTransparentCanvas ? { r: 0, g: 0, b: 0, alpha: 0 } : { r: bgR, g: bgG, b: bgB, alpha: 1 },
     },
   })
     .png()
     .toBuffer();
+
+  if (omitFeaturedImage) {
+    const finalFrameBuffer = await sharp(baseCanvas)
+      .composite(layers)
+      .png({ compressionLevel: 4 })
+      .toBuffer();
+    return `data:image/png;base64,${finalFrameBuffer.toString('base64')}`;
+  }
 
   const finalCardBuffer = await sharp(baseCanvas)
     .composite(layers)
@@ -562,4 +577,12 @@ export async function generateServerCardImage(options: GenerateCardOptions): Pro
     .toBuffer();
 
   return `data:image/jpeg;base64,${finalCardBuffer.toString('base64')}`;
+}
+
+/**
+ * Renders ONLY the stable Frame + Headline/Subtitle overlay layer (without the featured photo),
+ * allowing FFmpeg to animate ONLY the featured photo independently while keeping frame & text 100% still.
+ */
+export async function generateServerCardFrameLayer(options: GenerateCardOptions): Promise<string> {
+  return generateServerCardImage({ ...options, omitFeaturedImage: true });
 }

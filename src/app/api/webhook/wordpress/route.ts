@@ -3,7 +3,7 @@ import { dispatchToTargets, PublishTarget } from '@/lib/services/publisher';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
 import { DEMO_CATEGORIES, DEMO_PAGES, INITIAL_SIG_TEMPLATES, INITIAL_REEL_TEMPLATES } from '@/lib/state/mock-data';
 import { AutomationFeed, PageCategory, Post, SocialPage, SigTemplate, AppSettings } from '@/types';
-import { generateServerCardImage } from '@/lib/services/server-image-generator';
+import { generateServerCardImage, generateServerCardFrameLayer } from '@/lib/services/server-image-generator';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
 import { sanitizePostMedia, offloadBase64Media } from '@/lib/utils/media-storage';
 import { cleanHeadlineText, decodeHtmlEntities } from '@/lib/utils/text-decoder';
@@ -1113,14 +1113,26 @@ export async function POST(request: NextRequest) {
           mediaToSend = firstGeneratedReelUrl;
         } else {
           try {
-            const cardBase64 = await generateServerCardImage({
-              headline: assignedTitle,
-              subtitle: assignedSubtitle,
-              featuredImageUrl: imageUrl || undefined,
-              template: templateToUse,
-              category: categories[0] || 'News',
-              siteName: payload.site_name || incomingSiteUrl || '',
-            });
+            const [cardBase64, frameLayerBase64] = await Promise.all([
+              generateServerCardImage({
+                headline: assignedTitle,
+                subtitle: assignedSubtitle,
+                featuredImageUrl: imageUrl || undefined,
+                template: templateToUse,
+                category: categories[0] || 'News',
+                siteName: payload.site_name || incomingSiteUrl || '',
+              }),
+              imageUrl
+                ? generateServerCardFrameLayer({
+                    headline: assignedTitle,
+                    subtitle: assignedSubtitle,
+                    featuredImageUrl: imageUrl || undefined,
+                    template: templateToUse,
+                    category: categories[0] || 'News',
+                    siteName: payload.site_name || incomingSiteUrl || '',
+                  }).catch(() => undefined)
+                : Promise.resolve(undefined),
+            ]);
             const staticCardUrl = offloadBase64Media(cardBase64) || cardBase64;
             if (!firstGeneratedCardUrl) {
               firstGeneratedCardUrl = staticCardUrl;
@@ -1130,6 +1142,11 @@ export async function POST(request: NextRequest) {
             const vConfig = templateToUse.videoConfig;
             const reelRes = await generateServerVideoReel({
               imageBase64: cardBase64,
+              featuredImageUrl: imageUrl || undefined,
+              frameOverlayBase64: frameLayerBase64,
+              layerMode: templateToUse.layerMode || 'overlay',
+              backgroundColor: templateToUse.backgroundColor || '#0B0F19',
+              featuredImageBox: templateToUse.featuredImageBox,
               canvasWidth: templateToUse.canvasWidth || 1080,
               canvasHeight: templateToUse.canvasHeight || 1920,
               durationSeconds: vConfig?.durationSeconds || 15,

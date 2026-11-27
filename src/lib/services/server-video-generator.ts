@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import zlib from 'zlib';
+import sharp from 'sharp';
 import { spawn } from 'child_process';
 import { VideoMotionEffect, VideoOverlayType } from '@/types';
 import { saveMediaToDb, getMediaFromDb } from '@/lib/db/mysql';
@@ -212,6 +213,19 @@ export interface GenerateVideoReelOptions {
   imageBase64?: string;
   imageFilePath?: string;
   imageUrl?: string;
+  // Separate Layered Composition ("Stable Frame + Animated Featured Image")
+  featuredImageBase64?: string;
+  featuredImageUrl?: string;
+  frameOverlayBase64?: string;
+  layerMode?: 'overlay' | 'background';
+  backgroundColor?: string;
+  featuredImageBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    borderRadius?: number;
+  };
   canvasWidth?: number; // custom canvas width (default 1080)
   canvasHeight?: number; // custom canvas height (default 1920)
   durationSeconds?: number; // total custom duration in seconds (5 to 90)
@@ -240,9 +254,15 @@ export interface VideoReelResult {
 /**
  * Downloads or resolves remote/local media to a temporary file path
  */
-async function resolveMediaToLocal(mediaInput?: string, tempPrefix = 'media', ext = '.png'): Promise<string | null> {
+async function resolveMediaToLocal(
+  mediaInput?: string,
+  tempPrefix = 'media',
+  ext = '.png',
+  createdTmpFiles?: string[]
+): Promise<string | null> {
   if (!mediaInput || typeof mediaInput !== 'string') return null;
   const trimmed = mediaInput.trim();
+  if (!trimmed) return null;
 
   const tempDir = path.join(process.cwd(), 'public', 'uploads', 'tmp');
   if (!fs.existsSync(tempDir)) {
@@ -256,11 +276,31 @@ async function resolveMediaToLocal(mediaInput?: string, tempPrefix = 'media', ex
     const buffer = Buffer.from(match[2], 'base64');
     const tempFile = path.join(tempDir, `${tempPrefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}${ext}`);
     fs.writeFileSync(tempFile, buffer);
+    if (createdTmpFiles) createdTmpFiles.push(tempFile);
     return tempFile;
   }
 
+  // Check local /uploads/ path even inside full http(s) URLs first
+  if (trimmed.includes('/uploads/')) {
+    try {
+      const uploadRel = trimmed.substring(trimmed.indexOf('/uploads/')).split('?')[0].replace(/^\/+/, '');
+      const diskFile = path.join(process.cwd(), 'public', uploadRel);
+      if (fs.existsSync(diskFile)) {
+        return diskFile;
+      }
+      const filename = path.basename(uploadRel);
+      const dbMedia = (await getMediaFromDb(uploadRel)) || (await getMediaFromDb(filename));
+      if (dbMedia && dbMedia.data) {
+        const tempFile = path.join(tempDir, `${tempPrefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}${ext}`);
+        fs.writeFileSync(tempFile, dbMedia.data);
+        if (createdTmpFiles) createdTmpFiles.push(tempFile);
+        return tempFile;
+      }
+    } catch {}
+  }
+
   // Handle existing local file path (e.g. /uploads/...)
-  const cleanPath = trimmed.replace(/^\/+/, '');
+  const cleanPath = trimmed.replace(/^\/+/, '').split('?')[0];
   const localFile = path.join(process.cwd(), 'public', cleanPath);
   if (fs.existsSync(localFile)) {
     return localFile;
@@ -273,6 +313,7 @@ async function resolveMediaToLocal(mediaInput?: string, tempPrefix = 'media', ex
     if (dbMedia && dbMedia.data) {
       const tempFile = path.join(tempDir, `${tempPrefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}${ext}`);
       fs.writeFileSync(tempFile, dbMedia.data);
+      if (createdTmpFiles) createdTmpFiles.push(tempFile);
       return tempFile;
     }
   } catch (dbErr) {
@@ -283,12 +324,16 @@ async function resolveMediaToLocal(mediaInput?: string, tempPrefix = 'media', ex
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     try {
       const res = await fetch(trimmed, {
-        headers: { 'User-Agent': 'Mozilla/5.0 SocialAutoPoster/1.0' },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
       });
       if (!res.ok) return null;
       const buf = Buffer.from(await res.arrayBuffer());
       const tempFile = path.join(tempDir, `${tempPrefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}${ext}`);
       fs.writeFileSync(tempFile, buf);
+      if (createdTmpFiles) createdTmpFiles.push(tempFile);
       return tempFile;
     } catch (err) {
       console.error(`[server-video-generator] Error fetching ${trimmed}:`, err);
@@ -300,6 +345,211 @@ async function resolveMediaToLocal(mediaInput?: string, tempPrefix = 'media', ex
 }
 
 /**
+ * Creates & caches a grayscale rounded-rectangle mask PNG for clipping animated photo corners cleanly
+ */
+async function ensureRoundedMaskPng(w: number, h: number, radius: number): Promise<string | null> {
+  if (radius <= 0) return null;
+  const r = Math.min(Math.round(radius), Math.floor(Math.min(w, h) / 2));
+  if (r <= 0) return null;
+
+  const maskDir = path.join(process.cwd(), 'public', 'uploads', 'tmp', 'masks');
+  if (!fs.existsSync(maskDir)) {
+    fs.mkdirSync(maskDir, { recursive: true });
+  }
+  const maskPath = path.join(maskDir, `mask_${w}x${h}_r${r}.png`);
+  if (fs.existsSync(maskPath) && fs.statSync(maskPath).size > 100) {
+    return maskPath;
+  }
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+    <rect x="0" y="0" width="${w}" height="${h}" fill="#000000"/>
+    <rect x="0" y="0" width="${w}" height="${h}" rx="${r}" ry="${r}" fill="#FFFFFF"/>
+  </svg>`;
+  const buf = await sharp(Buffer.from(svg)).png({ compressionLevel: 2 }).toBuffer();
+  fs.writeFileSync(maskPath, buf);
+  return maskPath;
+}
+
+function normalizeFfmpegHexColor(color?: string): string {
+  if (!color || typeof color !== 'string') return '0x0B0F19';
+  const trimmed = color.trim();
+  if (/^#([0-9A-Fa-f]{6})$/.test(trimmed)) {
+    return `0x${trimmed.slice(1)}`;
+  }
+  if (/^#([0-9A-Fa-f]{3})$/.test(trimmed)) {
+    const h = trimmed.slice(1);
+    return `0x${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;
+  }
+  return '0x0B0F19';
+}
+
+/**
+ * Builds an FFmpeg filter chain for [inIdx:v] -> [outLabel] animating ONLY the photo stream
+ * using high-res pre-scaling + single-pass zoompan so Zoom In/Out, Pan Left/Right, Pulse Boom,
+ * Float, Sway, Shake, and Shimmer render smoothly at 30fps without black-border clipping.
+ */
+function buildAnimatedPhotoFilterChain(params: {
+  inIdx: number;
+  outLabel: string;
+  outW: number;
+  outH: number;
+  fps: number;
+  duration: number;
+  animDuration: number;
+  activeEffects: VideoMotionEffect[];
+  intensityRatio: number;
+  isStaticOnly: boolean;
+}): string {
+  const { inIdx, outLabel, outW, outH, fps, duration, animDuration, activeEffects, intensityRatio, isStaticOnly } = params;
+  const totalFrames = Math.max(1, Math.round(duration * fps));
+  const animFrames = Math.max(1, Math.round(animDuration * fps));
+
+  const hasSubtleFloat = activeEffects.includes('subtle_float');
+  const hasMicroJitter = activeEffects.includes('micro_jitter');
+  const hasSmoothSway = activeEffects.includes('smooth_sway');
+  const hasVerticalDrift = activeEffects.includes('vertical_drift');
+  const hasPulseShake = activeEffects.includes('pulse_shake');
+  const hasShake = activeEffects.includes('shake');
+  const hasJitter = activeEffects.includes('breaking_jitter');
+  const hasPanLeft = activeEffects.includes('pan_left');
+  const hasPanRight = activeEffects.includes('pan_right');
+  const hasZoomIn = activeEffects.includes('zoom_in');
+  const hasZoomOut = activeEffects.includes('zoom_out');
+  const hasPulse = activeEffects.includes('pulse') || activeEffects.includes('pulse_boom') || hasPulseShake;
+  const hasGlitter = activeEffects.includes('glitter');
+
+  const needsSpatialZoompan =
+    !isStaticOnly &&
+    (hasSubtleFloat ||
+      hasMicroJitter ||
+      hasSmoothSway ||
+      hasVerticalDrift ||
+      hasPulseShake ||
+      hasShake ||
+      hasJitter ||
+      hasPanLeft ||
+      hasPanRight ||
+      hasZoomIn ||
+      hasZoomOut ||
+      hasPulse);
+
+  const chain: string[] = [];
+
+  if (!needsSpatialZoompan) {
+    // Still photo or brightness-only shimmer (when input is fed via -loop 1 -framerate 30 -t duration)
+    chain.push(`scale=${outW}:${outH}:force_original_aspect_ratio=increase:flags=bicubic,crop=${outW}:${outH},setsar=1`);
+  } else {
+    // Pre-scale source to ~1.55x target size so zoompan interpolation stays crisp & fluid
+    const workW = Math.min(2048, Math.max(outW + 64, Math.round((outW * 1.55) / 2) * 2));
+    const workH = Math.min(2880, Math.max(outH + 64, Math.round((outH * 1.55) / 2) * 2));
+    chain.push(`scale=${workW}:${workH}:force_original_aspect_ratio=increase:flags=bicubic,crop=${workW}:${workH},setsar=1`);
+
+    const needsPanMargin =
+      hasPanLeft ||
+      hasPanRight ||
+      hasSubtleFloat ||
+      hasSmoothSway ||
+      hasVerticalDrift ||
+      hasMicroJitter ||
+      hasShake ||
+      hasJitter ||
+      hasPulseShake;
+
+    const baseZ = needsPanMargin ? 1.16 + 0.14 * intensityRatio : 1.0;
+    const zoomDelta = 0.14 + 0.28 * intensityRatio;
+
+    let zBaseExpr = baseZ.toFixed(4);
+    if (hasZoomIn && !hasZoomOut) {
+      zBaseExpr = `${baseZ.toFixed(4)}+${zoomDelta.toFixed(4)}*min(1,on/${animFrames})`;
+    } else if (hasZoomOut) {
+      zBaseExpr = `${(baseZ + zoomDelta).toFixed(4)}-${zoomDelta.toFixed(4)}*min(1,on/${animFrames})`;
+    }
+
+    let zExpr = zBaseExpr;
+    if (hasPulse) {
+      // Energetic beat-pop boom wave (~1.18s cadence, sharp kick & smooth settle)
+      const boomAmp = (0.06 + 0.14 * intensityRatio).toFixed(4);
+      zExpr = `(${zBaseExpr})+${boomAmp}*pow(max(0,0.5-0.5*cos(2*PI*(on/${fps})*0.85)),3)*if(lt(on,${animFrames}),1,0)`;
+    }
+
+    const halfMX = '((iw-iw/zoom)/2)';
+    const halfMY = '((ih-ih/zoom)/2)';
+    const gate = `if(lt(on,${animFrames}),1,0)`;
+
+    const xOffs: string[] = [];
+    const yOffs: string[] = [];
+
+    if (hasPanRight) {
+      xOffs.push(`${halfMX}*0.92*(2*min(1,on/${animFrames})-1)`);
+    } else if (hasPanLeft) {
+      xOffs.push(`${halfMX}*0.92*(1-2*min(1,on/${animFrames}))`);
+    }
+
+    if (hasSmoothSway) {
+      xOffs.push(`${halfMX}*0.78*sin(2*PI*on/(${fps}*4.0))*${gate}`);
+    }
+
+    if (hasSubtleFloat) {
+      xOffs.push(`${halfMX}*0.50*sin(2*PI*on/(${fps}*3.8))*${gate}`);
+      yOffs.push(`${halfMY}*0.50*cos(2*PI*on/(${fps}*3.4))*${gate}`);
+    }
+
+    if (hasVerticalDrift) {
+      yOffs.push(`${halfMY}*0.78*sin(2*PI*on/(${fps}*4.2))*${gate}`);
+    }
+
+    if (hasMicroJitter) {
+      const mj = (0.20 + 0.25 * intensityRatio).toFixed(3);
+      xOffs.push(`${halfMX}*${mj}*(0.65*sin(on*0.55)+0.35*sin(on*1.15))*${gate}`);
+      yOffs.push(`${halfMY}*${mj}*(0.65*cos(on*0.48)+0.35*cos(on*1.05))*${gate}`);
+    }
+
+    if (hasShake) {
+      const sh = (0.34 + 0.42 * intensityRatio).toFixed(3);
+      const bGate = `if(lt(mod(on,45),18)*lt(on,${animFrames}),1,0.06)`;
+      xOffs.push(`${halfMX}*${sh}*sin(on*0.85)*${bGate}`);
+      yOffs.push(`${halfMY}*${sh}*cos(on*0.95)*${bGate}`);
+    }
+
+    if (hasJitter) {
+      const bj = (0.32 + 0.40 * intensityRatio).toFixed(3);
+      xOffs.push(`${halfMX}*${bj}*sin(on*0.95)*${gate}`);
+      yOffs.push(`${halfMY}*${bj}*cos(on*1.10)*${gate}`);
+    }
+
+    if (hasPulseShake) {
+      const ps = (0.24 + 0.30 * intensityRatio).toFixed(3);
+      xOffs.push(`${halfMX}*${ps}*sin(on*1.15)*pow(max(0,0.5-0.5*cos(2*PI*(on/${fps})*0.85)),2)*${gate}`);
+      yOffs.push(`${halfMY}*${ps}*cos(on*1.25)*pow(max(0,0.5-0.5*cos(2*PI*(on/${fps})*0.85)),2)*${gate}`);
+    }
+
+    const xRaw = xOffs.length > 0 ? `${halfMX}+${xOffs.join('+')}` : halfMX;
+    const yRaw = yOffs.length > 0 ? `${halfMY}+${yOffs.join('+')}` : halfMY;
+    const xExpr = `max(0,min(iw-iw/zoom,${xRaw}))`;
+    const yExpr = `max(0,min(ih-ih/zoom,${yRaw}))`;
+
+    chain.push(
+      `zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${outW}x${outH}:fps=${fps},setsar=1,setpts=PTS-STARTPTS`
+    );
+  }
+
+  if (hasGlitter) {
+    chain.push(
+      `eq=brightness='${(0.06 * intensityRatio).toFixed(3)}*sin(2*PI*t*1.35)':saturation='1.0+${(0.22 * intensityRatio).toFixed(3)}*(0.5+0.5*cos(2*PI*t*1.35))':enable='between(t,0,${animDuration})'`
+    );
+  }
+
+  if (hasJitter) {
+    chain.push(
+      `eq=brightness='${(0.065 * intensityRatio).toFixed(3)}*if(lt(mod(n,40),5)*lt(n,${animFrames}),1,0)'`
+    );
+  }
+
+  chain.push(`fps=${fps},trim=duration=${duration},setpts=PTS-STARTPTS`);
+  return `[${inIdx}:v]${chain.join(',')}[${outLabel}]`;
+}
+
+/**
  * Generates an ultra high-quality 9:16 vertical MP4 video reel (1080x1920)
  * from a static news image with motion effects and trimmed background music.
  */
@@ -308,6 +558,12 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     imageBase64,
     imageFilePath,
     imageUrl,
+    featuredImageBase64,
+    featuredImageUrl,
+    frameOverlayBase64,
+    layerMode = 'overlay',
+    backgroundColor = '#0B0F19',
+    featuredImageBox,
     canvasWidth = 1080,
     canvasHeight = 1920,
     durationSeconds = 15,
@@ -337,13 +593,13 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   const targetW = Math.max(320, Math.round(rawW / 2) * 2);
   const targetH = Math.max(320, Math.round(rawH / 2) * 2);
 
-  // Motion Intensity: 5 to 100 (%) - default 20% (Subtle & Readable)
+  // Motion Intensity: 5 to 100 (%) - default 20%
   const mIntensity = Math.max(5, Math.min(100, Number(motionIntensity) || 20));
-  const intensityRatio = mIntensity / 100; // 0.05 to 1.0 (default 0.20)
+  const intensityRatio = mIntensity / 100;
 
   // Overlay Intensity: 10 to 100 (%) - default 50%
   const oIntensity = Math.max(10, Math.min(100, Number(overlayIntensity) || 50));
-  const ovIntensityRatio = oIntensity / 100; // 0.1 to 1.0 (default 0.50)
+  const ovIntensityRatio = oIntensity / 100;
 
   // Determine active effects list (supports multi-selection!)
   let activeEffects: VideoMotionEffect[] = [];
@@ -364,18 +620,28 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     fs.mkdirSync(videosDir, { recursive: true });
   }
 
-  // 1. Resolve Input Image
-  const inputImage =
-    (await resolveMediaToLocal(imageBase64, 'frame', '.png')) ||
-    (await resolveMediaToLocal(imageUrl, 'frame', '.png')) ||
+  const createdTmpFiles: string[] = [];
+
+  // 1. Resolve Inputs (Layered Mode vs Legacy Flat Mode)
+  const inputFeaturedPhoto =
+    (await resolveMediaToLocal(featuredImageBase64, 'feat_photo', '.png', createdTmpFiles)) ||
+    (await resolveMediaToLocal(featuredImageUrl, 'feat_photo', '.png', createdTmpFiles));
+  const inputFrameLayer = await resolveMediaToLocal(frameOverlayBase64, 'frame_layer', '.png', createdTmpFiles);
+
+  const inputFlatFallback =
+    (await resolveMediaToLocal(imageBase64, 'frame', '.png', createdTmpFiles)) ||
+    (await resolveMediaToLocal(imageUrl, 'frame', '.png', createdTmpFiles)) ||
     (imageFilePath && fs.existsSync(imageFilePath) ? imageFilePath : null);
 
-  if (!inputImage) {
+  const hasLayeredMode = Boolean(inputFeaturedPhoto && inputFrameLayer && featuredImageBox);
+  const inputLegacyImage = inputFlatFallback || inputFeaturedPhoto || inputFrameLayer;
+
+  if (!hasLayeredMode && !inputLegacyImage) {
     throw new Error('No valid input image provided for video reel generation.');
   }
 
   // 2. Resolve Input Music (if provided)
-  const inputMusic = musicUrl ? await resolveMediaToLocal(musicUrl, 'audio', '.mp3') : null;
+  const inputMusic = musicUrl ? await resolveMediaToLocal(musicUrl, 'audio', '.mp3', createdTmpFiles) : null;
 
   // 3. Prepare Output Path
   const cleanBaseName = outputFilename
@@ -385,152 +651,34 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   const finalFilePath = path.join(videosDir, finalFilename);
   const publicVideoUrl = `/uploads/videos/${finalFilename}`;
 
-  // 4. Build Combined Multi-Motion Video Filter Chain (calibrated for 1080px+ reels)
   const fps = 30;
-  const animFrames = Math.max(1, Math.round(animDuration * fps));
-  const refScale = Math.max(0.65, targetW / 1080);
-
-  const hasSubtleFloat = activeEffects.includes('subtle_float');
-  const hasMicroJitter = activeEffects.includes('micro_jitter');
-  const hasSmoothSway = activeEffects.includes('smooth_sway');
-  const hasVerticalDrift = activeEffects.includes('vertical_drift');
-  const hasPulseShake = activeEffects.includes('pulse_shake');
-  const hasShake = activeEffects.includes('shake');
-  const hasJitter = activeEffects.includes('breaking_jitter');
-  const hasPanLeft = activeEffects.includes('pan_left');
-  const hasPanRight = activeEffects.includes('pan_right');
-  const hasZoomIn = activeEffects.includes('zoom_in');
-  const hasZoomOut = activeEffects.includes('zoom_out');
-  const hasPulse = activeEffects.includes('pulse');
-  const hasGlitter = activeEffects.includes('glitter');
-
-  const filterChain: string[] = [];
-
-  // Generous motion margin padding (3% to 10% based on intensity) so even intense multi-motion never clips edges
-  const hasPan = hasPanLeft || hasPanRight;
-  const padRatio = hasPan
-    ? Math.max(0.12, 0.08 + 0.08 * intensityRatio)
-    : Math.max(0.035, Math.min(0.11, 0.035 + 0.075 * intensityRatio));
-  const padX = Math.round((targetW * padRatio) / 2) * 2;
-  const padY = Math.round((targetH * padRatio) / 2) * 2;
-  const scaledW = targetW + padX * 2;
-  const scaledH = targetH + padY * 2;
-
-  const hasDisplacementMotion =
-    hasSubtleFloat ||
-    hasMicroJitter ||
-    hasSmoothSway ||
-    hasVerticalDrift ||
-    hasPulseShake ||
-    hasShake ||
-    hasJitter ||
-    hasPan;
-
-  // Step A: Scale & Additive Spatial Displacement (combines all selected pan/drift/float/shake motions cleanly!)
-  if (hasDisplacementMotion) {
-    filterChain.push(`scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase:flags=bicubic`);
-
-    const xTerms: string[] = [`${padX}`];
-    const yTerms: string[] = [`${padY}`];
-    const activeGate = `if(lt(n,${animFrames}),1,0)`;
-
-    if (hasPanLeft) {
-      xTerms.push(`(${padX * 0.85})*(1-2*min(1,n/${animFrames}))`);
-    } else if (hasPanRight) {
-      xTerms.push(`(${padX * 0.85})*(2*min(1,n/${animFrames})-1)`);
-    }
-
-    if (hasSubtleFloat) {
-      const ampX = ((5 + 19 * intensityRatio) * refScale).toFixed(2);
-      const ampY = ((7 + 23 * intensityRatio) * refScale).toFixed(2);
-      xTerms.push(`${ampX}*sin(2*PI*n/(${fps}*4.2))*${activeGate}`);
-      yTerms.push(`${ampY}*cos(2*PI*n/(${fps}*3.8))*${activeGate}`);
-    }
-
-    if (hasSmoothSway) {
-      const ampX = ((12 + 38 * intensityRatio) * refScale).toFixed(2);
-      xTerms.push(`${ampX}*sin(2*PI*n/(${fps}*4.6))*${activeGate}`);
-    }
-
-    if (hasVerticalDrift) {
-      const ampY = ((12 + 40 * intensityRatio) * refScale).toFixed(2);
-      yTerms.push(`${ampY}*sin(2*PI*n/(${fps}*4.8))*${activeGate}`);
-    }
-
-    if (hasMicroJitter) {
-      const amp = ((3.5 + 13 * intensityRatio) * refScale).toFixed(2);
-      xTerms.push(`${amp}*(0.65*sin(n*0.42)+0.35*sin(n*0.97))*${activeGate}`);
-      yTerms.push(`${amp}*(0.65*cos(n*0.38)+0.35*cos(n*0.89))*${activeGate}`);
-    }
-
-    if (hasShake) {
-      const amp = ((7 + 24 * intensityRatio) * refScale).toFixed(2);
-      const burstGate = `if(lt(mod(n,60),22)*lt(n,${animFrames}),1,0.08)`;
-      xTerms.push(`${amp}*sin(n*0.75)*${burstGate}`);
-      yTerms.push(`${amp}*cos(n*0.88)*${burstGate}`);
-    }
-
-    if (hasJitter) {
-      const amp = ((6 + 20 * intensityRatio) * refScale).toFixed(2);
-      xTerms.push(`${amp}*sin(n*0.85)*${activeGate}`);
-      yTerms.push(`${amp}*cos(n*0.95)*${activeGate}`);
-    }
-
-    if (hasPulseShake) {
-      const amp = ((3 + 11 * intensityRatio) * refScale).toFixed(2);
-      xTerms.push(`${amp}*sin(n*0.5)*${activeGate}`);
-      yTerms.push(`${amp}*cos(n*0.55)*${activeGate}`);
-    }
-
-    const xExpr = `max(0,min(${padX * 2},${xTerms.join('+')}))`;
-    const yExpr = `max(0,min(${padY * 2},${yTerms.join('+')}))`;
-    filterChain.push(`crop=${targetW}:${targetH}:'${xExpr}':'${yExpr}',setsar=1`);
-
-    if (hasJitter) {
-      filterChain.push(
-        `eq=brightness='${(0.055 * intensityRatio).toFixed(3)}*if(lt(mod(n,45),5)*lt(n,${animFrames}),1,0)'`
-      );
-    }
-  } else {
-    filterChain.push(
-      `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=bicubic,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black`
-    );
-  }
-
-  // Step B: Zoom / Breathing Pulse (Spatial Scale Animation using d=1 for seamless multi-effect layering!)
-  if (hasZoomIn || hasZoomOut || hasPulse || hasPulseShake) {
-    const zoomSpan = (0.04 + 0.16 * intensityRatio).toFixed(4);
-    const pulseSpan = (0.014 + 0.046 * intensityRatio).toFixed(4);
-    let zExpr = '1.0';
-
-    if (hasZoomIn) {
-      zExpr = `1.0+${zoomSpan}*min(1,in/${animFrames})`;
-    } else if (hasZoomOut) {
-      zExpr = `${(1.0 + Number(zoomSpan)).toFixed(4)}-${zoomSpan}*min(1,in/${animFrames})`;
-    } else if (hasPulse || hasPulseShake) {
-      zExpr = `1.0+${pulseSpan}*(0.5-0.5*cos(2*PI*(in/${fps})*0.85))*if(lt(in,${animFrames}),1,0)`;
-    }
-
-    filterChain.push(
-      `zoompan=z='${zExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${targetW}x${targetH}:fps=${fps},setsar=1`
-    );
-  }
-
-  // Step C: Ambient Light Shimmer & Warm Saturation Glow
-  if (hasGlitter) {
-    filterChain.push(
-      `eq=brightness='${(0.055 * intensityRatio).toFixed(3)}*sin(2*PI*t*1.35)':saturation='1.0+${(0.18 * intensityRatio).toFixed(3)}*(0.5+0.5*cos(2*PI*t*1.35))':enable='between(t,0,${animDuration})'`
-    );
-  }
-
-  // Step D: Film Grain filter (only when explicitly selected)
   const cleanOverlays = Array.isArray(overlays) ? overlays : [];
-  if (cleanOverlays.includes('film_grain')) {
-    const grainLevel = Math.max(2, Math.round(2 + 11 * ovIntensityRatio));
-    filterChain.push(`noise=alls=${grainLevel}:allf=t+u`);
+
+  // 4. Generate Rounded Mask (if borderRadius > 0 in layered mode)
+  let boxX = 0;
+  let boxY = 0;
+  let boxW = targetW;
+  let boxH = targetH;
+  let maskFilePath: string | null = null;
+
+  if (hasLayeredMode && featuredImageBox) {
+    boxX = Math.max(0, Math.min(Math.round(featuredImageBox.x || 0), targetW - 20));
+    boxY = Math.max(0, Math.min(Math.round(featuredImageBox.y || 0), targetH - 20));
+    const maxAvailW = targetW - boxX;
+    const maxAvailH = targetH - boxY;
+    boxW = Math.max(20, Math.min(Math.round((featuredImageBox.width || targetW) / 2) * 2, Math.floor(maxAvailW / 2) * 2));
+    boxH = Math.max(20, Math.min(Math.round((featuredImageBox.height || targetH) / 2) * 2, Math.floor(maxAvailH / 2) * 2));
+
+    if (featuredImageBox.borderRadius && featuredImageBox.borderRadius > 0) {
+      try {
+        maskFilePath = await ensureRoundedMaskPng(boxW, boxH, featuredImageBox.borderRadius);
+      } catch (maskErr) {
+        console.warn('[server-video-generator] Rounded mask notice:', maskErr);
+      }
+    }
   }
 
-  // Step E: Generate Gorgeous SVG Radial-Glow Transparent Overlay Layers via Sharp (Zero blocky drawbox squares!)
+  // 5. Generate Gorgeous SVG Radial-Glow Transparent Overlay Layers via Sharp
   let overlayLayers: OverlayAssetLayer[] = [];
   try {
     overlayLayers = await generateSeamlessOverlayAssets({
@@ -543,39 +691,110 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     console.warn('[server-video-generator] Overlay layer generation warning:', ovErr);
   }
 
-  const baseVideoFilter = filterChain.join(',');
+  // Determine whether primary animated image uses zoompan (1-frame input) vs looped static
+  const hasSpatialEffects = activeEffects.some((e) => e !== 'none' && e !== 'glitter');
 
-  // 5. Build FFmpeg Arguments (with -nostats & -loglevel error to prevent maxBuffer stderr overflow)
   const args: string[] = [
     '-nostats',
     '-loglevel',
     'error',
     '-y',
-    '-loop',
-    '1',
-    '-framerate',
-    '30',
-    '-i',
-    inputImage,
   ];
 
-  for (const layer of overlayLayers) {
-    args.push('-i', layer.filePath);
+  const filterGraphParts: string[] = [];
+  let nextInputIdx = 0;
+
+  if (hasLayeredMode && inputFeaturedPhoto && inputFrameLayer) {
+    // LAYERED MODE: Frame & Text are 100% STABLE; ONLY Featured Image animates!
+    const photoIdx = nextInputIdx++;
+    if (hasSpatialEffects) {
+      args.push('-i', inputFeaturedPhoto);
+    } else {
+      args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputFeaturedPhoto);
+    }
+
+    const frameIdx = nextInputIdx++;
+    args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputFrameLayer);
+
+    let maskIdx = -1;
+    if (maskFilePath) {
+      maskIdx = nextInputIdx++;
+      args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', maskFilePath);
+    }
+
+    // Build animated photo stream [photo_anim] at boxW x boxH
+    filterGraphParts.push(
+      buildAnimatedPhotoFilterChain({
+        inIdx: photoIdx,
+        outLabel: 'photo_anim',
+        outW: boxW,
+        outH: boxH,
+        fps,
+        duration,
+        animDuration,
+        activeEffects,
+        intensityRatio,
+        isStaticOnly: !hasSpatialEffects,
+      })
+    );
+
+    let readyPhotoLabel = 'photo_ready';
+    if (maskIdx >= 0) {
+      filterGraphParts.push(`[photo_anim]format=rgba[pa]`);
+      filterGraphParts.push(`[${maskIdx}:v]format=gray,trim=duration=${duration},setpts=PTS-STARTPTS[pm]`);
+      filterGraphParts.push(`[pa][pm]alphamerge[${readyPhotoLabel}]`);
+    } else {
+      filterGraphParts.push(`[photo_anim]format=rgba[${readyPhotoLabel}]`);
+    }
+
+    if (layerMode === 'background') {
+      filterGraphParts.push(`[${frameIdx}:v]scale=${targetW}:${targetH}:flags=bicubic,format=rgba[frame_bg]`);
+      filterGraphParts.push(`[frame_bg][${readyPhotoLabel}]overlay=x=${boxX}:y=${boxY}:shortest=1[base0]`);
+    } else {
+      const bgHex = normalizeFfmpegHexColor(backgroundColor);
+      filterGraphParts.push(`color=c=${bgHex}:s=${targetW}x${targetH}:r=${fps}:d=${duration},format=rgba[bg_canvas]`);
+      filterGraphParts.push(`[${frameIdx}:v]scale=${targetW}:${targetH}:flags=bicubic,format=rgba[frame_fg]`);
+      filterGraphParts.push(`[bg_canvas][${readyPhotoLabel}]overlay=x=${boxX}:y=${boxY}:shortest=1[with_photo]`);
+      filterGraphParts.push(`[with_photo][frame_fg]overlay=0:0:shortest=1[base0]`);
+    }
+  } else if (inputLegacyImage) {
+    // LEGACY FLAT FALLBACK MODE (when no separate template frame + photo exist)
+    const legacyIdx = nextInputIdx++;
+    if (hasSpatialEffects) {
+      args.push('-i', inputLegacyImage);
+    } else {
+      args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputLegacyImage);
+    }
+
+    filterGraphParts.push(
+      buildAnimatedPhotoFilterChain({
+        inIdx: legacyIdx,
+        outLabel: 'base_raw',
+        outW: targetW,
+        outH: targetH,
+        fps,
+        duration,
+        animDuration,
+        activeEffects,
+        intensityRatio,
+        isStaticOnly: !hasSpatialEffects,
+      })
+    );
+    filterGraphParts.push(`[base_raw]format=rgba[base0]`);
   }
 
-  const volRatio = Math.max(0.05, Math.min(1.0, (musicVolume || 100) / 100));
-  const audioInputIdx = 1 + overlayLayers.length;
-
-  // Build Filter Complex connecting base video -> each radial-glow PNG overlay layer -> final [v]
-  const filterGraphParts: string[] = [
-    `[0:v]${baseVideoFilter},fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[base0]`,
-  ];
+  // Attach Visual Overlays cleanly using finite -loop 1 -t duration (memory-safe, ~8MB RAM each)
+  const hasFilmGrain = cleanOverlays.includes('film_grain');
+  let currentBaseLabel = 'base0';
 
   for (let idx = 0; idx < overlayLayers.length; idx++) {
     const layer = overlayLayers[idx];
-    const inStreamIdx = idx + 1;
-    const prevLabel = `base${idx}`;
-    const nextLabel = idx === overlayLayers.length - 1 ? 'v' : `base${idx + 1}`;
+    const inStreamIdx = nextInputIdx++;
+    args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', layer.filePath);
+
+    const prevLabel = currentBaseLabel;
+    const isLastOv = idx === overlayLayers.length - 1;
+    const nextLabel = isLastOv && !hasFilmGrain ? 'v_out' : `base_ov_${idx}`;
     const ovLabel = `ov${idx}`;
 
     if (layer.kind === 'scroll_up') {
@@ -584,7 +803,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       const yExpr = `-mod(t*${layer.speedY || 45},${targetH})`;
       filterGraphParts.push(`[${inStreamIdx}:v]format=rgba[${ovLabel}]`);
       filterGraphParts.push(
-        `[${prevLabel}][${ovLabel}]overlay=x='${xExpr}':y='${yExpr}':eof_action=repeat[${nextLabel}]`
+        `[${prevLabel}][${ovLabel}]overlay=x='${xExpr}':y='${yExpr}':shortest=1[${nextLabel}]`
       );
     } else if (layer.kind === 'scroll_down') {
       const sway = Math.min(Math.max(0, layer.padX - 4), layer.swayAmpX || 28);
@@ -592,41 +811,27 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       const yExpr = `-${targetH}+mod(t*${layer.speedY || 110},${targetH})`;
       filterGraphParts.push(`[${inStreamIdx}:v]format=rgba[${ovLabel}]`);
       filterGraphParts.push(
-        `[${prevLabel}][${ovLabel}]overlay=x='${xExpr}':y='${yExpr}':eof_action=repeat[${nextLabel}]`
-      );
-    } else if (layer.kind === 'twinkle_fade') {
-      // Smooth continuous staggered sinusoidal alpha twinkle in RAM (0% -> 100% -> 0% over ~1.6-2.8s loops)
-      const periodSec = layer.fadePeriodSec || 2.0;
-      const periodFrames = Math.max(30, Math.round(periodSec * fps));
-      const fadeHalf = (periodSec * 0.45).toFixed(2);
-      const staggerRatio = Math.min(0.5, (layer.fadeOffsetSec || 0) / 3.0);
-      const fadeInStart = (staggerRatio * periodSec * 0.5).toFixed(2);
-      const fadeOutStart = Math.max(
-        Number(fadeInStart) + Number(fadeHalf) * 0.6,
-        Number(fadeInStart) + Number(fadeHalf)
-      ).toFixed(2);
-      const sway = Math.min(Math.max(0, layer.padX - 4), layer.swayAmpX || 14);
-      const xExpr = `-${layer.padX}+${sway}*sin(t*${(layer.swayFreq || 0.55).toFixed(2)})`;
-      const yExpr = `-${layer.padY}+${Math.round(sway * 0.7)}*cos(t*${((layer.swayFreq || 0.55) * 0.85).toFixed(2)})`;
-
-      filterGraphParts.push(
-        `[${inStreamIdx}:v]format=rgba,loop=${periodFrames}:1:0,setpts=N/(${fps}*TB),fade=t=in:st=${fadeInStart}:d=${fadeHalf}:alpha=1,fade=t=out:st=${fadeOutStart}:d=${fadeHalf}:alpha=1,loop=-1:${periodFrames}:0,setpts=N/(${fps}*TB)[${ovLabel}]`
-      );
-      filterGraphParts.push(
         `[${prevLabel}][${ovLabel}]overlay=x='${xExpr}':y='${yExpr}':shortest=1[${nextLabel}]`
       );
     } else {
-      // static_vignette
+      // static_vignette (or fallback static overlay)
       filterGraphParts.push(`[${inStreamIdx}:v]format=rgba[${ovLabel}]`);
-      filterGraphParts.push(`[${prevLabel}][${ovLabel}]overlay=0:0:eof_action=repeat[${nextLabel}]`);
+      filterGraphParts.push(`[${prevLabel}][${ovLabel}]overlay=0:0:shortest=1[${nextLabel}]`);
     }
+
+    currentBaseLabel = nextLabel;
   }
 
-  // If no overlay layers were attached, rename [base0] cleanly to [v]
-  const finalVideoFilterGraph =
-    overlayLayers.length === 0
-      ? `[0:v]${baseVideoFilter},fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[v]`
-      : filterGraphParts.join(';');
+  if (hasFilmGrain) {
+    const grainLevel = Math.max(4, Math.round(4 + 14 * ovIntensityRatio));
+    filterGraphParts.push(`[${currentBaseLabel}]format=yuv420p,noise=alls=${grainLevel}:allf=t+u[v]`);
+  } else {
+    filterGraphParts.push(`[${currentBaseLabel}]format=yuv420p[v]`);
+  }
+
+  const volRatio = Math.max(0.05, Math.min(1.0, (musicVolume || 100) / 100));
+  const audioInputIdx = nextInputIdx++;
+  const finalVideoFilterGraph = filterGraphParts.join(';');
 
   if (inputMusic && fs.existsSync(inputMusic)) {
     const fadeStart = Math.max(0, duration - 1.5);
@@ -686,16 +891,18 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     finalFilePath
   );
 
-  console.log(`[server-video-generator] Spawning ffmpeg from '${ffmpegBin}': effect=${effect}, duration=${duration}s, hasMusic=${!!inputMusic}`);
+  console.log(
+    `[server-video-generator] Spawning ffmpeg (layered=${hasLayeredMode}): effects=[${activeEffects.join(',')}], overlays=[${cleanOverlays.join(',')}], duration=${duration}s, hasMusic=${!!inputMusic}`
+  );
 
   try {
     try {
       await runFfmpegSpawn(ffmpegBin, args, 120000);
     } catch (primaryErr: unknown) {
       const pMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
-      console.warn(`[server-video-generator] Primary complex render warning: ${pMsg}. Running bulletproof clean fallback render...`);
+      console.error(`[server-video-generator] Primary complex render error: ${pMsg}. Running clean fallback render...`);
 
-      // Fallback: Clean core motion video (scale, crop/pad to exact targetW x targetH, trim duration, and audio)
+      const fallbackSrc = inputLegacyImage || inputFeaturedPhoto || inputFrameLayer!;
       const fallbackArgs: string[] = [
         '-nostats',
         '-loglevel',
@@ -705,11 +912,13 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
         '1',
         '-framerate',
         '30',
+        '-t',
+        String(duration),
         '-i',
-        inputImage,
+        fallbackSrc,
       ];
 
-      const fallbackFilter = `[0:v]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,trim=duration=${duration},setpts=PTS-STARTPTS[v]`;
+      const fallbackFilter = `[0:v]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,trim=duration=${duration},setpts=PTS-STARTPTS,format=yuv420p[v]`;
 
       if (inputMusic && fs.existsSync(inputMusic)) {
         const fadeStart = Math.max(0, duration - 1.5);
@@ -810,18 +1019,18 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       duration,
       sizeBytes: stats.size,
       effect,
+      effects: activeEffects,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error('[server-video-generator] FFmpeg error:', errorMsg);
     throw new Error(`Video Reel generation failed: ${errorMsg}`);
   } finally {
-    // Clean up temporary image frame if it was generated in tmp
-    if (inputImage && inputImage.includes('/uploads/tmp/')) {
-      try {
-        fs.unlinkSync(inputImage);
-      } catch {
-        // ignore cleanup error
+    for (const tmpPath of createdTmpFiles) {
+      if (tmpPath && tmpPath.includes('tmp')) {
+        try {
+          if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        } catch {}
       }
     }
   }

@@ -237,6 +237,7 @@ export type VideoMotionEffect =
   | 'pan_left'
   | 'pan_right'
   | 'pulse'
+  | 'pulse_boom'
   | 'glitter';
 
 export type VideoOverlayType =

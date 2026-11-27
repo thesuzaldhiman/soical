@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateServerVideoReel } from '@/lib/services/server-video-generator';
-import { generateServerCardImage } from '@/lib/services/server-image-generator';
+import { generateServerCardImage, generateServerCardFrameLayer } from '@/lib/services/server-image-generator';
 import { VideoMotionEffect, VideoOverlayType } from '@/types';
 
 export const maxDuration = 120;
@@ -11,10 +11,15 @@ export async function POST(request: NextRequest) {
     const {
       imageUrl,
       imageBase64,
+      frameOverlayBase64,
+      featuredImageBase64,
+      featuredImageUrl,
+      featuredImageBox,
+      layerMode,
+      backgroundColor,
       template,
       headline,
       highlightPhrase,
-      featuredImageUrl,
       canvasWidth,
       canvasHeight,
       duration = 15,
@@ -32,8 +37,25 @@ export async function POST(request: NextRequest) {
 
     let finalImageBase64 = imageBase64;
     let finalImageUrl = imageUrl;
+    let finalFrameOverlayBase64 = frameOverlayBase64;
+    const resolvedFeaturedUrl = featuredImageUrl || template?.templateImageUrl;
+    const resolvedFeaturedBox = featuredImageBox || template?.featuredImageBox;
 
-    if (!finalImageUrl && !finalImageBase64) {
+    // Auto-generate stable Frame+Text overlay layer on server if client didn't pass one
+    if (!finalFrameOverlayBase64 && template) {
+      try {
+        finalFrameOverlayBase64 = await generateServerCardFrameLayer({
+          template,
+          headline: headline || template.name || 'Breaking News',
+          highlightPhrase,
+          featuredImageUrl: resolvedFeaturedUrl,
+        });
+      } catch (frameErr) {
+        console.warn('[API Video Generate] generateServerCardFrameLayer warning:', frameErr);
+      }
+    }
+
+    if (!finalImageUrl && !finalImageBase64 && !(finalFrameOverlayBase64 && (featuredImageBase64 || featuredImageUrl))) {
       if (template) {
         try {
           console.log('[API Video Generate] No imageBase64 received, generating server card via Sharp fallback...');
@@ -41,7 +63,7 @@ export async function POST(request: NextRequest) {
             template,
             headline: headline || template.name || 'Breaking News',
             highlightPhrase,
-            featuredImageUrl: featuredImageUrl || template.templateImageUrl,
+            featuredImageUrl: resolvedFeaturedUrl,
           });
         } catch (cardErr) {
           console.warn('[API Video Generate] generateServerCardImage error:', cardErr);
@@ -49,7 +71,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!finalImageUrl && !finalImageBase64) {
+    if (!finalImageUrl && !finalImageBase64 && !(finalFrameOverlayBase64 && (featuredImageBase64 || featuredImageUrl))) {
       return NextResponse.json(
         { success: false, error: 'Either imageUrl, imageBase64, or a valid template is required.' },
         { status: 400 }
@@ -61,6 +83,12 @@ export async function POST(request: NextRequest) {
     const result = await generateServerVideoReel({
       imageUrl: finalImageUrl,
       imageBase64: finalImageBase64,
+      featuredImageBase64,
+      featuredImageUrl: featuredImageUrl || undefined,
+      frameOverlayBase64: finalFrameOverlayBase64 || undefined,
+      layerMode: layerMode || template?.layerMode || 'overlay',
+      backgroundColor: backgroundColor || template?.backgroundColor || '#0B0F19',
+      featuredImageBox: resolvedFeaturedBox,
       canvasWidth: Number(canvasWidth) || template?.canvasWidth || 1080,
       canvasHeight: Number(canvasHeight) || template?.canvasHeight || 1920,
       durationSeconds: finalDuration,

@@ -28,7 +28,7 @@ function mulberry32(seed: number) {
 }
 
 function getCacheDir(): string {
-  const dir = path.join(process.cwd(), 'public', 'uploads', 'tmp', 'ov_cache_v3');
+  const dir = path.join(process.cwd(), 'public', 'uploads', 'tmp', 'ov_cache_v4');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -109,66 +109,62 @@ function buildSeamlessDustSvg(
   return { svg, padX };
 }
 
-function buildTwinkleStarsSvg(
+function buildSeamlessSparklesSvg(
   targetW: number,
   targetH: number,
   ratio: number,
   layerIndex: number
-): { svg: string; padX: number; padY: number } {
-  const padX = 36;
-  const padY = 36;
+): { svg: string; padX: number } {
+  const padX = 64;
   const svgW = targetW + padX * 2;
-  const svgH = targetH + padY * 2;
+  const svgH = targetH * 2; // Seamless vertical double tile
   const rand = mulberry32(918273 + layerIndex * 48271);
 
-  const targetCount = Math.round(6 + 14 * ratio); // 6 to 20 well-spaced sleek sparkles per layer
-  const dustCount = Math.round(10 + 18 * ratio); // Tiny diamond pinpoint specks
-  const opacityScale = 0.55 + 0.45 * ratio;
+  const targetCount = Math.round(10 + 18 * ratio); // 10 to 28 crisp optical stars
+  const dustCount = Math.round(14 + 26 * ratio); // Diamond pinpoint specks
+  const opacityScale = 0.65 + 0.35 * ratio;
   const refScale = Math.max(0.65, targetW / 1080);
 
-  // Enforce clean minimum distance between stars so they never clump awkwardly
   const placed: Array<{ x: number; y: number }> = [];
-  const minDist = Math.round(115 * refScale);
+  const minDist = Math.round(105 * refScale);
 
   let items = '';
   let attempts = 0;
-  while (placed.length < targetCount && attempts < targetCount * 12) {
+  while (placed.length < targetCount && attempts < targetCount * 14) {
     attempts++;
-    const cx = padX + 36 + rand() * (targetW - 72);
-    const cy = padY + 36 + rand() * (targetH - 72);
+    const cx = padX * 0.5 + rand() * (targetW + padX);
+    const cy = 24 + rand() * (targetH - 48);
     if (placed.some((p) => Math.hypot(p.x - cx, p.y - cy) < minDist)) {
       continue;
     }
     placed.push({ x: cx, y: cy });
 
-    // Sleek, delicate optical lens flare sizing (never chunky!)
-    const isHero = rand() > 0.62;
-    const size = (isHero ? 16 + rand() * 14 : 9 + rand() * 9) * refScale * (0.78 + 0.32 * ratio);
-    const rotDeg = Math.round(rand() * 20 - 10);
-    const isGold = rand() > 0.35;
+    const isHero = rand() > 0.55;
+    const size = (isHero ? 18 + rand() * 16 : 10 + rand() * 10) * refScale * (0.8 + 0.35 * ratio);
+    const rotDeg = Math.round(rand() * 24 - 12);
+    const isGold = rand() > 0.3;
     const auraId = isGold ? 'starAuraGold' : 'starAuraWhite';
     const fillColor = isGold ? '#FEF9C3' : '#FFFFFF';
     const secColor = isGold ? '#FDE047' : '#E0F2FE';
-    const op = Math.min(1.0, (0.72 + rand() * 0.28) * opacityScale).toFixed(2);
+    const op = Math.min(1.0, (0.78 + rand() * 0.22) * opacityScale).toFixed(2);
 
-    // Razor-sharp concave slender optical light rays (tight waist 0.045 * size)
-    const waist = size * 0.045;
-    const secSize = size * 0.42;
-    const coreR = Math.max(1.8, size * 0.14);
+    const waist = size * 0.05;
+    const secSize = size * 0.44;
+    const coreR = Math.max(2.0, size * 0.15);
 
     items += `<g opacity="${op}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${rotDeg})">
-      <circle cx="0" cy="0" r="${(size * 1.35).toFixed(1)}" fill="url(#${auraId})"/>
+      <circle cx="0" cy="0" r="${(size * 1.45).toFixed(1)}" fill="url(#${auraId})"/>
       <path d="M 0,${(-size).toFixed(1)} Q ${waist.toFixed(1)},${(-waist).toFixed(1)} ${size.toFixed(1)},0 Q ${waist.toFixed(1)},${waist.toFixed(1)} 0,${size.toFixed(1)} Q ${(-waist).toFixed(1)},${waist.toFixed(1)} ${(-size).toFixed(1)},0 Q ${(-waist).toFixed(1)},${(-waist).toFixed(1)} 0,${(-size).toFixed(1)} Z" fill="${fillColor}"/>
-      <path transform="rotate(45)" d="M 0,${(-secSize).toFixed(1)} Q ${(waist * 0.5).toFixed(1)},${(-waist * 0.5).toFixed(1)} ${secSize.toFixed(1)},0 Q ${(waist * 0.5).toFixed(1)},${(waist * 0.5).toFixed(1)} 0,${secSize.toFixed(1)} Q ${(-waist * 0.5).toFixed(1)},${(waist * 0.5).toFixed(1)} ${(-secSize).toFixed(1)},0 Q ${(-waist * 0.5).toFixed(1)},${(-waist * 0.5).toFixed(1)} 0,${(-secSize).toFixed(1)} Z" fill="${secColor}" opacity="0.78"/>
+      <path transform="rotate(45)" d="M 0,${(-secSize).toFixed(1)} Q ${(waist * 0.5).toFixed(1)},${(-waist * 0.5).toFixed(1)} ${secSize.toFixed(1)},0 Q ${(waist * 0.5).toFixed(1)},${(waist * 0.5).toFixed(1)} 0,${secSize.toFixed(1)} Q ${(-waist * 0.5).toFixed(1)},${(waist * 0.5).toFixed(1)} ${(-secSize).toFixed(1)},0 Q ${(-waist * 0.5).toFixed(1)},${(-waist * 0.5).toFixed(1)} 0,${(-secSize).toFixed(1)} Z" fill="${secColor}" opacity="0.82"/>
       <circle cx="0" cy="0" r="${coreR.toFixed(1)}" fill="#FFFFFF"/>
     </g>`;
   }
 
   for (let i = 0; i < dustCount; i++) {
-    const cx = (padX + rand() * targetW).toFixed(1);
-    const cy = (padY + rand() * targetH).toFixed(1);
-    const r = ((1.8 + rand() * 3.0) * refScale).toFixed(1);
-    const op = Math.min(0.95, (0.48 + rand() * 0.48) * opacityScale).toFixed(2);
+    const cx = (padX * 0.4 + rand() * (targetW + padX * 1.2)).toFixed(1);
+    const cy = (rand() * targetH).toFixed(1);
+    const r = ((2.2 + rand() * 3.4) * refScale).toFixed(1);
+    const op = Math.min(0.95, (0.55 + rand() * 0.45) * opacityScale).toFixed(2);
     items += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#starAuraGold)" opacity="${op}"/>`;
   }
 
@@ -176,21 +172,23 @@ function buildTwinkleStarsSvg(
     <defs>
       <radialGradient id="starAuraGold">
         <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-        <stop offset="22%" stop-color="#FEF9C3" stop-opacity="0.72"/>
-        <stop offset="55%" stop-color="#FACC15" stop-opacity="0.22"/>
+        <stop offset="25%" stop-color="#FEF9C3" stop-opacity="0.8"/>
+        <stop offset="60%" stop-color="#FACC15" stop-opacity="0.28"/>
         <stop offset="100%" stop-color="#FACC15" stop-opacity="0"/>
       </radialGradient>
       <radialGradient id="starAuraWhite">
         <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-        <stop offset="24%" stop-color="#E0F2FE" stop-opacity="0.68"/>
-        <stop offset="58%" stop-color="#93C5FD" stop-opacity="0.18"/>
+        <stop offset="26%" stop-color="#E0F2FE" stop-opacity="0.75"/>
+        <stop offset="62%" stop-color="#93C5FD" stop-opacity="0.24"/>
         <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
       </radialGradient>
+      <g id="sparkleTile">${items}</g>
     </defs>
-    ${items}
+    <use href="#sparkleTile" y="0"/>
+    <use href="#sparkleTile" y="${targetH}"/>
   </svg>`;
 
-  return { svg, padX, padY };
+  return { svg, padX };
 }
 
 function buildSeamlessSnowSvg(
@@ -409,24 +407,22 @@ export async function generateSeamlessOverlayAssets(options: {
         swayFreq: 0.52,
       });
     } else if (ov === 'glitter_sparkle') {
-      // Three asynchronous staggered twinkle layers so stars organically breathe in & out cleanly
-      const timings = [
-        { period: 1.6, offset: 0.0, swayAmpX: 16, swayFreq: 0.6 },
-        { period: 2.2, offset: 0.7, swayAmpX: 14, swayFreq: 0.5 },
-        { period: 2.8, offset: 1.4, swayAmpX: 12, swayFreq: 0.42 },
+      // Two seamless counter-drifting optical star sparkle layers (memory-safe, zero loop OOM)
+      const sparkleConfigs = [
+        { speedY: 36, swayAmpX: 26, swayFreq: 0.55 },
+        { speedY: 64, swayAmpX: 38, swayFreq: 0.78 },
       ];
-      for (let idx = 0; idx < timings.length; idx++) {
-        const star = buildTwinkleStarsSvg(targetW, targetH, ratio, idx);
-        const starPath = await renderSvgToCachedPng(`twinkle_${idx}_${targetW}x${targetH}_${qIntensity}`, star.svg);
+      for (let idx = 0; idx < sparkleConfigs.length; idx++) {
+        const star = buildSeamlessSparklesSvg(targetW, targetH, ratio, idx);
+        const starPath = await renderSvgToCachedPng(`sparkle_v4_${idx}_${targetW}x${targetH}_${qIntensity}`, star.svg);
         layers.push({
           filePath: starPath,
-          kind: 'twinkle_fade',
+          kind: 'scroll_up',
           padX: star.padX,
-          padY: star.padY,
-          swayAmpX: timings[idx].swayAmpX,
-          swayFreq: timings[idx].swayFreq,
-          fadePeriodSec: timings[idx].period,
-          fadeOffsetSec: timings[idx].offset,
+          padY: 0,
+          speedY: sparkleConfigs[idx].speedY,
+          swayAmpX: sparkleConfigs[idx].swayAmpX,
+          swayFreq: sparkleConfigs[idx].swayFreq,
         });
       }
     } else if (ov === 'particle_snow') {

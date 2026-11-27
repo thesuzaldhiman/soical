@@ -7,6 +7,7 @@ export interface ComposeCardOptions {
   highlightPhrase?: string;
   featuredImageUrl?: string;
   fallbackTextColor?: string;
+  omitFeaturedImage?: boolean; // Renders ONLY frame + text layer (transparent cutout in overlay mode)
 }
 
 /**
@@ -19,7 +20,7 @@ export async function renderTemplateToCanvas(
 ): Promise<string> {
   const rawHeadline = options.headline || '';
   const headline = cleanHeadlineText(rawHeadline);
-  const { template, highlightPhrase = '', featuredImageUrl = '' } = options;
+  const { template, highlightPhrase = '', featuredImageUrl = '', omitFeaturedImage = false } = options;
 
   const width = template.canvasWidth || 1200;
   const height = template.canvasHeight || 630;
@@ -32,8 +33,12 @@ export async function renderTemplateToCanvas(
   // Layer mode: 'overlay' is default & recommended for PNG frames with transparent cutouts
   const isOverlayMode = template.layerMode !== 'background';
 
-  // 1. Draw base fallback background
-  drawFallbackBackground(ctx, width, height, template.backgroundColor);
+  // 1. Draw base fallback background (keep transparent if omitting featured image in overlay mode)
+  if (omitFeaturedImage && isOverlayMode) {
+    ctx.clearRect(0, 0, width, height);
+  } else {
+    drawFallbackBackground(ctx, width, height, template.backgroundColor);
+  }
 
   const fBox = template.featuredImageBox || {
     x: 0,
@@ -44,7 +49,7 @@ export async function renderTemplateToCanvas(
 
   // Helper to draw featured photo
   const drawFeaturedImage = async () => {
-    if (!featuredImageUrl) return;
+    if (omitFeaturedImage || !featuredImageUrl) return;
     try {
       const fImg = await loadImageAsync(featuredImageUrl);
       ctx.save();
@@ -89,13 +94,13 @@ export async function renderTemplateToCanvas(
   };
 
   if (isOverlayMode) {
-    // LAYER 1 (Bottom): Featured Photo
+    // LAYER 1 (Bottom): Featured Photo (skipped when omitFeaturedImage=true)
     await drawFeaturedImage();
 
     // LAYER 2 (Middle): PNG Template Frame Overlay on top of Photo
     await drawTemplateImage();
   } else {
-    // Background mode: Template on bottom, Photo on top
+    // Background mode: Template on bottom, Photo on top (skipped when omitFeaturedImage=true)
     await drawTemplateImage();
     await drawFeaturedImage();
   }
@@ -126,6 +131,9 @@ export async function renderTemplateToCanvas(
   renderHeadlineInsideBox(ctx, headline, highlightPhrase, tBox);
 
   try {
+    if (omitFeaturedImage) {
+      return canvas.toDataURL('image/png');
+    }
     return canvas.toDataURL('image/jpeg', 0.92);
   } catch (err) {
     console.warn('[image-compositor] toDataURL error (tainted canvas?), recovering with clean canvas:', err);
@@ -135,9 +143,11 @@ export async function renderTemplateToCanvas(
       cleanCanvas.height = height;
       const cleanCtx = cleanCanvas.getContext('2d');
       if (cleanCtx) {
-        drawFallbackBackground(cleanCtx, width, height, template.backgroundColor);
+        if (!omitFeaturedImage || !isOverlayMode) {
+          drawFallbackBackground(cleanCtx, width, height, template.backgroundColor);
+        }
         renderHeadlineInsideBox(cleanCtx, headline, highlightPhrase, tBox);
-        return cleanCanvas.toDataURL('image/jpeg', 0.92);
+        return cleanCanvas.toDataURL(omitFeaturedImage ? 'image/png' : 'image/jpeg', 0.92);
       }
     } catch (fallbackErr) {
       console.error('[image-compositor] Clean canvas fallback failed:', fallbackErr);
