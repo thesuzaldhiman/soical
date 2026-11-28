@@ -38,8 +38,8 @@ function runFfmpegSpawn(bin: string, args: string[], timeoutMs = 120000): Promis
         resolve();
       } else {
         const rawLines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
-        const errorLines = rawLines.filter((l) => /error|failed|invalid|no such|cannot|fault|aborted/i.test(l));
-        const meaningful = errorLines.length > 0 ? errorLines.slice(-3).join(' | ') : rawLines.slice(-2).join(' | ');
+        const errorLines = rawLines.filter((l) => /error|failed|invalid|no such|cannot|fault|aborted|unable|not found|resource/i.test(l));
+        const meaningful = errorLines.length > 0 ? errorLines.slice(-5).join(' | ') : rawLines.slice(-5).join(' | ');
         reject(new Error(`FFmpeg error (code ${code}): ${meaningful || 'Unknown conversion error'}`));
       }
     });
@@ -248,6 +248,8 @@ export interface VideoReelResult {
   sizeBytes: number;
   effect: VideoMotionEffect;
   effects?: VideoMotionEffect[];
+  renderMode?: 'primary' | 'fallback';
+  fallbackReason?: string;
   error?: string;
 }
 
@@ -439,9 +441,17 @@ function buildAnimatedPhotoFilterChain(params: {
     // Still photo or brightness-only shimmer (when input is fed via -loop 1 -framerate 30 -t duration)
     chain.push(`scale=${outW}:${outH}:force_original_aspect_ratio=increase:flags=bicubic,crop=${outW}:${outH},setsar=1`);
   } else {
-    // Pre-scale source to ~1.55x target size so zoompan interpolation stays crisp & fluid
-    const workW = Math.min(2048, Math.max(outW + 64, Math.round((outW * 1.55) / 2) * 2));
-    const workH = Math.min(2880, Math.max(outH + 64, Math.round((outH * 1.55) / 2) * 2));
+    // Cap working canvas under ~2.25 MP so shared-container RAM limits never reject 1080x1920 zoompan
+    const rawScaleFactor = 1.32;
+    const maxWorkPixels = 2250000;
+    const rawPixels = outW * outH * rawScaleFactor * rawScaleFactor;
+    const cappedFactor =
+      rawPixels > maxWorkPixels
+        ? Math.sqrt(maxWorkPixels / Math.max(1, outW * outH))
+        : rawScaleFactor;
+    const scaleFactor = Math.max(1.04, Math.min(rawScaleFactor, cappedFactor));
+    const workW = Math.min(2048, Math.max(outW + 24, Math.round((outW * scaleFactor) / 2) * 2));
+    const workH = Math.min(2400, Math.max(outH + 24, Math.round((outH * scaleFactor) / 2) * 2));
     chain.push(`scale=${workW}:${workH}:force_original_aspect_ratio=increase:flags=bicubic,crop=${workW}:${workH},setsar=1`);
 
     const needsPanMargin =
@@ -535,13 +545,13 @@ function buildAnimatedPhotoFilterChain(params: {
 
   if (hasGlitter) {
     chain.push(
-      `eq=brightness='${(0.06 * intensityRatio).toFixed(3)}*sin(2*PI*t*1.35)':saturation='1.0+${(0.22 * intensityRatio).toFixed(3)}*(0.5+0.5*cos(2*PI*t*1.35))':enable='between(t,0,${animDuration})'`
+      `eq=brightness='${(0.06 * intensityRatio).toFixed(3)}*sin(2*PI*t*1.35)':saturation='1.0+${(0.22 * intensityRatio).toFixed(3)}*(0.5+0.5*cos(2*PI*t*1.35))':eval=frame:enable='between(t,0,${animDuration})'`
     );
   }
 
   if (hasJitter) {
     chain.push(
-      `eq=brightness='${(0.065 * intensityRatio).toFixed(3)}*if(lt(mod(n,40),5)*lt(n,${animFrames}),1,0)'`
+      `eq=brightness='${(0.065 * intensityRatio).toFixed(3)}*if(lt(mod(n,40),5)*lt(n,${animFrames}),1,0)':eval=frame`
     );
   }
 
@@ -699,6 +709,10 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     '-loglevel',
     'error',
     '-y',
+    '-filter_threads',
+    '1',
+    '-filter_complex_threads',
+    '1',
   ];
 
   const filterGraphParts: string[] = [];
@@ -708,18 +722,18 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     // LAYERED MODE: Frame & Text are 100% STABLE; ONLY Featured Image animates!
     const photoIdx = nextInputIdx++;
     if (hasSpatialEffects) {
-      args.push('-i', inputFeaturedPhoto);
+      args.push('-threads', '1', '-i', inputFeaturedPhoto);
     } else {
-      args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputFeaturedPhoto);
+      args.push('-threads', '1', '-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputFeaturedPhoto);
     }
 
     const frameIdx = nextInputIdx++;
-    args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputFrameLayer);
+    args.push('-threads', '1', '-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputFrameLayer);
 
     let maskIdx = -1;
     if (maskFilePath) {
       maskIdx = nextInputIdx++;
-      args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', maskFilePath);
+      args.push('-threads', '1', '-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', maskFilePath);
     }
 
     // Build animated photo stream [photo_anim] at boxW x boxH
@@ -761,9 +775,9 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     // LEGACY FLAT FALLBACK MODE (when no separate template frame + photo exist)
     const legacyIdx = nextInputIdx++;
     if (hasSpatialEffects) {
-      args.push('-i', inputLegacyImage);
+      args.push('-threads', '1', '-i', inputLegacyImage);
     } else {
-      args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputLegacyImage);
+      args.push('-threads', '1', '-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', inputLegacyImage);
     }
 
     filterGraphParts.push(
@@ -790,7 +804,7 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   for (let idx = 0; idx < overlayLayers.length; idx++) {
     const layer = overlayLayers[idx];
     const inStreamIdx = nextInputIdx++;
-    args.push('-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', layer.filePath);
+    args.push('-threads', '1', '-loop', '1', '-framerate', String(fps), '-t', String(duration), '-i', layer.filePath);
 
     const prevLabel = currentBaseLabel;
     const isLastOv = idx === overlayLayers.length - 1;
@@ -836,6 +850,8 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
   if (inputMusic && fs.existsSync(inputMusic)) {
     const fadeStart = Math.max(0, duration - 1.5);
     args.push(
+      '-threads',
+      '1',
       '-stream_loop',
       '-1',
       '-i',
@@ -895,11 +911,16 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
     `[server-video-generator] Spawning ffmpeg (layered=${hasLayeredMode}): effects=[${activeEffects.join(',')}], overlays=[${cleanOverlays.join(',')}], duration=${duration}s, hasMusic=${!!inputMusic}`
   );
 
+  let renderMode: 'primary' | 'fallback' = 'primary';
+  let fallbackReason: string | undefined;
+
   try {
     try {
       await runFfmpegSpawn(ffmpegBin, args, 120000);
     } catch (primaryErr: unknown) {
       const pMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+      renderMode = 'fallback';
+      fallbackReason = pMsg;
       console.error(`[server-video-generator] Primary complex render error: ${pMsg}. Running clean fallback render...`);
 
       const fallbackSrc = inputLegacyImage || inputFeaturedPhoto || inputFrameLayer!;
@@ -908,6 +929,8 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
         '-loglevel',
         'error',
         '-y',
+        '-threads',
+        '1',
         '-loop',
         '1',
         '-framerate',
@@ -1020,6 +1043,8 @@ export async function generateServerVideoReel(options: GenerateVideoReelOptions)
       sizeBytes: stats.size,
       effect,
       effects: activeEffects,
+      renderMode,
+      ...(fallbackReason ? { fallbackReason } : {}),
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);

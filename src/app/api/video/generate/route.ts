@@ -110,6 +110,8 @@ export async function POST(request: NextRequest) {
       sizeBytes: result.sizeBytes,
       effect: result.effect,
       effects: result.effects,
+      renderMode: result.renderMode,
+      ...(result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Video generation failed';
