@@ -270,12 +270,13 @@ async function handleProcessQueue(request: NextRequest) {
         try {
           const results = await dispatchToTargets({
             postType: post.postType || 'image',
-            title: post.message?.split('\n')[0] || 'Scheduled Post',
+            title: post.title || post.message?.split('\n')[0] || 'Scheduled Post',
             message: post.message || '',
             mediaUrl: post.mediaUrl || '',
             linkUrl: post.linkUrl || '',
             commentText: post.commentText || '',
-            contentHtml: post.message || '',
+            contentHtml: post.contentHtml || post.message || '',
+            wpCategories: Array.isArray(post.wpCategories) ? post.wpCategories : undefined,
             isAiGenerated: false,
             intervalMinSeconds: Number(post.intervalMinSeconds) || 0,
             intervalMaxSeconds: Number(post.intervalMaxSeconds) || 0,

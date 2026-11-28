@@ -30,10 +30,68 @@ export interface DispatchOptions {
   linkUrl?: string;
   commentText?: string;
   contentHtml?: string;
+  wpCategories?: (string | number)[];
+  wpStatus?: 'publish' | 'draft';
+  injectImageAfterFirstParagraph?: boolean;
   isAiGenerated?: boolean;
   intervalMinSeconds?: number;
   intervalMaxSeconds?: number;
   targets: PublishTarget[];
+}
+
+/**
+ * Formats WordPress article content and cleanly injects an image block
+ * right below the first paragraph if not already embedded in the HTML.
+ */
+export function formatWordPressContentWithImage(
+  rawContent: string,
+  imageUrl?: string,
+  altText?: string
+): string {
+  const trimmed = (rawContent || '').trim();
+  const safeAlt = (altText || 'News Image').replace(/"/g, '&quot;');
+
+  // Convert plain text into <p> paragraphs if it doesn't contain HTML block tags
+  let html = trimmed;
+  if (html && !/<(p|div|figure|h[1-6]|ul|ol|blockquote)\b/i.test(html)) {
+    const paragraphs = html
+      .split(/\n{2,}|\r\n\r\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    if (paragraphs.length > 1) {
+      html = paragraphs.map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`).join('\n\n');
+    } else {
+      // Single block or single-newline separated lines -> split by single newline if multiple lines exist
+      const lines = html
+        .split(/\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      html = lines.map((l) => `<p>${l}</p>`).join('\n\n');
+    }
+  }
+
+  if (!imageUrl || !imageUrl.trim()) {
+    return html;
+  }
+
+  const cleanImageUrl = imageUrl.trim();
+  // Avoid duplicating if the image URL is already present in the HTML
+  if (html.includes(cleanImageUrl)) {
+    return html;
+  }
+
+  const imageFigure = `<figure class="wp-block-image size-large"><img src="${cleanImageUrl}" alt="${safeAlt}" style="max-width:100%;height:auto;border-radius:10px;margin:16px 0;" /></figure>`;
+
+  // Insert right after the first </p> closing tag
+  const firstCloseP = html.search(/<\/p>/i);
+  if (firstCloseP !== -1) {
+    const insertPos = firstCloseP + 4;
+    return `${html.slice(0, insertPos)}\n\n${imageFigure}\n\n${html.slice(insertPos).trimStart()}`.trim();
+  }
+
+  // Fallback if no </p> exists
+  return html ? `${html}\n\n${imageFigure}` : imageFigure;
 }
 
 export interface TargetDispatchResult {
@@ -115,6 +173,9 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
     linkUrl = '',
     commentText = '',
     contentHtml = '',
+    wpCategories,
+    wpStatus = 'publish',
+    injectImageAfterFirstParagraph = true,
     intervalMinSeconds = 0,
     intervalMaxSeconds = 0,
     targets = [],
@@ -586,7 +647,6 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
       if (target.platform === 'wordpress') {
         const siteUrl = (target.siteUrl || target.targetUrl || '').trim().replace(/\/+$/, '');
         const bridgeKey = target.bridgeApiKey || target.accessToken;
-        const isAutoEngine = target.bridgeType === 'auto-engine' || !!bridgeKey;
 
         if (!siteUrl) {
           results.push({
@@ -601,7 +661,22 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
         }
 
         const wpPostTitle = title || message?.split('\n')[0] || 'Social Post Update';
-        const wpPostContent = contentHtml || (message ? message.replace(/\n/g, '<br/>') : '');
+        const resolvedMediaUrl =
+          mediaUrl && mediaUrl.startsWith('/')
+            ? `${getBaseUrl()}${mediaUrl}`
+            : mediaUrl || '';
+        const rawBody = contentHtml || message || '';
+        const wpPostContent =
+          injectImageAfterFirstParagraph !== false
+            ? formatWordPressContentWithImage(rawBody, resolvedMediaUrl, wpPostTitle)
+            : rawBody;
+
+        const resolvedCategories: (string | number)[] =
+          Array.isArray(wpCategories) && wpCategories.length > 0
+            ? wpCategories
+            : target.category && target.category !== 'General'
+            ? [target.category]
+            : [];
 
         try {
           // Option A: Social Auto Poster Connector Plugin / Bridge API
@@ -609,36 +684,65 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
             const publishPayload = {
               title: wpPostTitle,
               content: wpPostContent,
-              featured_image: mediaUrl || '',
-              featured_image_url: mediaUrl || '',
-              status: 'publish',
-              category: target.category || undefined,
-              categories: target.category ? [target.category] : [],
+              featured_image: resolvedMediaUrl,
+              featured_image_url: resolvedMediaUrl,
+              status: wpStatus === 'draft' ? 'draft' : 'publish',
+              category: resolvedCategories[0] ?? undefined,
+              categories: resolvedCategories,
             };
 
-            // 1. Try Social Auto Poster Connector endpoint
-            let wpRes = await fetch(`${siteUrl}/wp-json/social-poster/v1/publish`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-SAP-Secret': bridgeKey,
+            // Support both Pretty Permalinks (/wp-json/...) and Plain Permalinks (?rest_route=...)
+            const candidateEndpoints: Array<{ url: string; headers: Record<string, string> }> = [
+              {
+                url: `${siteUrl}/wp-json/social-poster/v1/publish`,
+                headers: { 'Content-Type': 'application/json', 'X-SAP-Secret': bridgeKey },
               },
-              body: JSON.stringify(publishPayload),
-            }).catch(() => null);
+              {
+                url: `${siteUrl}/index.php?rest_route=/social-poster/v1/publish`,
+                headers: { 'Content-Type': 'application/json', 'X-SAP-Secret': bridgeKey },
+              },
+              {
+                url: `${siteUrl}/?rest_route=/social-poster/v1/publish`,
+                headers: { 'Content-Type': 'application/json', 'X-SAP-Secret': bridgeKey },
+              },
+              {
+                url: `${siteUrl}/wp-json/auto-engine/v1/publish`,
+                headers: { 'Content-Type': 'application/json', 'X-AE-Key': bridgeKey },
+              },
+              {
+                url: `${siteUrl}/index.php?rest_route=/auto-engine/v1/publish`,
+                headers: { 'Content-Type': 'application/json', 'X-AE-Key': bridgeKey },
+              },
+            ];
 
-            // 2. If 404 or failed, fallback to legacy Auto Engine
-            if (!wpRes || wpRes.status === 404) {
-              wpRes = await fetch(`${siteUrl}/wp-json/auto-engine/v1/publish`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-AE-Key': bridgeKey,
-                },
-                body: JSON.stringify(publishPayload),
-              }).catch(() => null);
+            let wpRes: Response | null = null;
+            let resData: any = null;
+
+            for (const ep of candidateEndpoints) {
+              try {
+                const attempt = await fetch(ep.url, {
+                  method: 'POST',
+                  headers: ep.headers,
+                  body: JSON.stringify(publishPayload),
+                  redirect: 'follow',
+                });
+
+                if (attempt.status === 404) {
+                  wpRes = attempt;
+                  continue;
+                }
+
+                const parsed = await attempt.json().catch(() => null);
+                wpRes = attempt;
+                resData = parsed;
+                // Stop if we hit a real endpoint (success or JSON error from WP plugin)
+                if (attempt.ok || parsed) {
+                  break;
+                }
+              } catch {
+                // Network error on this candidate; try next
+              }
             }
-
-            const resData = wpRes ? await wpRes.json().catch(() => null) : null;
 
             if (!wpRes || !wpRes.ok || (!resData?.success && !resData?.post_id)) {
               const errMsg = resData?.message || resData?.error || `WordPress responded with HTTP ${wpRes?.status || 500}`;
@@ -669,27 +773,51 @@ export async function dispatchToTargets(options: DispatchOptions): Promise<Targe
           // Option B: Standard WP REST API (Application Passwords)
           if (target.wpUsername && target.wpAppPassword) {
             const authHeader = 'Basic ' + Buffer.from(`${target.wpUsername}:${target.wpAppPassword}`).toString('base64');
-            const wpRes = await fetch(`${siteUrl}/wp-json/wp/v2/posts`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': authHeader,
-              },
-              body: JSON.stringify({
-                title: wpPostTitle,
-                content: wpPostContent,
-                status: 'publish',
-              }),
-            });
+            const numericCatIds = resolvedCategories
+              .map((c) => Number(c))
+              .filter((n) => !isNaN(n) && n > 0);
 
-            const resData = await wpRes.json().catch(() => null);
-            if (!wpRes.ok || !resData?.id) {
+            const restUrls = [
+              `${siteUrl}/wp-json/wp/v2/posts`,
+              `${siteUrl}/index.php?rest_route=/wp/v2/posts`,
+              `${siteUrl}/?rest_route=/wp/v2/posts`,
+            ];
+
+            let wpRes: Response | null = null;
+            let resData: any = null;
+
+            for (const url of restUrls) {
+              try {
+                const attempt = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: authHeader,
+                  },
+                  body: JSON.stringify({
+                    title: wpPostTitle,
+                    content: wpPostContent,
+                    status: wpStatus === 'draft' ? 'draft' : 'publish',
+                    ...(numericCatIds.length > 0 ? { categories: numericCatIds } : {}),
+                  }),
+                });
+                if (attempt.status === 404) {
+                  wpRes = attempt;
+                  continue;
+                }
+                wpRes = attempt;
+                resData = await attempt.json().catch(() => null);
+                break;
+              } catch {}
+            }
+
+            if (!wpRes || !wpRes.ok || !resData?.id) {
               results.push({
                 pageId: target.id,
                 pageName: target.name,
                 platform: 'wordpress',
                 status: 'failed',
-                error: resData?.message || `WordPress REST API error HTTP ${wpRes.status}`,
+                error: resData?.message || `WordPress REST API error HTTP ${wpRes?.status || 500}`,
                 timestamp,
               });
               continue;

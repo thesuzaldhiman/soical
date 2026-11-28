@@ -211,6 +211,7 @@ export interface Post {
   sigTemplateId?: string;
   linkUrl?: string;
   commentText?: string;
+  wpCategories?: (string | number)[];
   pageIds: string[];
   status: PostStatus;
   externalPostId?: string;

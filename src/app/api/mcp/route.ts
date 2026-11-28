@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbPool, initDbTables } from '@/lib/db/mysql';
-import { dispatchToTargets, PublishTarget } from '@/lib/services/publisher';
+import { dispatchToTargets, formatWordPressContentWithImage, PublishTarget } from '@/lib/services/publisher';
 import { INITIAL_CATEGORIES, INITIAL_PAGES, DEMO_PAGES, DEMO_CATEGORIES } from '@/lib/state/mock-data';
 import { PageCategory, Post, SocialPage } from '@/types';
 import fs from 'fs';
@@ -185,6 +185,55 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  if (action === 'wp_categories') {
+    const rawSiteUrl = (searchParams.get('siteUrl') || searchParams.get('site_url') || '').trim().replace(/\/+$/, '').toLowerCase();
+    const siteId = searchParams.get('siteId') || '';
+
+    const wpSites = state.pages.filter((p) => p.platform === 'wordpress');
+    const targetSite = wpSites.find(
+      (p) =>
+        (siteId && p.id === siteId) ||
+        (rawSiteUrl && (p.siteUrl || p.targetUrl || '').toLowerCase().includes(rawSiteUrl))
+    ) || wpSites[0];
+
+    if (!targetSite || !(targetSite.siteUrl || targetSite.targetUrl)) {
+      return NextResponse.json({ success: false, error: 'No matching WordPress site found.' }, { status: 404 });
+    }
+
+    const baseSite = (targetSite.siteUrl || targetSite.targetUrl || '').trim().replace(/\/+$/, '');
+    const catEndpoints = [
+      `${baseSite}/wp-json/social-poster/v1/categories`,
+      `${baseSite}/index.php?rest_route=/social-poster/v1/categories`,
+      `${baseSite}/?rest_route=/social-poster/v1/categories`,
+      `${baseSite}/wp-json/wp/v2/categories?per_page=100`,
+      `${baseSite}/index.php?rest_route=/wp/v2/categories&per_page=100`,
+    ];
+
+    for (const ep of catEndpoints) {
+      try {
+        const res = await fetch(ep, { headers: { Accept: 'application/json' } });
+        if (!res.ok) continue;
+        const data = await res.json().catch(() => null);
+        const cats = Array.isArray(data?.categories) ? data.categories : Array.isArray(data) ? data : null;
+        if (cats) {
+          return NextResponse.json({
+            success: true,
+            action: 'wp_categories',
+            site: { id: targetSite.id, name: targetSite.name, siteUrl: baseSite },
+            categories: cats.map((c: any) => ({
+              id: c.id || c.term_id,
+              name: c.name,
+              slug: c.slug,
+              count: c.count ?? 0,
+            })),
+          });
+        }
+      } catch {}
+    }
+
+    return NextResponse.json({ success: false, error: `Could not fetch categories from ${baseSite}` }, { status: 502 });
+  }
+
   // Action: Targets (Pages, WordPress sites, Categories)
   const wpSites = state.pages
     .filter((p) => p.platform === 'wordpress')
@@ -255,8 +304,14 @@ export async function POST(request: NextRequest) {
       // Target Selection Options
       targetMode = 'all', // 'wordpress_only' | 'social_only' | 'all'
       targetPageIds = [],
+      targetSiteUrl = '',
+      siteUrl = '',
       targetCategoryNames = [],
       targetCategoryIds = [],
+      wpCategory,
+      wpCategories,
+      wpStatus = 'publish',
+      injectImageAfterFirstParagraph = true,
       // Interval / Time Window Options
       startDate, // 'YYYY-MM-DD'
       startTime, // '10:00' or ISO
@@ -282,6 +337,19 @@ export async function POST(request: NextRequest) {
     // Add direct page IDs
     if (Array.isArray(targetPageIds)) {
       targetPageIds.forEach((pid) => resolvedPageIdSet.add(pid));
+    }
+
+    // Add matching WordPress site(s) if targetSiteUrl / siteUrl provided
+    const cleanTargetSite = (targetSiteUrl || siteUrl || '').trim().replace(/\/+$/, '').toLowerCase();
+    if (cleanTargetSite) {
+      state.pages.forEach((pg) => {
+        if (pg.platform === 'wordpress') {
+          const pgSite = (pg.siteUrl || pg.targetUrl || '').trim().replace(/\/+$/, '').toLowerCase();
+          if (pgSite && (pgSite.includes(cleanTargetSite) || cleanTargetSite.includes(pgSite))) {
+            resolvedPageIdSet.add(pg.id);
+          }
+        }
+      });
     }
 
     // Add page IDs from category names
@@ -365,8 +433,28 @@ export async function POST(request: NextRequest) {
       }
 
       const postTitle = item.title || (item.message ? item.message.split('\n')[0] : 'Scheduled Post');
-      const postMessage = item.message || item.title || '';
-      const postHtml = item.contentHtml || (item.message ? item.message.replace(/\n/g, '<br/>') : '');
+      const postMessage = item.message || item.content || item.title || '';
+      const rawHtmlOrText = item.contentHtml || item.content || item.message || '';
+      const shouldInjectImage =
+        item.injectImageAfterFirstParagraph !== undefined
+          ? Boolean(item.injectImageAfterFirstParagraph)
+          : Boolean(injectImageAfterFirstParagraph);
+      const postHtml = shouldInjectImage
+        ? formatWordPressContentWithImage(rawHtmlOrText, item.mediaUrl, postTitle)
+        : rawHtmlOrText;
+
+      const resolvedItemCategories: (string | number)[] | undefined =
+        Array.isArray(item.wpCategories) && item.wpCategories.length > 0
+          ? item.wpCategories
+          : Array.isArray(item.categories) && item.categories.length > 0
+          ? item.categories
+          : item.wpCategory || item.category
+          ? [item.wpCategory || item.category]
+          : Array.isArray(wpCategories) && wpCategories.length > 0
+          ? wpCategories
+          : wpCategory
+          ? [wpCategory]
+          : undefined;
 
       // DEDUPLICATION GUARD: Prevent creating duplicate scheduled posts
       const isDuplicate = state.posts.some((existing) => {
@@ -406,6 +494,7 @@ export async function POST(request: NextRequest) {
         mediaUrl: item.mediaUrl || undefined,
         linkUrl: item.linkUrl || undefined,
         commentText: item.commentText || undefined,
+        wpCategories: resolvedItemCategories,
         pageIds: itemPageIds,
         status: publishNow ? 'published' : 'scheduled',
         scheduledAt: publishNow ? undefined : postScheduledAt,
@@ -418,7 +507,8 @@ export async function POST(request: NextRequest) {
       // If publishNow is requested, immediately broadcast to targets
       if (publishNow) {
         try {
-          const targetsPayload: PublishTarget[] = finalTargetPages.map((pg) => ({
+          const itemTargets = finalTargetPages.filter((pg) => itemPageIds.includes(pg.id));
+          const targetsPayload: PublishTarget[] = (itemTargets.length > 0 ? itemTargets : finalTargetPages).map((pg) => ({
             id: pg.id,
             platform: pg.platform,
             name: pg.name,
@@ -432,7 +522,7 @@ export async function POST(request: NextRequest) {
             bridgeType: pg.bridgeType,
             wpUsername: pg.wpUsername,
             wpAppPassword: pg.wpAppPassword,
-            category: item.wpCategory || pg.category,
+            category: (resolvedItemCategories?.[0] ? String(resolvedItemCategories[0]) : undefined) || pg.category,
           }));
 
           const dispatchResults = await dispatchToTargets({
@@ -443,6 +533,9 @@ export async function POST(request: NextRequest) {
             mediaUrl: newPost.mediaUrl,
             linkUrl: newPost.linkUrl,
             commentText: newPost.commentText,
+            wpCategories: resolvedItemCategories,
+            wpStatus: item.wpStatus || wpStatus || 'publish',
+            injectImageAfterFirstParagraph: shouldInjectImage,
             isAiGenerated: false,
             targets: targetsPayload,
           });
@@ -457,6 +550,11 @@ export async function POST(request: NextRequest) {
             error: r.error,
             timestamp: r.timestamp,
           }));
+
+          const anySuccess = dispatchResults.some((r) => r.status === 'success');
+          if (!anySuccess) {
+            newPost.status = 'failed';
+          }
         } catch (dispatchErr) {
           console.error('[MCP API] Immediate dispatch error:', dispatchErr);
           newPost.status = 'failed';
@@ -470,19 +568,21 @@ export async function POST(request: NextRequest) {
     await persistPosts(createdPosts, email);
 
     return NextResponse.json({
-      success: true,
-      message: `Successfully ${publishNow ? 'published' : 'scheduled'} ${createdPosts.length} post(s) across ${finalTargetPages.length} destination(s).`,
+      success: publishNow ? createdPosts.some((p) => p.status === 'published') : true,
+      message: `Successfully ${publishNow ? 'processed' : 'scheduled'} ${createdPosts.length} post(s) across ${finalTargetPages.length} destination(s).`,
       count: createdPosts.length,
       targetMode,
-      destinations: finalTargetPages.map((pg) => ({ id: pg.id, name: pg.name, platform: pg.platform })),
+      destinations: finalTargetPages.map((pg) => ({ id: pg.id, name: pg.name, platform: pg.platform, siteUrl: pg.siteUrl })),
       scheduledPosts: createdPosts.map((p) => ({
         id: p.id,
         title: p.title,
         status: p.status,
         scheduledAt: p.scheduledAt,
+        wpCategories: p.wpCategories,
         targetsCount: p.pageIds.length,
         hasMedia: !!p.mediaUrl,
         hasHtmlContent: !!p.contentHtml,
+        results: p.results,
       })),
     });
   } catch (err: unknown) {

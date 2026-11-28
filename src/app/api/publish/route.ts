@@ -12,6 +12,10 @@ export async function POST(request: NextRequest) {
       linkUrl = '',
       commentText = '',
       contentHtml = '',
+      wpCategories,
+      wpCategoryName,
+      wpStatus = 'publish',
+      injectImageAfterFirstParagraph = true,
       isAiGenerated = false,
       intervalMinSeconds = 0,
       intervalMaxSeconds = 0,
@@ -32,6 +36,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const resolvedWpCategories = Array.isArray(wpCategories) && wpCategories.length > 0
+      ? wpCategories
+      : wpCategoryName
+      ? [wpCategoryName]
+      : undefined;
+
     const results = await dispatchToTargets({
       postType,
       title,
@@ -40,6 +50,9 @@ export async function POST(request: NextRequest) {
       linkUrl,
       commentText,
       contentHtml,
+      wpCategories: resolvedWpCategories,
+      wpStatus,
+      injectImageAfterFirstParagraph,
       isAiGenerated: Boolean(isAiGenerated),
       intervalMinSeconds: Number(intervalMinSeconds) || 0,
       intervalMaxSeconds: Number(intervalMaxSeconds) || 0,
